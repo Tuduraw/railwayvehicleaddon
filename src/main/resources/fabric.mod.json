@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "railwayvehicleaddon",
+  "version": "${version}",
+  "name": "Tudur's Vehicle Mod: Railway Addon",
+  "description": "Railway vehicles and a curved, waypoint-surveyed track system for Tudur's Vehicle Mod.",
+  "authors": [ "Tuduraw" ],
+  "contact": {},
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": [ "com.example.railwayvehicleaddon.RailwayVehicleAddon" ],
+    "client": [ "com.example.railwayvehicleaddon.client.RailwayVehicleAddonClient" ]
+  },
+  "depends": {
+    "fabricloader": ">=0.18.0",
+    "fabric-api": "*",
+    "minecraft": "1.21.11",
+    "java": ">=21",
+    "tudursvehiclemod": ">=1.0.3"
+  }
+}

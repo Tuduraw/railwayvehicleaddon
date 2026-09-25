@@ -1,0 +1,27 @@
+{
+  "entity_type": "railwayvehicleaddon:rail_vehicle",
+  "model": "railwayvehicleaddon:models/obj/sample_railcar.obj",
+  "texture": "railwayvehicleaddon:textures/vehicle/sample_railcar.png",
+  "display_name": "Sample Railcar",
+  "scale": 1.0,
+  "width": 3.0,
+  "height": 3.3,
+  "max_speed": 1.5,
+  "max_health": 200.0,
+  "seats": [
+    { "name": "driver", "offset_x": 0.6, "offset_y": 1.0, "offset_z": 3.6, "driver": true },
+    { "name": "passenger1", "offset_x": -0.6, "offset_y": 1.0, "offset_z": 1.0 },
+    { "name": "passenger2", "offset_x": 0.6, "offset_y": 1.0, "offset_z": -1.0 }
+  ],
+  "spawn_item": { "display_name": "Sample Railcar", "tier": 1 },
+  "rail": {
+    "bogies": [
+      { "part": "$bogie_front", "pivot_x": 0.0, "pivot_y": 0.35, "pivot_z": 3.2 },
+      { "part": "$bogie_rear", "pivot_x": 0.0, "pivot_y": 0.35, "pivot_z": -3.2 }
+    ],
+    "traction": 0.004,
+    "brake": 0.015,
+    "resistance": 0.0003,
+    "grade_gravity": 0.04
+  }
+}

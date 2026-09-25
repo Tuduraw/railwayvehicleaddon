@@ -1,0 +1,1 @@
+{ "parent": "minecraft:item/handheld", "textures": { "layer0": "railwayvehicleaddon:item/survey_tool" } }
