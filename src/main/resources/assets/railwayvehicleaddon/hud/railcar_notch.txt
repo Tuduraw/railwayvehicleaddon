@@ -1,0 +1,69 @@
+; railcar_notch.txt - 鉄道車両(前進7・後進2ノッチ)用HUD。前提MODのHUDスクリプトとして動作する
+; スロットル(throttle)がノッチのハンドル位置になる(前進側は1/7刻み、後進側は1/2刻み)
+; 別のノッチ数の車両用に作る場合は、目盛りの行数と下のハンドル位置の式(7と2)を変更する
+
+; 背景
+Color = #A0101418
+DrawRect = width / 2 - 104, height / 2 - 152, 96, 146
+
+; 速度
+Color = #FFE8ECF0
+DrawString = width / 2 - 96, height / 2 - 146, "%.0f km/h", speed_kbh
+
+; 目盛り(上からP7〜P1・N(切)・R1〜R2、1行9ピクセル)
+Color = #60000000
+DrawRect = width / 2 - 76, height / 2 - 129, 30, 90
+Color = #FF4CD964
+DrawString = width / 2 - 96, height / 2 - 128, "P7"
+Color = #FF8A949E
+DrawRect = width / 2 - 76, height / 2 - 125, 6, 1
+Color = #FF4CD964
+DrawString = width / 2 - 96, height / 2 - 119, "P6"
+Color = #FF8A949E
+DrawRect = width / 2 - 76, height / 2 - 116, 6, 1
+Color = #FF4CD964
+DrawString = width / 2 - 96, height / 2 - 110, "P5"
+Color = #FF8A949E
+DrawRect = width / 2 - 76, height / 2 - 107, 6, 1
+Color = #FF4CD964
+DrawString = width / 2 - 96, height / 2 - 101, "P4"
+Color = #FF8A949E
+DrawRect = width / 2 - 76, height / 2 - 98, 6, 1
+Color = #FF4CD964
+DrawString = width / 2 - 96, height / 2 - 92, "P3"
+Color = #FF8A949E
+DrawRect = width / 2 - 76, height / 2 - 89, 6, 1
+Color = #FF4CD964
+DrawString = width / 2 - 96, height / 2 - 83, "P2"
+Color = #FF8A949E
+DrawRect = width / 2 - 76, height / 2 - 80, 6, 1
+Color = #FF4CD964
+DrawString = width / 2 - 96, height / 2 - 74, "P1"
+Color = #FF8A949E
+DrawRect = width / 2 - 76, height / 2 - 71, 6, 1
+Color = #FFE8ECF0
+DrawString = width / 2 - 96, height / 2 - 65, "N"
+Color = #FF8A949E
+DrawRect = width / 2 - 76, height / 2 - 62, 6, 1
+Color = #FFFF9F0A
+DrawString = width / 2 - 96, height / 2 - 56, "R1"
+Color = #FF8A949E
+DrawRect = width / 2 - 76, height / 2 - 53, 6, 1
+Color = #FFFF9F0A
+DrawString = width / 2 - 96, height / 2 - 47, "R2"
+Color = #FF8A949E
+DrawRect = width / 2 - 76, height / 2 - 44, 6, 1
+
+; ハンドル(ノッチの目標値へ throttle_up_down の速さで動く)
+Color = #FF000000
+DrawRect = width / 2 - 78, height / 2 - 128 + (7 - (throttle >= 0 ? throttle * 7 : throttle * 2)) * 9, 34, 7
+Color = #FFFFD60A
+DrawRect = width / 2 - 77, height / 2 - 127 + (7 - (throttle >= 0 ? throttle * 7 : throttle * 2)) * 9, 32, 5
+
+; 燃料(蒸気機関車では水の量)
+Color = #FFE8ECF0
+DrawString = width / 2 - 96, height / 2 - 30, "FUEL %.0f", fuel * 100
+If = low_fuel
+Color = #FFFF453A
+DrawString = width / 2 - 96, height / 2 - 20, "LOW FUEL"
+EndIf

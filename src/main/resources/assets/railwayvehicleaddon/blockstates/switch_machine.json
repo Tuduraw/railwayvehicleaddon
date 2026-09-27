@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "powered=false": {
+      "model": "railwayvehicleaddon:block/switch_machine"
+    },
+    "powered=true": {
+      "model": "railwayvehicleaddon:block/switch_machine_on"
+    }
+  }
+}

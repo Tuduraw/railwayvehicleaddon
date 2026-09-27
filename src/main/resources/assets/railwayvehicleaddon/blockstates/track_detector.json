@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "powered=false": {
+      "model": "railwayvehicleaddon:block/track_detector"
+    },
+    "powered=true": {
+      "model": "railwayvehicleaddon:block/track_detector_on"
+    }
+  }
+}

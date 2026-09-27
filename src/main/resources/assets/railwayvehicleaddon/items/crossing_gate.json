@@ -1,0 +1,6 @@
+{
+  "model": {
+    "type": "minecraft:model",
+    "model": "railwayvehicleaddon:block/crossing_gate"
+  }
+}

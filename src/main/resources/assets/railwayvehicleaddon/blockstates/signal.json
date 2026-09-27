@@ -1,0 +1,52 @@
+{
+  "variants": {
+    "aspect=0,facing=north": {
+      "model": "railwayvehicleaddon:block/signal",
+      "y": 0
+    },
+    "aspect=1,facing=north": {
+      "model": "railwayvehicleaddon:block/signal",
+      "y": 0
+    },
+    "aspect=2,facing=north": {
+      "model": "railwayvehicleaddon:block/signal",
+      "y": 0
+    },
+    "aspect=0,facing=east": {
+      "model": "railwayvehicleaddon:block/signal",
+      "y": 90
+    },
+    "aspect=1,facing=east": {
+      "model": "railwayvehicleaddon:block/signal",
+      "y": 90
+    },
+    "aspect=2,facing=east": {
+      "model": "railwayvehicleaddon:block/signal",
+      "y": 90
+    },
+    "aspect=0,facing=south": {
+      "model": "railwayvehicleaddon:block/signal",
+      "y": 180
+    },
+    "aspect=1,facing=south": {
+      "model": "railwayvehicleaddon:block/signal",
+      "y": 180
+    },
+    "aspect=2,facing=south": {
+      "model": "railwayvehicleaddon:block/signal",
+      "y": 180
+    },
+    "aspect=0,facing=west": {
+      "model": "railwayvehicleaddon:block/signal",
+      "y": 270
+    },
+    "aspect=1,facing=west": {
+      "model": "railwayvehicleaddon:block/signal",
+      "y": 270
+    },
+    "aspect=2,facing=west": {
+      "model": "railwayvehicleaddon:block/signal",
+      "y": 270
+    }
+  }
+}
