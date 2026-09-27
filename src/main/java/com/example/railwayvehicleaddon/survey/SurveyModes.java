@@ -14,6 +14,8 @@ public final class SurveyModes {
 	public static final SurveyMode TURNTABLE = register(new TurntableMode());
 	public static final SurveyMode TRAVERSER = register(new TraverserMode());
 	public static final SurveyMode BUFFER_STOP = register(new BufferStopMode());
+	public static final SurveyMode ELECTRIFY = register(new ElectrifyMode());
+	public static final SurveyMode LINK = register(new LinkMode());
 	public static final SurveyMode REMOVE = register(new RemoveMode());
 
 	private SurveyModes() {

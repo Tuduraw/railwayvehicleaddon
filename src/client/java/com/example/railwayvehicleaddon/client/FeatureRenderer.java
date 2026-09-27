@@ -1,6 +1,7 @@
 package com.example.railwayvehicleaddon.client;
 
 import com.example.railwayvehicleaddon.RailwayVehicleAddon;
+import com.example.railwayvehicleaddon.entity.RailVehicleEntity;
 import com.example.railwayvehicleaddon.track.TrackNetwork;
 import com.example.railwayvehicleaddon.track.TrackNode;
 import com.example.railwayvehicleaddon.track.feature.BufferStopFeature;
@@ -40,6 +41,13 @@ public final class FeatureRenderer {
 	private static final double MAX_DISTANCE = 192.0;
 
 	private static final Map<Long, List<Quad>> CACHE = new HashMap<>();
+	/** 桁のメッシュ(桁の座標系: u=A端からの距離、l=横方向、h=高さ)。桁の長さ・軌間が変わらない限り使い回す */
+	private static final Map<Long, List<LocalQuad>> DECK_CACHE = new HashMap<>();
+	private static float deckGauge = Float.NaN;
+	private static final double DECK_DEPTH = 0.6;
+
+	private record LocalQuad(double[][] v, float[] uv, double[] normal) {
+	}
 
 	private record Quad(Vec3d a, Vec3d b, Vec3d c, Vec3d d, float[] uv, Vec3d normal, BlockPos light) {
 	}
@@ -49,10 +57,120 @@ public final class FeatureRenderer {
 
 	public static void invalidate(long id) {
 		CACHE.remove(id);
+		DECK_CACHE.remove(id);
 	}
 
 	public static void invalidateAll() {
 		CACHE.clear();
+		DECK_CACHE.clear();
+	}
+
+	// ------------------------------------------------------------------ 可動桁
+
+	private static void localQuad(List<LocalQuad> out, double[] a, double[] b, double[] c, double[] d, float[] uv) {
+		double[] e1 = {b[0] - a[0], b[1] - a[1], b[2] - a[2]};
+		double[] e2 = {d[0] - a[0], d[1] - a[1], d[2] - a[2]};
+		double[] n = {e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]};
+		double len = Math.sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+		if (len < 1.0e-9) {
+			return;
+		}
+		out.add(new LocalQuad(new double[][]{a, b, c, d}, uv, new double[]{n[0] / len, n[1] / len, n[2] / len}));
+	}
+
+	/** 桁の座標系の直方体(u0〜u1、l0〜l1、h0〜h1)。 */
+	private static void localBox(List<LocalQuad> out, double u0, double u1, double l0, double l1, double h0, double h1, float[] uv) {
+		double[][] b = {{u0, l0, h0}, {u1, l0, h0}, {u1, l1, h0}, {u0, l1, h0}};
+		double[][] t = {{u0, l0, h1}, {u1, l0, h1}, {u1, l1, h1}, {u0, l1, h1}};
+		localQuad(out, t[0], t[1], t[2], t[3], uv);
+		localQuad(out, b[3], b[2], b[1], b[0], uv);
+		for (int i = 0; i < 4; i++) {
+			int n = (i + 1) % 4;
+			localQuad(out, b[i], b[n], t[n], t[i], uv);
+		}
+	}
+
+	/** 桁(レール・枕木・鋼製の桁)を桁の座標系で作る。 */
+	private static List<LocalQuad> buildDeck(double length, float gauge) {
+		List<LocalQuad> out = new ArrayList<>();
+		double half = gauge / 2.0;
+		double sleeperHalfLat = half + TrackRenderer.SLEEPER_OVERHANG;
+		// 桁本体
+		localBox(out, 0.0, length, -sleeperHalfLat + 0.2, sleeperHalfLat - 0.2, -DECK_DEPTH, -0.001, TrackRenderer.RAIL_UV);
+		// 枕木
+		int sleepers = Math.max(1, (int) Math.floor(length / TrackRenderer.SLEEPER_SPACING));
+		double offset = (length - (sleepers - 1) * TrackRenderer.SLEEPER_SPACING) / 2.0;
+		for (int k = 0; k < sleepers; k++) {
+			double u = offset + k * TrackRenderer.SLEEPER_SPACING;
+			localBox(out, u - TrackRenderer.SLEEPER_HALF_LENGTH, u + TrackRenderer.SLEEPER_HALF_LENGTH,
+					-sleeperHalfLat, sleeperHalfLat, 0.0, TrackRenderer.SLEEPER_TOP, TrackRenderer.SLEEPER_UV);
+		}
+		// レール
+		for (double side : new double[]{-half, half}) {
+			localBox(out, 0.0, length, side - TrackRenderer.RAIL_HALF_WIDTH, side + TrackRenderer.RAIL_HALF_WIDTH,
+					TrackRenderer.SLEEPER_TOP, RailVehicleEntity.RAIL_TOP, TrackRenderer.RAIL_UV);
+		}
+		return out;
+	}
+
+	private static void renderDecks(WorldRenderContext context, TrackNetwork network, ClientWorld world, Vec3d camera, float tickDelta) {
+		float gauge = ClientTrackData.config().gauge();
+		if (gauge != deckGauge) {
+			deckGauge = gauge;
+			DECK_CACHE.clear();
+		}
+		MatrixStack.Entry entry = context.matrices().peek();
+		Matrix4f pose = entry.getPositionMatrix();
+		VertexConsumer consumer = null;
+		for (TrackFeature feature : network.features()) {
+			if (!(feature instanceof MovingDeckFeature deck)) {
+				continue;
+			}
+			double reach = MAX_DISTANCE + feature.radius();
+			if (feature.center().squaredDistanceTo(camera) > reach * reach) {
+				continue;
+			}
+			double param = ClientTrackData.deckRenderParam(deck, tickDelta);
+			Vec3d a = deck.endA(param);
+			Vec3d b = deck.endB(param);
+			double length = Math.hypot(b.x - a.x, b.z - a.z);
+			if (length < 1.0e-6) {
+				continue;
+			}
+			// 桁の座標系: u = A→B方向、l = 線路の横方向(TrackPoint.lateralと同じ向き)、h = 上
+			double dx = (b.x - a.x) / length;
+			double dz = (b.z - a.z) / length;
+			double lx = dz;
+			double lz = -dx;
+			List<LocalQuad> quads = DECK_CACHE.computeIfAbsent(deck.id(), id -> buildDeck(length, gauge));
+			if (consumer == null) {
+				consumer = context.consumers().getBuffer(RenderLayers.entityCutoutNoCull(TrackRenderer.TEXTURE));
+			}
+			int light = WorldRenderer.getLightmapCoordinates(world, BlockPos.ofFloored(feature.center().x, feature.center().y + 0.5, feature.center().z));
+			for (LocalQuad q : quads) {
+				// (u, l, h)の基底(A→B方向・横方向・上)は右手系なので、法線もそのまま世界座標へ移せる
+				double nu = q.normal()[0];
+				double nl = q.normal()[1];
+				double nh = q.normal()[2];
+				float nx = (float) (dx * nu + lx * nl);
+				float ny = (float) nh;
+				float nz = (float) (dz * nu + lz * nl);
+				for (int corner = 0; corner < 4; corner++) {
+					double[] v = q.v()[corner];
+					double wx = a.x + dx * v[0] + lx * v[1];
+					double wy = a.y + v[2];
+					double wz = a.z + dz * v[0] + lz * v[1];
+					float u = (corner == 1 || corner == 2) ? q.uv()[2] : q.uv()[0];
+					float t = (corner >= 2) ? q.uv()[3] : q.uv()[1];
+					consumer.vertex(pose, (float) (wx - camera.x), (float) (wy - camera.y), (float) (wz - camera.z))
+							.color(255, 255, 255, 255)
+							.texture(u, t)
+							.overlay(OverlayTexture.DEFAULT_UV)
+							.light(light)
+							.normal(entry, nx, ny, nz);
+				}
+			}
+		}
 	}
 
 	private static void quad(List<Quad> out, Vec3d a, Vec3d b, Vec3d c, Vec3d d, float[] uv) {
@@ -173,6 +291,8 @@ public final class FeatureRenderer {
 			return;
 		}
 		Vec3d camera = context.worldState().cameraRenderState.pos;
+		// 桁(線路のテクスチャ)を先に描き、そのあと設備本体(設備のテクスチャ)を描く
+		renderDecks(context, network, world, camera, client.getRenderTickCounter().getTickProgress(true));
 		MatrixStack.Entry entry = context.matrices().peek();
 		Matrix4f pose = entry.getPositionMatrix();
 		VertexConsumer consumer = context.consumers().getBuffer(RenderLayers.entityCutoutNoCull(TEXTURE));

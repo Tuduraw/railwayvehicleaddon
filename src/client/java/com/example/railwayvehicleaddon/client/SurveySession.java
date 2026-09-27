@@ -3,7 +3,11 @@ package com.example.railwayvehicleaddon.client;
 import com.example.railwayvehicleaddon.RailwayConfig;
 import com.example.railwayvehicleaddon.item.ModItems;
 import com.example.railwayvehicleaddon.item.SurveyToolItem;
+import com.example.railwayvehicleaddon.block.DeviceKind;
+import com.example.railwayvehicleaddon.block.TrackDeviceBlock;
+import com.example.railwayvehicleaddon.network.ElectrifyPayload;
 import com.example.railwayvehicleaddon.network.FeatureActionPayload;
+import com.example.railwayvehicleaddon.network.LinkDevicePayload;
 import com.example.railwayvehicleaddon.network.PlaceLayoutPayload;
 import com.example.railwayvehicleaddon.network.RemoveSegmentsPayload;
 import com.example.railwayvehicleaddon.network.ToggleSwitchPayload;
@@ -12,6 +16,7 @@ import com.example.railwayvehicleaddon.survey.SurveyInput;
 import com.example.railwayvehicleaddon.survey.SurveyMode;
 import com.example.railwayvehicleaddon.survey.SurveyModes;
 import com.example.railwayvehicleaddon.survey.SurveyPoint;
+import com.example.railwayvehicleaddon.track.BallastType;
 import com.example.railwayvehicleaddon.track.BlockCategory;
 import com.example.railwayvehicleaddon.track.ClearanceScanner;
 import com.example.railwayvehicleaddon.track.RoutePlanner;
@@ -23,6 +28,7 @@ import com.example.railwayvehicleaddon.track.TrackSegment;
 import com.example.railwayvehicleaddon.track.feature.MovingDeckFeature;
 import com.example.railwayvehicleaddon.track.feature.TrackFeature;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.minecraft.block.Block;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.text.Text;
@@ -66,6 +72,8 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 	private static final double POINT_TOLERANCE = 0.6;
 	private static final double SEGMENT_TOLERANCE = 1.2;
 	private static final double SWITCH_TOLERANCE = 0.9;
+	/** 装置を狙える距離 */
+	private static final double DEVICE_REACH = 24.0;
 
 	private SurveyMode mode = SurveyModes.NEW_ROUTE;
 	private final Map<String, Integer> params = new HashMap<>();
@@ -74,6 +82,13 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 	private final List<Integer> selection = new ArrayList<>();
 	private final Set<Long> removeSelection = new LinkedHashSet<>();
 	private final Set<Long> removeFeatureSelection = new LinkedHashSet<>();
+
+	/** 敷設する線路の道床 */
+	private BallastType ballast = BallastType.GRAVEL;
+	/** 強制置換(クリエイティブのみ有効) */
+	private boolean forceReplace;
+	/** 敷設する線路を電化する */
+	private boolean electrify;
 
 	private boolean dirty;
 	private int rescanTimer;
@@ -85,11 +100,16 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 	private long targetSegment = -1L;
 	private long targetSwitch = -1L;
 	private long targetFeature = -1L;
+	/** 連結モードで選択中の装置 */
+	private BlockPos linkDevice;
 
-	/** プレビュー結果。segmentsは線形の確認・描画用の仮区間(IDなし)。 */
-	public record Preview(LayoutPlan plan, List<TrackSegment> segments, ClearanceScanner.ScanResult scan) {
+	/**
+	 * プレビュー結果。segmentsは線形の確認・描画用の仮区間(IDなし)。
+	 * forceは強制置換が有効(クリエイティブで有効化)か。
+	 */
+	public record Preview(LayoutPlan plan, List<TrackSegment> segments, ClearanceScanner.ScanResult scan, boolean force) {
 		public boolean canPlace() {
-			return this.plan.isValid() && !this.scan.hasBlocking();
+			return this.plan.isValid() && !this.scan.hasBlocking(this.force);
 		}
 	}
 
@@ -138,8 +158,52 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		return this.targetFeature;
 	}
 
+	public BlockPos linkDevice() {
+		return this.linkDevice;
+	}
+
+	/** 装置の種類に応じた、今狙っている連結対象のID。 */
+	private long linkTargetFor(DeviceKind kind) {
+		return switch (kind.target()) {
+			case SWITCH -> this.targetSwitch;
+			case DECK -> this.targetFeature;
+			case SEGMENT -> this.targetSegment;
+			default -> -1L;
+		};
+	}
+
+	/** 視線の先の線路装置(無ければnull)。 */
+	public static BlockPos lookedAtDevice(ClientPlayerEntity player) {
+		HitResult hit = player.raycast(DEVICE_REACH, 1.0f, false);
+		if (hit.getType() != HitResult.Type.BLOCK || player.getEntityWorld() == null) {
+			return null;
+		}
+		BlockPos pos = ((BlockHitResult) hit).getBlockPos();
+		return player.getEntityWorld().getBlockState(pos).getBlock() instanceof TrackDeviceBlock ? pos : null;
+	}
+
 	public Set<Long> removeFeatureSelection() {
 		return this.removeFeatureSelection;
+	}
+
+	public BallastType ballast() {
+		return this.ballast;
+	}
+
+	public void toggleElectrify() {
+		this.electrify = !this.electrify;
+		this.statusTimer = 0;
+		ClientPlayerEntity player = MinecraftClient.getInstance().player;
+		if (player != null) {
+			player.sendMessage(Text.translatable(this.electrify
+					? "message.railwayvehicleaddon.survey.electrify_on" : "message.railwayvehicleaddon.survey.electrify_off"), true);
+		}
+	}
+
+	/** 強制置換が実際に効くか(有効化していて、かつクリエイティブ)。 */
+	public boolean effectiveForce() {
+		ClientPlayerEntity player = MinecraftClient.getInstance().player;
+		return this.forceReplace && player != null && player.isCreative();
 	}
 
 	public int param() {
@@ -157,6 +221,10 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		MinecraftClient client = MinecraftClient.getInstance();
 		ClientPlayerEntity player = client.player;
 		if (player == null || client.world == null) {
+			return;
+		}
+		if (this.mode == SurveyModes.LINK) {
+			useLinkMode(player, sneaking);
 			return;
 		}
 		if (!this.mode.placesTrack()) {
@@ -207,6 +275,34 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		} else {
 			appendPoint(player, pos);
 		}
+	}
+
+	private void useLinkMode(ClientPlayerEntity player, boolean sneaking) {
+		if (sneaking) {
+			this.linkDevice = null;
+			return;
+		}
+		BlockPos device = lookedAtDevice(player);
+		if (device != null) {
+			this.linkDevice = device;
+			Block block = player.getEntityWorld().getBlockState(device).getBlock();
+			player.sendMessage(Text.translatable("message.railwayvehicleaddon.device.selected", block.getName()), true);
+			return;
+		}
+		if (this.linkDevice == null) {
+			return;
+		}
+		if (!(player.getEntityWorld().getBlockState(this.linkDevice).getBlock() instanceof TrackDeviceBlock block)) {
+			this.linkDevice = null;
+			return;
+		}
+		long target = linkTargetFor(block.kind());
+		if (target < 0) {
+			player.sendMessage(Text.translatable("message.railwayvehicleaddon.device.aim_target."
+					+ block.kind().target().name().toLowerCase(java.util.Locale.ROOT)), true);
+			return;
+		}
+		ClientPlayNetworking.send(new LinkDevicePayload(this.linkDevice, target));
 	}
 
 	private void toggleSelection(int index) {
@@ -357,6 +453,7 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		this.selection.clear();
 		this.removeSelection.clear();
 		this.removeFeatureSelection.clear();
+		this.linkDevice = null;
 		this.preview = null;
 		this.dirty = false;
 	}
@@ -368,6 +465,45 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		if (player != null) {
 			player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.mode_changed",
 					Text.translatable("message.railwayvehicleaddon.mode." + this.mode.id())), true);
+		}
+	}
+
+	public void cycleBallast() {
+		this.ballast = this.ballast.next();
+		this.statusTimer = 0;
+		ClientPlayerEntity player = MinecraftClient.getInstance().player;
+		if (player != null) {
+			player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.ballast_changed",
+					Text.translatable("message.railwayvehicleaddon.ballast." + this.ballast.name().toLowerCase(java.util.Locale.ROOT))), true);
+		}
+	}
+
+	public void toggleForce() {
+		ClientPlayerEntity player = MinecraftClient.getInstance().player;
+		if (player == null) {
+			return;
+		}
+		if (!player.isCreative()) {
+			this.forceReplace = false;
+			player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.force_creative_only"), true);
+			return;
+		}
+		this.forceReplace = !this.forceReplace;
+		this.dirty = true;
+		this.statusTimer = 0;
+		player.sendMessage(Text.translatable(this.forceReplace
+				? "message.railwayvehicleaddon.survey.force_on" : "message.railwayvehicleaddon.survey.force_off"), true);
+	}
+
+	/**
+	 * サーバーからの配置結果。成功したときだけ点を消す。失敗(未ロードの範囲を含む・確定までの間に
+	 * ブロックが変わった等)のときは点をそのまま残し、手直しして再度確定できるようにする。
+	 */
+	public void onPlaceResult(boolean success) {
+		if (success) {
+			clear();
+		} else {
+			this.dirty = true;
 		}
 	}
 
@@ -384,6 +520,13 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 	public void confirm() {
 		ClientPlayerEntity player = MinecraftClient.getInstance().player;
 		if (player == null) {
+			return;
+		}
+		if (this.mode == SurveyModes.ELECTRIFY) {
+			if (!this.removeSelection.isEmpty()) {
+				ClientPlayNetworking.send(new ElectrifyPayload(new ArrayList<>(this.removeSelection)));
+				this.removeSelection.clear();
+			}
 			return;
 		}
 		if (!this.mode.placesTrack()) {
@@ -404,12 +547,12 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 			player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.cannot_place"), true);
 			return;
 		}
+		// 点は結果(PlaceResultPayload)を受け取ってから消す
 		ClientPlayNetworking.send(new PlaceLayoutPayload(this.mode.id(), currentInput()));
-		clear();
 	}
 
 	private SurveyInput currentInput() {
-		return new SurveyInput(new ArrayList<>(this.points), this.closed, param());
+		return new SurveyInput(new ArrayList<>(this.points), this.closed, param(), this.ballast.id(), effectiveForce(), this.electrify);
 	}
 
 	// ------------------------------------------------------------------ 毎tick
@@ -447,12 +590,27 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 
 		Vec3d eye = player.getCameraPosVec(1.0f);
 		Vec3d look = player.getRotationVec(1.0f);
+		boolean link = this.mode == SurveyModes.LINK;
+		boolean remove = this.mode == SurveyModes.REMOVE;
 		this.targetPoint = this.mode.placesTrack() ? findTargetPoint(eye, look) : -1;
 		this.targetSegment = this.mode.placesTrack() ? -1L : findTargetSegment(network, eye, look);
-		this.targetSwitch = this.mode.placesTrack() && this.targetPoint < 0 ? findTargetSwitch(network, eye, look) : -1L;
-		this.targetFeature = this.targetPoint < 0 ? findTargetFeature(network, eye, look, !this.mode.placesTrack()) : -1L;
-		if (this.targetFeature >= 0 && !this.mode.placesTrack()) {
+		this.targetSwitch = (this.mode.placesTrack() || link) && this.targetPoint < 0 ? findTargetSwitch(network, eye, look) : -1L;
+		this.targetFeature = this.targetPoint < 0 && this.mode != SurveyModes.ELECTRIFY ? findTargetFeature(network, eye, look, remove) : -1L;
+		if (this.targetFeature >= 0 && remove) {
 			this.targetSegment = -1L;
+		}
+		if (link && this.linkDevice != null && player.getEntityWorld().getBlockState(this.linkDevice).getBlock() instanceof TrackDeviceBlock block) {
+			// 選んだ装置が連結できる種類の対象だけを狙う
+			DeviceKind.TargetType type = block.kind().target();
+			if (type != DeviceKind.TargetType.SWITCH) {
+				this.targetSwitch = -1L;
+			}
+			if (type != DeviceKind.TargetType.DECK) {
+				this.targetFeature = -1L;
+			}
+			if (type != DeviceKind.TargetType.SEGMENT) {
+				this.targetSegment = -1L;
+			}
 		}
 
 		if (--this.statusTimer <= 0) {
@@ -477,18 +635,38 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 			extra.addAll(spec.clearance(config));
 		}
 		ClearanceScanner.ScanResult scan = ClearanceScanner.scan(client.world, segments, extra, config, true);
-		this.preview = new Preview(plan, segments, scan);
+		this.preview = new Preview(plan, segments, scan, effectiveForce());
 	}
 
 	private void showStatus(ClientPlayerEntity player) {
 		Text modeName = Text.translatable("message.railwayvehicleaddon.mode." + this.mode.id());
+		if (this.mode == SurveyModes.LINK) {
+			player.sendMessage(Text.translatable(this.linkDevice == null
+					? "message.railwayvehicleaddon.survey.status_link" : "message.railwayvehicleaddon.survey.status_link_selected", modeName), true);
+			return;
+		}
+		if (this.mode == SurveyModes.ELECTRIFY) {
+			player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.status_electrify", modeName,
+					this.removeSelection.size()), true);
+			return;
+		}
 		if (!this.mode.placesTrack()) {
 			player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.status_remove", modeName,
 					this.removeSelection.size(), this.removeFeatureSelection.size()), true);
 			return;
 		}
-		Text paramText = this.mode.maxParam() > this.mode.minParam()
-				? Text.translatable("message.railwayvehicleaddon.param." + this.mode.id(), this.mode.paramLabel(param())) : Text.empty();
+		Text paramText = Text.empty();
+		if (this.mode.maxParam() > this.mode.minParam()) {
+			paramText = paramText.copy().append(Text.translatable("message.railwayvehicleaddon.param." + this.mode.id(), this.mode.paramLabel(param())));
+		}
+		paramText = paramText.copy().append(Text.translatable("message.railwayvehicleaddon.survey.tag_ballast",
+				Text.translatable("message.railwayvehicleaddon.ballast." + this.ballast.name().toLowerCase(java.util.Locale.ROOT))));
+		if (this.electrify) {
+			paramText = paramText.copy().append(Text.translatable("message.railwayvehicleaddon.survey.tag_electrify"));
+		}
+		if (effectiveForce()) {
+			paramText = paramText.copy().append(Text.translatable("message.railwayvehicleaddon.survey.tag_force"));
+		}
 		Preview p = this.preview;
 		Text detail;
 		if (p == null) {
@@ -498,6 +676,11 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 			detail = Text.translatable("message.railwayvehicleaddon.issue." + issue.key(), issue.formattedValue());
 		} else if (p.segments().isEmpty() && p.plan().features().isEmpty()) {
 			detail = Text.translatable("message.railwayvehicleaddon.survey.hint." + this.mode.id());
+		} else if (p.scan().hasBlocking() && !p.scan().hasBlocking(p.force())) {
+			// 強制置換で、本来撤去できないブロックも撤去する
+			ClearanceScanner.ScanResult scan = p.scan();
+			detail = Text.translatable("message.railwayvehicleaddon.survey.status_force",
+					String.format("%.1f", p.plan().totalLength()), scan.count(BlockCategory.BLOCKED_FLUID), scan.count(BlockCategory.BLOCKED_HARD));
 		} else if (p.scan().hasBlocking()) {
 			ClearanceScanner.ScanResult scan = p.scan();
 			detail = Text.translatable("message.railwayvehicleaddon.survey.status_blocked",

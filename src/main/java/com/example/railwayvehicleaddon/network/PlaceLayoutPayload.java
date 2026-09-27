@@ -39,6 +39,9 @@ public record PlaceLayoutPayload(String modeId, SurveyInput input) implements Cu
 				}
 				buf.writeBoolean(payload.input().closed());
 				buf.writeVarInt(payload.input().param());
+				buf.writeVarInt(payload.input().ballast());
+				buf.writeBoolean(payload.input().force());
+				buf.writeBoolean(payload.input().electrify());
 			},
 			buf -> {
 				String modeId = buf.readString(64);
@@ -50,7 +53,10 @@ public record PlaceLayoutPayload(String modeId, SurveyInput input) implements Cu
 				}
 				boolean closed = buf.readBoolean();
 				int param = buf.readVarInt();
-				return new PlaceLayoutPayload(modeId, new SurveyInput(points, closed, param));
+				int ballast = buf.readVarInt();
+				boolean force = buf.readBoolean();
+				boolean electrify = buf.readBoolean();
+				return new PlaceLayoutPayload(modeId, new SurveyInput(points, closed, param, ballast, force, electrify));
 			});
 
 	@Override

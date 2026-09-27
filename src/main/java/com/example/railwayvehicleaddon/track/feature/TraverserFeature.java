@@ -92,12 +92,12 @@ public final class TraverserFeature extends MovingDeckFeature {
 	}
 
 	@Override
-	protected Vec3d endA(double param) {
+	public Vec3d endA(double param) {
 		return new Vec3d(this.ax + this.axisX * param, this.y, this.az + this.axisZ * param);
 	}
 
 	@Override
-	protected Vec3d endB(double param) {
+	public Vec3d endB(double param) {
 		return new Vec3d(this.bx + this.axisX * param, this.y, this.bz + this.axisZ * param);
 	}
 

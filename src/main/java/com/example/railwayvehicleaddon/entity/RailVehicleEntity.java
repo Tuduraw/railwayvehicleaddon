@@ -5,6 +5,7 @@ import com.example.railwayvehicleaddon.track.TrackManager;
 import com.example.railwayvehicleaddon.track.TrackNetwork;
 import com.example.railwayvehicleaddon.track.TrackPoint;
 import com.example.railwayvehicleaddon.track.TrackPos;
+import com.example.railwayvehicleaddon.track.TrackSegment;
 import com.example.railwayvehicleaddon.vehicle.RailVehicleParams;
 import com.example.railwayvehicleaddon.vehicle.RailVehicleParamsLoader;
 import com.example.tudursvehiclemod.asset.VehicleDefinition;
@@ -15,6 +16,8 @@ import net.minecraft.entity.data.DataTracker;
 import net.minecraft.entity.data.TrackedData;
 import net.minecraft.entity.data.TrackedDataHandlerRegistry;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.storage.ReadView;
 import net.minecraft.storage.WriteView;
@@ -66,11 +69,22 @@ public class RailVehicleEntity extends AbstractVehicleEntity {
 	/** 台車の設定。クライアントがマルチプレイでもサーバーのデータを知らずに済むよう文字列で同期する */
 	private static final TrackedData<String> BOGIE_SPEC =
 			DataTracker.registerData(RailVehicleEntity.class, TrackedDataHandlerRegistry.STRING);
+	/** ノッチを押し続けたときに次の段へ進むまでのtick数(最初の1段目の後と、それ以降) */
+	private static final int NOTCH_REPEAT_FIRST = 10;
+	private static final int NOTCH_REPEAT = 5;
+	/** 石炭・木炭1個で燃やせる時間(出力100%でのtick数) */
+	private static final int COAL_TICKS = 1600;
 
 	// サーバー側
 	private TrackPos trackPos;
 	private double speed;
 	private int attachCooldown;
+	private int notch;
+	private float lastNotchInput;
+	private int notchRepeat;
+	/** 蒸気機関車: 火室に残っている燃焼時間(tick、出力100%で1ずつ減る) */
+	private double fireTicks;
+	private int powerWarningCooldown;
 
 	// クライアント側
 	private TrackPos clientPos;
@@ -172,21 +186,42 @@ public class RailVehicleEntity extends AbstractVehicleEntity {
 		PlayerEntity driver = this.getControllingPassenger() instanceof PlayerEntity player ? player : null;
 		float throttle;
 		boolean braking;
+		float handleStep = 0.03f * def.throttleUpDown().orElse(1.0f);
 		if (driver != null) {
-			throttle = updateThrottle(driver, 0.03f * def.throttleUpDown().orElse(1.0f), -1.0f, 1.0f);
+			throttle = params.usesNotches() ? updateNotch(params, handleStep)
+					: updateThrottle(driver, handleStep, -1.0f, 1.0f);
 			braking = this.getSyncedBrakeInput() || this.tudursvehiclemod$isDestroyed();
 		} else {
 			// 無人の車両は停止保持(フェーズ2で編成・自動運転を扱うまでの暫定)
 			this.setThrottleDirect(0f);
+			this.notch = 0;
 			throttle = 0f;
 			braking = true;
+		}
+		// 動力が得られなければ(石炭が無い・架線が無い)力行できない。ハンドル(表示)はそのまま動かせる
+		if (throttle != 0f && !consumePower(network, params, throttle)) {
+			if (driver instanceof net.minecraft.server.network.ServerPlayerEntity player && this.powerWarningCooldown-- <= 0) {
+				this.powerWarningCooldown = 60;
+				player.sendMessage(net.minecraft.text.Text.translatable(RailVehicleParams.STEAM.equals(params.powerSource())
+						? "message.railwayvehicleaddon.power.no_coal" : "message.railwayvehicleaddon.power.no_catenary"), true);
+			}
+			throttle = 0f;
 		}
 
 		TrackPoint center = network.pointAt(this.trackPos);
 		double grade = center != null ? center.grade() * this.trackPos.facing() : 0.0;
-		double accel = throttle * params.traction() - params.gradeGravity() * grade / Math.sqrt(1.0 + grade * grade);
-		double v = this.speed + accel;
-		double decel = params.resistance() + (braking ? params.brake() : 0.0);
+		double maxSpeed = this.tudursvehiclemod$getEffectiveMaxSpeed();
+		// 前提MODの車と同じく、スロットルに応じた目標速度へacceleration(追従度)で近づく。
+		// ノッチを下げた・切にしたときは減速させず惰行する(走行抵抗で少しずつ落ちる)
+		double acceleration = def.acceleration();
+		double target = throttle * maxSpeed;
+		double v = this.speed;
+		boolean powering = throttle > 0f ? target > v : throttle < 0f && target < v;
+		if (powering) {
+			v += (target - v) * acceleration;
+		}
+		v -= params.gradeGravity() * grade / Math.sqrt(1.0 + grade * grade);
+		double decel = (powering ? 0.0 : params.resistance()) + (braking ? params.brake() : 0.0);
 		if (Math.abs(v) <= decel) {
 			v = 0.0;
 		} else {
@@ -195,7 +230,6 @@ public class RailVehicleEntity extends AbstractVehicleEntity {
 		if (driver == null && Math.abs(v) < 1.0e-3) {
 			v = 0.0;
 		}
-		double maxSpeed = this.tudursvehiclemod$getEffectiveMaxSpeed();
 		v = MathHelper.clamp(v, -maxSpeed, maxSpeed);
 
 		if (v != 0.0) {
@@ -217,6 +251,78 @@ public class RailVehicleEntity extends AbstractVehicleEntity {
 		this.dataTracker.set(TRACK_FACING, (byte) this.trackPos.facing());
 		this.dataTracker.set(RAIL_SPEED, (float) v);
 		applyPlacement(network, this.trackPos);
+	}
+
+	/**
+	 * ノッチ式の操作。前進/後進キー(前提MODのスロットル入力)を押すたびにノッチが1段ずつ動き、
+	 * 押し続けると一定間隔で進む。スロットル(前提MODのHUDにハンドル位置として表示される値)は、
+	 * ノッチの目標値へ前提MODと同じ速さ(0.03 × throttle_up_down / tick)で動く。
+	 * 燃料切れ・撃破時はノッチを切(0)に戻す。
+	 */
+	private float updateNotch(RailVehicleParams params, float step) {
+		float input = this.getSyncedThrottleInput();
+		int direction = input > 0 ? 1 : input < 0 ? -1 : 0;
+		if (this.tudursvehiclemod$isOutOfFuel() || this.tudursvehiclemod$isDestroyed()) {
+			this.notch = 0;
+		} else if (direction != 0) {
+			boolean pressed = Math.signum(this.lastNotchInput) != direction;
+			if (pressed || --this.notchRepeat <= 0) {
+				this.notch = MathHelper.clamp(this.notch + direction, -params.reverseNotches(), params.powerNotches());
+				this.notchRepeat = pressed ? NOTCH_REPEAT_FIRST : NOTCH_REPEAT;
+			}
+		}
+		this.lastNotchInput = input;
+		float target = params.notchTarget(this.notch);
+		float current = this.getThrottle();
+		float next = Math.abs(target - current) <= step ? target : current + Math.copySign(step, target - current);
+		this.setThrottleDirect(next);
+		return next;
+	}
+
+	/**
+	 * 動力を得る。得られればtrue。
+	 * <ul>
+	 *   <li>fuel: 前提MODの燃料システムに任せる(燃料切れはスロットル側で0になる)</li>
+	 *   <li>steam: 車両のインベントリの石炭・木炭(石炭ブロック)を火室へくべて燃やす。
+	 *       水は前提MODの燃料を水として使い、給水塔で補給する</li>
+	 *   <li>electric: 車両(中心・前後の台車のいずれか)が電化区間にいれば架線から給電される</li>
+	 * </ul>
+	 */
+	private boolean consumePower(TrackNetwork network, RailVehicleParams params, float throttle) {
+		String source = params.powerSource();
+		if (RailVehicleParams.STEAM.equals(source)) {
+			if (this.fireTicks <= 0.0) {
+				for (int i = 0; i < this.size(); i++) {
+					ItemStack stack = this.getStack(i);
+					int ticks = stack.isOf(Items.COAL) || stack.isOf(Items.CHARCOAL) ? COAL_TICKS
+							: stack.isOf(Items.COAL_BLOCK) ? COAL_TICKS * 10 : 0;
+					if (ticks > 0) {
+						this.removeStack(i, 1);
+						this.fireTicks += ticks;
+						break;
+					}
+				}
+			}
+			if (this.fireTicks <= 0.0) {
+				return false;
+			}
+			this.fireTicks -= Math.abs(throttle);
+			return true;
+		}
+		if (RailVehicleParams.ELECTRIC.equals(source)) {
+			if (this.trackPos == null) {
+				return false;
+			}
+			double zc = centerZ();
+			for (double offset : new double[]{0.0, this.frontZ - zc, this.rearZ - zc}) {
+				TrackSegment segment = network.segment(network.walk(this.trackPos, offset).segmentId());
+				if (segment != null && segment.electrified()) {
+					return true;
+				}
+			}
+			return false;
+		}
+		return true;
 	}
 
 	private void tryAttach(TrackNetwork network) {
@@ -340,6 +446,20 @@ public class RailVehicleEntity extends AbstractVehicleEntity {
 			}
 		}
 		return on > 0 && on < 3;
+	}
+
+	/** 車両(中心・前後の台車のいずれか)が区間segmentIdに載っているか。 */
+	public boolean occupies(TrackNetwork network, long segmentId) {
+		if (this.trackPos == null) {
+			return false;
+		}
+		double zc = centerZ();
+		for (double offset : new double[]{0.0, this.frontZ - zc, this.rearZ - zc}) {
+			if (network.walk(this.trackPos, offset).segmentId() == segmentId) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	// ------------------------------------------------------------------ 配置
@@ -537,6 +657,8 @@ public class RailVehicleEntity extends AbstractVehicleEntity {
 			view.putInt("RailFacing", this.trackPos.facing());
 		}
 		view.putDouble("RailSpeed", this.speed);
+		view.putInt("RailNotch", this.notch);
+		view.putDouble("RailFire", this.fireTicks);
 	}
 
 	@Override
@@ -548,5 +670,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity {
 			this.trackPos = new TrackPos(segment, view.getDouble("RailS", 0.0), facing >= 0 ? 1 : -1);
 		}
 		this.speed = view.getDouble("RailSpeed", 0.0);
+		this.notch = view.getInt("RailNotch", 0);
+		this.fireTicks = view.getDouble("RailFire", 0.0);
 	}
 }

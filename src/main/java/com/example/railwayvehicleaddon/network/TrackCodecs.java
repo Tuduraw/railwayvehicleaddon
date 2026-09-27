@@ -34,6 +34,8 @@ public final class TrackCodecs {
 			buf.writeDouble(v);
 		}
 		buf.writeFloat(segment.designSpeed());
+		buf.writeByte(segment.ballast());
+		buf.writeBoolean(segment.electrified());
 	}
 
 	public static TrackSegment readSegment(PacketByteBuf buf) {
@@ -49,7 +51,10 @@ public final class TrackCodecs {
 			profile[i] = buf.readDouble();
 		}
 		float designSpeed = buf.readFloat();
-		return new TrackSegment(id, a, b, PlanCurve.fromControlPoints(plan), HeightProfile.fromArray(profile), designSpeed);
+		int ballast = buf.readByte();
+		boolean electrified = buf.readBoolean();
+		return new TrackSegment(id, a, b, PlanCurve.fromControlPoints(plan), HeightProfile.fromArray(profile), designSpeed,
+				ballast, electrified);
 	}
 
 	public static void writeConfig(PacketByteBuf buf, RailwayConfig.Values v) {

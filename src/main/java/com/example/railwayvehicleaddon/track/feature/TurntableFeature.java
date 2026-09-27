@@ -74,12 +74,12 @@ public final class TurntableFeature extends MovingDeckFeature {
 	}
 
 	@Override
-	protected Vec3d endA(double param) {
+	public Vec3d endA(double param) {
 		return rim(param, this.radius);
 	}
 
 	@Override
-	protected Vec3d endB(double param) {
+	public Vec3d endB(double param) {
 		return rim(param + 180.0, this.radius);
 	}
 

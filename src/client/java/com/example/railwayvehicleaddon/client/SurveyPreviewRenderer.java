@@ -1,6 +1,9 @@
 package com.example.railwayvehicleaddon.client;
 
 import com.example.railwayvehicleaddon.RailwayConfig;
+import com.example.railwayvehicleaddon.block.DeviceLinks;
+import com.example.railwayvehicleaddon.block.TrackDeviceBlock;
+import com.example.railwayvehicleaddon.block.TrackDeviceBlockEntity;
 import com.example.railwayvehicleaddon.entity.RailVehicleEntity;
 import com.example.railwayvehicleaddon.survey.SurveyPoint;
 import com.example.railwayvehicleaddon.track.BlockCategory;
@@ -11,6 +14,7 @@ import com.example.railwayvehicleaddon.track.TrackPoint;
 import com.example.railwayvehicleaddon.track.TrackSegment;
 import com.example.railwayvehicleaddon.track.feature.TrackFeature;
 import com.example.railwayvehicleaddon.survey.LayoutPlan;
+import com.example.railwayvehicleaddon.survey.SurveyModes;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.DrawStyle;
 import net.minecraft.util.math.BlockPos;
@@ -40,6 +44,8 @@ public final class SurveyPreviewRenderer {
 	private static final int COLOR_BLOCKED_STROKE = 0xFFFF3B30;
 	private static final int COLOR_BLOCKED_FILL = 0x55FF3B30;
 	private static final int COLOR_PLAYER_STROKE = 0xFFFFCC00;
+	private static final int COLOR_FORCE_STROKE = 0xFFFF2DAA;
+	private static final int COLOR_FORCE_FILL = 0x55FF2DAA;
 	private static final int COLOR_PLAYER_FILL = 0x44FFCC00;
 	private static final float LINE_WIDTH = 2.0f;
 	/** 一度に枠を描く問題ブロックの上限(プレイヤーに近い順) */
@@ -60,6 +66,7 @@ public final class SurveyPreviewRenderer {
 		Vec3d eye = client.player.getEyePos();
 		try (var scope = client.newGizmoScope()) {
 			drawSwitches(network, session, eye, config);
+			drawDeviceLinks(client, network, session);
 
 			// 狙っている設備(敷設モードでは転車台・遷車台。右クリックで動く)
 			TrackFeature targetFeature = network.feature(session.targetFeature());
@@ -74,11 +81,12 @@ public final class SurveyPreviewRenderer {
 			}
 
 			if (!session.mode().placesTrack()) {
-				// 撤去モード: 選択済みは赤、狙っている区間はオレンジ
+				// 撤去モード: 選択済みは赤、狙っている区間はオレンジ(電化モードでは選択済みは水色)
+				int selectedColor = session.mode() == SurveyModes.ELECTRIFY ? COLOR_SWITCH : COLOR_REMOVE;
 				for (long id : session.removeSelection()) {
 					TrackSegment segment = network.segment(id);
 					if (segment != null) {
-						drawRails(segment, config.gauge(), COLOR_REMOVE);
+						drawRails(segment, config.gauge(), selectedColor);
 					}
 				}
 				TrackSegment target = network.segment(session.targetSegment());
@@ -146,10 +154,17 @@ public final class SurveyPreviewRenderer {
 			warned = warned.subList(0, MAX_BLOCK_BOXES);
 		}
 		for (Map.Entry<BlockPos, BlockCategory> entry : warned) {
-			boolean blocking = entry.getValue().blocksPlacement();
-			GizmoDrawing.box(entry.getKey(), blocking
-					? DrawStyle.filledAndStroked(COLOR_BLOCKED_STROKE, LINE_WIDTH, COLOR_BLOCKED_FILL)
-					: DrawStyle.filledAndStroked(COLOR_PLAYER_STROKE, LINE_WIDTH, COLOR_PLAYER_FILL)).ignoreOcclusion();
+			BlockCategory category = entry.getValue();
+			DrawStyle style;
+			if (category.blocksPlacement() && preview.force() && category != BlockCategory.UNLOADED) {
+				// 強制置換で撤去されるブロック(本来は撤去できない)
+				style = DrawStyle.filledAndStroked(COLOR_FORCE_STROKE, LINE_WIDTH, COLOR_FORCE_FILL);
+			} else if (category.blocksPlacement()) {
+				style = DrawStyle.filledAndStroked(COLOR_BLOCKED_STROKE, LINE_WIDTH, COLOR_BLOCKED_FILL);
+			} else {
+				style = DrawStyle.filledAndStroked(COLOR_PLAYER_STROKE, LINE_WIDTH, COLOR_PLAYER_FILL);
+			}
+			GizmoDrawing.box(entry.getKey(), style).ignoreOcclusion();
 		}
 	}
 
@@ -181,6 +196,23 @@ public final class SurveyPreviewRenderer {
 					GizmoDrawing.line(prev, cur, color, 3.0f).ignoreOcclusion();
 				}
 				prev = cur;
+			}
+		}
+	}
+
+	/** 狙っている装置(と連結モードで選択中の装置)から連結先へ線を引く。 */
+	private static void drawDeviceLinks(MinecraftClient client, TrackNetwork network, SurveySession session) {
+		BlockPos looked = SurveySession.lookedAtDevice(client.player);
+		for (BlockPos pos : new BlockPos[]{looked, session.linkDevice()}) {
+			if (pos == null || !(client.world.getBlockEntity(pos) instanceof TrackDeviceBlockEntity entity)
+					|| !(client.world.getBlockState(pos).getBlock() instanceof TrackDeviceBlock block)) {
+				continue;
+			}
+			int color = pos.equals(session.linkDevice()) ? COLOR_SELECTED : COLOR_SWITCH;
+			GizmoDrawing.box(pos, DrawStyle.stroked(color, LINE_WIDTH)).ignoreOcclusion();
+			Vec3d target = DeviceLinks.targetPosition(network, block.kind(), entity.targetId());
+			if (target != null) {
+				GizmoDrawing.line(Vec3d.ofCenter(pos), target.add(0.0, 0.5, 0.0), color, LINE_WIDTH).ignoreOcclusion();
 			}
 		}
 	}

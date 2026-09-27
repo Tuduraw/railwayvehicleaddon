@@ -102,6 +102,14 @@ public final class ClearanceScanner {
 			return false;
 		}
 
+		/**
+		 * 敷設を妨げるブロックがあるか。強制置換なら流体・硬いブロックも撤去できるため、
+		 * 未ロード(書き換えられない)だけが妨げになる。
+		 */
+		public boolean hasBlocking(boolean force) {
+			return force ? count(BlockCategory.UNLOADED) > 0 : hasBlocking();
+		}
+
 		public int count(BlockCategory category) {
 			return this.counts.getOrDefault(category, 0);
 		}

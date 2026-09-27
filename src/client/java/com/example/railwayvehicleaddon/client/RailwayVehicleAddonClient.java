@@ -3,6 +3,7 @@ package com.example.railwayvehicleaddon.client;
 import com.example.railwayvehicleaddon.RailwayVehicleAddon;
 import com.example.railwayvehicleaddon.item.SurveyToolItem;
 import com.example.railwayvehicleaddon.network.FeatureSyncPayload;
+import com.example.railwayvehicleaddon.network.PlaceResultPayload;
 import com.example.railwayvehicleaddon.network.TrackRemovePayload;
 import com.example.railwayvehicleaddon.network.TrackSyncPayload;
 import com.example.tudursvehiclemod.client.render.VehicleEntityRenderer;
@@ -26,6 +27,9 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 	private static KeyBinding modeKey;
 	private static KeyBinding paramUpKey;
 	private static KeyBinding paramDownKey;
+	private static KeyBinding ballastKey;
+	private static KeyBinding forceKey;
+	private static KeyBinding electrifyKey;
 
 	@Override
 	public void onInitializeClient() {
@@ -40,6 +44,8 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 				context.client().execute(() -> ClientTrackData.apply(payload)));
 		ClientPlayNetworking.registerGlobalReceiver(FeatureSyncPayload.ID, (payload, context) ->
 				context.client().execute(() -> ClientTrackData.apply(payload)));
+		ClientPlayNetworking.registerGlobalReceiver(PlaceResultPayload.ID, (payload, context) ->
+				context.client().execute(() -> SurveySession.INSTANCE.onPlaceResult(payload.success())));
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
 			ClientTrackData.clear();
 			SurveySession.INSTANCE.clear();
@@ -59,10 +65,17 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 				"key.railwayvehicleaddon.survey_param_up", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT_BRACKET, category));
 		paramDownKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
 				"key.railwayvehicleaddon.survey_param_down", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_LEFT_BRACKET, category));
+		ballastKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+				"key.railwayvehicleaddon.survey_ballast", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_I, category));
+		forceKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+				"key.railwayvehicleaddon.survey_force", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_HOME, category));
+		electrifyKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+				"key.railwayvehicleaddon.survey_electrify", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_END, category));
 
 		ClientTickEvents.END_CLIENT_TICK.register(RailwayVehicleAddonClient::onClientTick);
 		WorldRenderEvents.BEFORE_TRANSLUCENT.register(TrackRenderer::render);
 		WorldRenderEvents.BEFORE_TRANSLUCENT.register(FeatureRenderer::render);
+		WorldRenderEvents.BEFORE_TRANSLUCENT.register(DeviceOverlayRenderer::render);
 	}
 
 	private static void onClientTick(MinecraftClient client) {
@@ -98,6 +111,23 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 				SurveySession.INSTANCE.adjustParam(-1);
 			}
 		}
+		while (ballastKey.wasPressed()) {
+			if (holding) {
+				SurveySession.INSTANCE.cycleBallast();
+			}
+		}
+		while (forceKey.wasPressed()) {
+			if (holding) {
+				SurveySession.INSTANCE.toggleForce();
+			}
+		}
+		while (electrifyKey.wasPressed()) {
+			if (holding) {
+				SurveySession.INSTANCE.toggleElectrify();
+			}
+		}
+		ClientTrackData.tickDecks();
+		DeviceOverlayRenderer.tick(client);
 		SurveySession.INSTANCE.tick(client);
 		SurveyPreviewRenderer.tick(client);
 	}

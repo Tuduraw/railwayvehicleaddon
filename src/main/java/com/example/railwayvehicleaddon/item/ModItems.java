@@ -49,6 +49,9 @@ public final class ModItems {
 			for (Item item : RAIL_VEHICLE_SPAWNERS) {
 				entries.add(item);
 			}
+			for (Item item : com.example.railwayvehicleaddon.block.ModBlocks.ITEMS) {
+				entries.add(item);
+			}
 		});
 	}
 }

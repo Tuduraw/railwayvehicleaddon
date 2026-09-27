@@ -5,6 +5,7 @@ import com.example.railwayvehicleaddon.item.ModItems;
 import com.example.railwayvehicleaddon.network.TrackRemovePayload;
 import com.example.railwayvehicleaddon.network.TrackSyncPayload;
 import com.example.railwayvehicleaddon.network.FeatureSyncPayload;
+import com.example.railwayvehicleaddon.network.PlaceResultPayload;
 import com.example.railwayvehicleaddon.entity.RailVehicleEntity;
 import com.example.railwayvehicleaddon.track.feature.MovingDeckFeature;
 import com.example.railwayvehicleaddon.track.feature.TrackFeature;
@@ -63,12 +64,17 @@ public final class TrackManager {
 	 * 問題点・建築限界を検証してから、ブロック撤去と線路グラフへの登録を行う。
 	 */
 	public static void placeLayout(ServerPlayerEntity player, String modeId, SurveyInput input) {
+		boolean success = tryPlaceLayout(player, modeId, input);
+		ServerPlayNetworking.send(player, new PlaceResultPayload(success));
+	}
+
+	private static boolean tryPlaceLayout(ServerPlayerEntity player, String modeId, SurveyInput input) {
 		if (!player.getMainHandStack().isOf(ModItems.SURVEY_TOOL)) {
-			return;
+			return false;
 		}
 		SurveyMode mode = SurveyModes.byId(modeId);
 		if (mode == null || !mode.placesTrack()) {
-			return;
+			return false;
 		}
 		ServerWorld world = (ServerWorld) player.getEntityWorld();
 		TrackNetwork network = network(world);
@@ -81,7 +87,7 @@ public final class TrackManager {
 				TrackNode node = network.node(p.nodeId());
 				if (node == null) {
 					fail(player, "snap_invalid");
-					return;
+					return false;
 				}
 				points.add(new SurveyPoint(new Vec3d(node.x(), node.y(), node.z()), node.id()));
 			} else if (p.onTrack()) {
@@ -89,7 +95,7 @@ public final class TrackManager {
 				TrackNetwork.Nearest nearest = network.nearestPoint(p.pos().x, p.pos().y, p.pos().z, TRACK_SNAP_TOLERANCE);
 				if (nearest == null) {
 					fail(player, "snap_invalid");
-					return;
+					return false;
 				}
 				TrackPoint tp = nearest.point();
 				points.add(new SurveyPoint(new Vec3d(tp.x(), tp.y(), tp.z()), -1L, nearest.segmentId(), nearest.s()));
@@ -98,39 +104,43 @@ public final class TrackManager {
 			}
 		}
 		if (points.size() < mode.minPoints()) {
-			return;
+			return false;
 		}
 		// 経由点がプレイヤーから極端に離れている要求は拒否する(改造クライアント対策)
 		double limit = config.maxRouteLength() + 64.0;
 		for (SurveyPoint p : points) {
 			if (p.pos().squaredDistanceTo(player.getEntityPos()) > limit * limit) {
 				fail(player, "too_far");
-				return;
+				return false;
 			}
 		}
 		int param = Math.max(mode.minParam(), Math.min(mode.maxParam(), input.param()));
-		LayoutPlan plan = mode.plan(network, new SurveyInput(points, input.closed() && mode.supportsClose(), param), config);
+		// 強制置換はクリエイティブのみ(クライアントの申告は信用しない)
+		boolean force = input.force() && player.isCreative();
+		BallastType ballast = BallastType.byId(input.ballast());
+		LayoutPlan plan = mode.plan(network, new SurveyInput(points, input.closed() && mode.supportsClose(), param,
+				ballast.id(), force, input.electrify()), config);
 		if (!plan.isValid()) {
 			if (!plan.issues().isEmpty()) {
 				RoutePlanner.Issue issue = plan.issues().get(0);
 				player.sendMessage(Text.translatable("message.railwayvehicleaddon.issue." + issue.key(),
 						issue.formattedValue()), false);
 			}
-			return;
+			return false;
 		}
 		java.util.Set<BlockPos> extra = new java.util.HashSet<>();
 		for (LayoutPlan.FeatureSpec spec : plan.features()) {
 			extra.addAll(spec.clearance(config));
 		}
 		ClearanceScanner.ScanResult scan = ClearanceScanner.scan(world, plan.previewSegments(config.designSpeedKmh()), extra, config, true);
-		if (scan.hasBlocking()) {
+		if (scan.hasBlocking(force)) {
 			player.sendMessage(Text.translatable("message.railwayvehicleaddon.place_blocked",
 					scan.count(BlockCategory.BLOCKED_FLUID), scan.count(BlockCategory.BLOCKED_HARD),
 					scan.count(BlockCategory.UNLOADED)), false);
-			return;
+			return false;
 		}
 
-		int removed = clearBlocks(world, player, scan.blocks());
+		int removed = clearBlocks(world, player, scan.blocks(), force);
 
 		// 区間の分割(線路の途中からの分岐・渡り線)
 		List<Long> splitRemoved = new ArrayList<>();
@@ -142,7 +152,7 @@ public final class TrackManager {
 			TrackNetwork.SplitResult result = network.splitSegment(split.segmentId(), split.s());
 			if (result == null) {
 				fail(player, "snap_invalid");
-				return;
+				return false;
 			}
 			splitIds[i] = result.nodeId();
 			splitRemoved.add(split.segmentId());
@@ -162,7 +172,8 @@ public final class TrackManager {
 		for (LayoutPlan.Edge edge : plan.edges()) {
 			RoutePlanner.PlannedSegment geometry = edge.geometry();
 			TrackSegment segment = new TrackSegment(network.allocateId(), resolve(edge.a(), createdIds, splitIds),
-					resolve(edge.b(), createdIds, splitIds), geometry.plan(), geometry.profile(), config.designSpeedKmh());
+					resolve(edge.b(), createdIds, splitIds), geometry.plan(), geometry.profile(), config.designSpeedKmh(),
+					ballast.id(), input.electrify());
 			network.putSegment(segment);
 			edgeSegments.add(segment);
 		}
@@ -205,6 +216,7 @@ public final class TrackManager {
 		}
 		player.sendMessage(Text.translatable("message.railwayvehicleaddon.placed",
 				newSegments.size() - 2 * splitIds.length, String.format("%.1f", plan.totalLength()), removed), false);
+		return true;
 	}
 
 	private static long resolve(NodeRef ref, long[] createdIds, long[] splitIds) {
@@ -214,30 +226,56 @@ public final class TrackManager {
 		return ref.isSplit() ? splitIds[ref.splitIndex()] : createdIds[ref.newIndex()];
 	}
 
-	/** 分岐器の開通方向を切り替える。 */
+	/** 測量ツールで分岐器の開通方向を切り替える。 */
 	public static void toggleSwitch(ServerPlayerEntity player, long nodeId) {
 		if (!player.getMainHandStack().isOf(ModItems.SURVEY_TOOL)) {
 			return;
 		}
 		ServerWorld world = (ServerWorld) player.getEntityWorld();
-		TrackNetwork network = network(world);
-		TrackNode node = network.node(nodeId);
+		TrackNode node = network(world).node(nodeId);
 		if (node == null || player.getEyePos().squaredDistanceTo(node.x(), node.y(), node.z()) > REMOVE_REACH * REMOVE_REACH) {
 			return;
 		}
+		cycleSwitch(world, nodeId);
+	}
+
+	/** 分岐器を次の分岐側へ切り替える(測量ツール・転てつてこ)。 */
+	public static boolean cycleSwitch(ServerWorld world, long nodeId) {
+		TrackNetwork network = network(world);
 		long active = network.cycleSwitch(nodeId);
 		if (active < 0) {
-			return;
+			return false;
 		}
 		markDirty(world);
 		broadcast(world, new TrackSyncPayload(false, RailwayConfig.get().values(), List.of(), List.of(), Map.of(nodeId, active)));
+		return true;
+	}
+
+	/**
+	 * 分岐器を分岐側のindex番目(0始まり。範囲外は最後)へ開通させる(転てつ機)。
+	 * 分岐側の順序は、元の線路(分岐元が線路の途中の場合)または最初に作った分岐が0番目。
+	 */
+	public static boolean setSwitchBranch(ServerWorld world, long nodeId, int index) {
+		TrackNetwork network = network(world);
+		List<Long> branches = network.switchBranches(nodeId);
+		if (branches.isEmpty()) {
+			return false;
+		}
+		long segment = branches.get(Math.max(0, Math.min(branches.size() - 1, index)));
+		if (network.activeBranch(nodeId) == segment) {
+			return true;
+		}
+		network.setSwitchState(nodeId, segment);
+		markDirty(world);
+		broadcast(world, new TrackSyncPayload(false, RailwayConfig.get().values(), List.of(), List.of(), Map.of(nodeId, segment)));
+		return true;
 	}
 
 	/**
 	 * 建築限界内のブロックを撤去する。上から順に消して、砂利などの落下が
 	 * 撤去中の範囲に連鎖しにくいようにする。
 	 */
-	private static int clearBlocks(ServerWorld world, ServerPlayerEntity player, Map<BlockPos, BlockCategory> blocks) {
+	private static int clearBlocks(ServerWorld world, ServerPlayerEntity player, Map<BlockPos, BlockCategory> blocks, boolean force) {
 		String dropMode = RailwayConfig.get().drop_removed_blocks;
 		boolean creative = player.isCreative();
 		List<Map.Entry<BlockPos, BlockCategory>> ordered = new ArrayList<>(blocks.entrySet());
@@ -245,7 +283,8 @@ public final class TrackManager {
 		int count = 0;
 		for (Map.Entry<BlockPos, BlockCategory> entry : ordered) {
 			BlockCategory category = entry.getValue();
-			if (category.blocksPlacement()) {
+			// 強制置換では流体・硬いブロックも消す(未ロードの範囲は書き換えられないので除く)
+			if (category == BlockCategory.UNLOADED || (category.blocksPlacement() && !force)) {
 				continue;
 			}
 			BlockPos pos = entry.getKey();
@@ -321,38 +360,117 @@ public final class TrackManager {
 				removedSegments.size(), removedFeatures.size()), true);
 	}
 
-	// ------------------------------------------------------------------ 設備の動作
-
-	/** 転車台・遷車台を次の停止位置へ動かし始める。 */
-	public static void featureAction(ServerPlayerEntity player, long featureId, int step) {
+	/**
+	 * 電化モード: 選んだ区間の電化を切り替える。選んだ区間に1つでも未電化があれば全部を電化し、
+	 * すべて電化済みなら全部の架線を撤去する。設備(転車台・遷車台の桁)は対象外。
+	 */
+	public static void electrify(ServerPlayerEntity player, List<Long> segmentIds) {
 		if (!player.getMainHandStack().isOf(ModItems.SURVEY_TOOL)) {
 			return;
 		}
 		ServerWorld world = (ServerWorld) player.getEntityWorld();
 		TrackNetwork network = network(world);
-		if (!(network.feature(featureId) instanceof MovingDeckFeature deck)) {
+		Vec3d eye = player.getEyePos();
+		List<TrackSegment> targets = new ArrayList<>();
+		for (long id : segmentIds) {
+			TrackSegment segment = network.segment(id);
+			if (segment != null && network.featureOfSegment(id) == null && withinReach(segment, eye)) {
+				targets.add(segment);
+			}
+		}
+		if (targets.isEmpty()) {
 			return;
 		}
-		if (player.getEyePos().squaredDistanceTo(deck.center()) > Math.pow(REMOVE_REACH + deck.radius(), 2)) {
+		boolean value = targets.stream().anyMatch(s -> !s.electrified());
+		List<TrackSegment> changed = new ArrayList<>();
+		for (TrackSegment segment : targets) {
+			TrackSegment updated = segment.withElectrified(value);
+			network.putSegment(updated);
+			changed.add(updated);
+		}
+		markDirty(world);
+		broadcast(world, new TrackSyncPayload(false, RailwayConfig.get().values(), List.of(), changed, Map.of()));
+		player.sendMessage(Text.translatable(value ? "message.railwayvehicleaddon.electrified" : "message.railwayvehicleaddon.deelectrified",
+				changed.size()), true);
+	}
+
+	// ------------------------------------------------------------------ 設備の動作
+
+	/** 測量ツールで転車台・遷車台を次(前)の停止位置へ動かす。 */
+	public static void featureAction(ServerPlayerEntity player, long featureId, int step) {
+		if (!player.getMainHandStack().isOf(ModItems.SURVEY_TOOL)) {
 			return;
+		}
+		ServerWorld world = (ServerWorld) player.getEntityWorld();
+		TrackFeature feature = network(world).feature(featureId);
+		if (feature == null || player.getEyePos().squaredDistanceTo(feature.center()) > Math.pow(REMOVE_REACH + feature.radius(), 2)) {
+			return;
+		}
+		moveDeck(world, featureId, deck -> deck.selectNext(step), text -> player.sendMessage(text, true));
+	}
+
+	/**
+	 * 転車台・遷車台を動かし始める(測量ツール・操作盤・制御器の共通処理)。動作中や、桁と周りの
+	 * 線路にまたがっている車両がある場合は動かさず、feedbackへ理由を返す(nullなら通知しない)。
+	 *
+	 * @param select 停止位置を選ぶ処理(selectNext / selectStop)
+	 */
+	public static boolean moveDeck(ServerWorld world, long featureId, java.util.function.Consumer<MovingDeckFeature> select,
+								   java.util.function.Consumer<Text> feedback) {
+		TrackNetwork network = network(world);
+		if (!(network.feature(featureId) instanceof MovingDeckFeature deck)) {
+			return false;
 		}
 		if (deck.isMoving()) {
-			player.sendMessage(Text.translatable("message.railwayvehicleaddon.deck_busy"), true);
-			return;
+			if (feedback != null) {
+				feedback.accept(Text.translatable("message.railwayvehicleaddon.deck_busy"));
+			}
+			return false;
 		}
-		// 桁と周りの線路にまたがっている車両があれば動かさない
 		Box area = new Box(deck.center(), deck.center()).expand(deck.radius() + 24.0, 16.0, deck.radius() + 24.0);
 		for (RailVehicleEntity vehicle : world.getEntitiesByClass(RailVehicleEntity.class, area, e -> true)) {
 			if (vehicle.straddles(network, deck.deckSegment())) {
-				player.sendMessage(Text.translatable("message.railwayvehicleaddon.deck_straddled"), true);
-				return;
+				if (feedback != null) {
+					feedback.accept(Text.translatable("message.railwayvehicleaddon.deck_straddled"));
+				}
+				return false;
 			}
 		}
-		deck.selectNext(step);
+		select.accept(deck);
 		if (deck.isMoving()) {
 			deck.apply(network);
 			sendFeatureState(world, network, deck);
 		}
+		return true;
+	}
+
+	/** 区間に車両が載っているか(在線検知器)。 */
+	public static boolean isOccupied(ServerWorld world, long segmentId) {
+		TrackNetwork network = network(world);
+		TrackSegment segment = network.segment(segmentId);
+		if (segment == null) {
+			return false;
+		}
+		double minX = Double.MAX_VALUE, minY = Double.MAX_VALUE, minZ = Double.MAX_VALUE;
+		double maxX = -Double.MAX_VALUE, maxY = -Double.MAX_VALUE, maxZ = -Double.MAX_VALUE;
+		double length = segment.length();
+		for (int i = 0; i <= 16; i++) {
+			TrackPoint p = segment.sample(length * i / 16.0);
+			minX = Math.min(minX, p.x());
+			minY = Math.min(minY, p.y());
+			minZ = Math.min(minZ, p.z());
+			maxX = Math.max(maxX, p.x());
+			maxY = Math.max(maxY, p.y());
+			maxZ = Math.max(maxZ, p.z());
+		}
+		// 車体の長さ分(台車が区間に掛かっている車両の中心は区間の外にあり得る)広げて探す
+		Box area = new Box(minX, minY, minZ, maxX, maxY, maxZ).expand(24.0, 4.0, 24.0);
+		for (RailVehicleEntity vehicle : world.getEntitiesByClass(RailVehicleEntity.class, area, e -> true)) {
+			if (vehicle.occupies(network, segmentId)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** 毎tick: 動いている設備を進め、変化をクライアントへ送る。 */

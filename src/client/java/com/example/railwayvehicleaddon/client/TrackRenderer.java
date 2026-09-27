@@ -5,6 +5,7 @@ import com.example.railwayvehicleaddon.RailwayVehicleAddon;
 import com.example.railwayvehicleaddon.entity.RailVehicleEntity;
 import com.example.railwayvehicleaddon.track.TrackNetwork;
 import com.example.railwayvehicleaddon.track.TrackPoint;
+import com.example.railwayvehicleaddon.track.BallastType;
 import com.example.railwayvehicleaddon.track.TrackSegment;
 import com.example.railwayvehicleaddon.track.feature.MovingDeckFeature;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
@@ -39,20 +40,23 @@ import java.util.Map;
  * 地面の形はメッシュ作成時に調べるため、周囲のブロックの変化は定期的な作り直しで反映する。
  */
 public final class TrackRenderer {
-	private static final Identifier TEXTURE = Identifier.of(RailwayVehicleAddon.MOD_ID, "textures/track/track.png");
-	private static final double SLEEPER_TOP = 0.10;
+	static final Identifier TEXTURE = Identifier.of(RailwayVehicleAddon.MOD_ID, "textures/track/track.png");
+	static final double SLEEPER_TOP = 0.10;
 	private static final double BALLAST_TOP = 0.05;
-	private static final double RAIL_HALF_WIDTH = 0.05;
-	private static final double SLEEPER_SPACING = 0.6;
-	private static final double SLEEPER_HALF_LENGTH = 0.12;
-	private static final double SLEEPER_OVERHANG = 0.35;
+	static final double RAIL_HALF_WIDTH = 0.05;
+	static final double SLEEPER_SPACING = 0.6;
+	static final double SLEEPER_HALF_LENGTH = 0.12;
+	static final double SLEEPER_OVERHANG = 0.35;
 	private static final double BALLAST_SHOULDER = 0.2;
 	/** 法面を地面まで下ろす最大の深さ。これより深い(橋など)ときは薄い道床にする */
 	private static final double BALLAST_MAX_DEPTH = 3.0;
 	private static final double BALLAST_BRIDGE_DEPTH = 0.3;
 	private static final double RAIL_STEP = 0.5;
-	/** 転車台・遷車台の桁の深さ */
-	private static final double DECK_DEPTH = 0.6;
+	/** トロリ線の高さ(線路基面から)。建築限界(既定4.0)の内側に収める */
+	private static final double WIRE_HEIGHT = 3.7;
+	/** 架線柱の間隔と、線路中心からの距離(建築限界の片側幅1.5の内側、車体幅の外側) */
+	private static final double MAST_SPACING = 12.0;
+	private static final double MAST_OFFSET = 1.42;
 	/** この距離より遠い区間は描かない(ブロック) */
 	private static final double MAX_DISTANCE = 256.0;
 	/** 近くのメッシュを作り直す間隔(tick)と範囲。地面の変化を反映するため */
@@ -61,10 +65,11 @@ public final class TrackRenderer {
 	private static final double REBUILD_RANGE = 96.0;
 	private static final int MAX_REBUILDS_PER_FRAME = 2;
 
-	/** UV範囲: レール=左1/3、枕木=中央1/3、バラスト=右1/3 */
-	private static final float[] RAIL_UV = {0.0f, 0.0f, 1.0f / 3.0f, 1.0f};
-	private static final float[] SLEEPER_UV = {1.0f / 3.0f, 0.0f, 2.0f / 3.0f, 1.0f};
-	private static final float[] BALLAST_UV = {2.0f / 3.0f, 0.0f, 1.0f, 1.0f};
+	/** UV範囲: レール / 枕木 / 砕石 / 土(テクスチャを横に4等分) */
+	static final float[] RAIL_UV = {0.0f, 0.0f, 0.25f, 1.0f};
+	static final float[] SLEEPER_UV = {0.25f, 0.0f, 0.5f, 1.0f};
+	private static final float[] GRAVEL_UV = {0.5f, 0.0f, 0.75f, 1.0f};
+	private static final float[] DIRT_UV = {0.75f, 0.0f, 1.0f, 1.0f};
 
 	private static final Map<Long, Mesh> CACHE = new HashMap<>();
 	private static float cachedGauge = Float.NaN;
@@ -180,15 +185,113 @@ public final class TrackRenderer {
 		return new Vec3d(p.x() + outward.x, topEdge.y - depth, p.z() + outward.z);
 	}
 
+	/**
+	 * 分岐器で開通していない分岐側の区間について、分岐器から他の分岐と線路が重ならなくなる
+	 * (中心線の間隔が軌間以上になる)までの距離。この範囲のレールは描かないので、分岐部では
+	 * 開通している方向のレールだけがつながって見える。開通していれば0。
+	 */
+	private static double turnoutGap(TrackNetwork network, TrackSegment segment, long nodeId, float gauge) {
+		List<Long> branches = network.switchBranches(nodeId);
+		if (branches.isEmpty() || !branches.contains(segment.id()) || network.activeBranch(nodeId) == segment.id()) {
+			return 0.0;
+		}
+		List<double[]> others = new ArrayList<>();
+		for (long id : branches) {
+			TrackSegment other = network.segment(id);
+			if (other == null || id == segment.id()) {
+				continue;
+			}
+			boolean fromA = other.nodeA() == nodeId;
+			double len = other.length();
+			for (double d = 0.0; d <= Math.min(len, 48.0); d += 0.5) {
+				TrackPoint p = other.sample(fromA ? d : len - d);
+				others.add(new double[]{p.x(), p.z()});
+			}
+		}
+		boolean fromA = segment.nodeA() == nodeId;
+		double length = segment.length();
+		double limit = Math.min(length * 0.5, 40.0);
+		for (double d = 0.5; d <= limit; d += 0.5) {
+			TrackPoint p = segment.sample(fromA ? d : length - d);
+			double min = Double.MAX_VALUE;
+			for (double[] o : others) {
+				min = Math.min(min, Math.hypot(o[0] - p.x(), o[1] - p.z()));
+			}
+			if (min >= gauge) {
+				return d;
+			}
+		}
+		return limit;
+	}
+
+	/** 直方体(中心c、水平の2軸と高さの範囲)。 */
+	private static void column(MeshBuilder builder, Vec3d c, double ax, double az, double half, double y0, double y1, float[] uv) {
+		double bx = az;
+		double bz = -ax;
+		Vec3d[] bottom = new Vec3d[4];
+		Vec3d[] top = new Vec3d[4];
+		double[][] k = {{-1, -1}, {1, -1}, {1, 1}, {-1, 1}};
+		for (int i = 0; i < 4; i++) {
+			double x = c.x + (ax * k[i][0] + bx * k[i][1]) * half;
+			double z = c.z + (az * k[i][0] + bz * k[i][1]) * half;
+			bottom[i] = new Vec3d(x, y0, z);
+			top[i] = new Vec3d(x, y1, z);
+		}
+		builder.quad(top[0], top[1], top[2], top[3], uv, c);
+		for (int i = 0; i < 4; i++) {
+			int n = (i + 1) % 4;
+			builder.quad(bottom[n], bottom[i], top[i], top[n], uv, c);
+		}
+	}
+
+	/** aからbへの細い棒(水平・垂直の2枚の帯で、どの向きから見ても線として見える)。 */
+	private static void wire(MeshBuilder builder, Vec3d a, Vec3d b, double half) {
+		Vec3d d = b.subtract(a);
+		double len = Math.hypot(d.x, d.z);
+		double sx = len > 1.0e-6 ? -d.z / len * half : half;
+		double sz = len > 1.0e-6 ? d.x / len * half : 0.0;
+		builder.quad(a.add(-sx, 0.0, -sz), a.add(sx, 0.0, sz), b.add(sx, 0.0, sz), b.add(-sx, 0.0, -sz), RAIL_UV, a);
+		builder.quad(a.add(0.0, -half, 0.0), a.add(0.0, half, 0.0), b.add(0.0, half, 0.0), b.add(0.0, -half, 0.0), RAIL_UV, a);
+	}
+
+	/**
+	 * 架線(電化区間): 線路中心の真上にトロリ線を張り、区間に沿って一定間隔で片側に架線柱と
+	 * 腕金(カンチレバー)を立てる。架線柱は建築限界の内側(車両に当たらない位置)に置く。
+	 */
+	private static void buildCatenary(MeshBuilder builder, TrackNetwork network, TrackSegment segment, TrackPoint[] samples, int steps) {
+		for (int i = 1; i <= steps; i++) {
+			TrackPoint a = samples[i - 1];
+			TrackPoint b = samples[i];
+			wire(builder, new Vec3d(a.x(), a.y() + WIRE_HEIGHT, a.z()), new Vec3d(b.x(), b.y() + WIRE_HEIGHT, b.z()), 0.02);
+		}
+		double length = segment.length();
+		int masts = Math.max(1, (int) Math.ceil(length / MAST_SPACING));
+		for (int k = 0; k < masts; k++) {
+			double s = (k + 0.5) * length / masts;
+			TrackPoint p = network.sample(segment, s);
+			Vec3d center = new Vec3d(p.x(), p.y(), p.z());
+			Vec3d base = center.add(p.lateralX() * MAST_OFFSET, 0.0, p.lateralZ() * MAST_OFFSET);
+			column(builder, base, p.dirX(), p.dirZ(), 0.07, p.y(), p.y() + WIRE_HEIGHT + 0.28, RAIL_UV);
+			// 腕金: 架線柱の上部から線路中心の上へ
+			Vec3d armStart = new Vec3d(base.x, p.y() + WIRE_HEIGHT + 0.25, base.z);
+			Vec3d armEnd = new Vec3d(center.x, p.y() + WIRE_HEIGHT + 0.25, center.z);
+			wire(builder, armStart, armEnd, 0.035);
+			// ハンガー: 腕金からトロリ線へ
+			wire(builder, armEnd, new Vec3d(center.x, p.y() + WIRE_HEIGHT, center.z), 0.015);
+		}
+	}
+
 	private static Mesh buildMesh(ClientWorld world, TrackNetwork network, TrackSegment segment, float gauge) {
 		MeshBuilder builder = new MeshBuilder();
 		double length = segment.length();
 		double half = gauge / 2.0;
 		double sleeperHalfLat = half + SLEEPER_OVERHANG;
 		double ballastHalf = sleeperHalfLat + BALLAST_SHOULDER;
-
-		// 転車台・遷車台の桁はバラストの代わりに鋼製の桁を描く
-		boolean deck = network.featureOfSegment(segment.id()) instanceof MovingDeckFeature d && d.deckSegment() == segment.id();
+		BallastType ballast = segment.ballastType();
+		float[] ballastUv = ballast == BallastType.DIRT ? DIRT_UV : GRAVEL_UV;
+		boolean hasBallast = ballast != BallastType.NONE;
+		double gapA = turnoutGap(network, segment, segment.nodeA(), gauge);
+		double gapB = turnoutGap(network, segment, segment.nodeB(), gauge);
 
 		int steps = Math.max(1, (int) Math.ceil(length / RAIL_STEP));
 		TrackPoint[] samples = new TrackPoint[steps + 1];
@@ -199,12 +302,7 @@ public final class TrackRenderer {
 		for (int i = 0; i <= steps; i++) {
 			TrackPoint p = network.sample(segment, length * i / steps);
 			samples[i] = p;
-			if (deck) {
-				topL[i] = crossSection(p, sleeperHalfLat, 0.0);
-				topR[i] = crossSection(p, -sleeperHalfLat, 0.0);
-				footL[i] = crossSection(p, sleeperHalfLat - 0.3, -DECK_DEPTH);
-				footR[i] = crossSection(p, -sleeperHalfLat + 0.3, -DECK_DEPTH);
-			} else {
+			if (hasBallast) {
 				topL[i] = crossSection(p, ballastHalf, BALLAST_TOP);
 				topR[i] = crossSection(p, -ballastHalf, BALLAST_TOP);
 				footL[i] = ballastFoot(world, p, topL[i], 1.0, ballastHalf, builder);
@@ -216,29 +314,39 @@ public final class TrackRenderer {
 			TrackPoint prev = samples[i - 1];
 			TrackPoint cur = samples[i];
 			Vec3d lightAt = new Vec3d(cur.x(), cur.y(), cur.z());
-			// レール(左右それぞれ、上面と両側面)
-			for (double side : new double[]{-half, half}) {
-				double in = side - RAIL_HALF_WIDTH;
-				double out = side + RAIL_HALF_WIDTH;
-				builder.quad(crossSection(prev, in, RailVehicleEntity.RAIL_TOP), crossSection(prev, out, RailVehicleEntity.RAIL_TOP),
-						crossSection(cur, out, RailVehicleEntity.RAIL_TOP), crossSection(cur, in, RailVehicleEntity.RAIL_TOP), RAIL_UV, lightAt);
-				builder.quad(crossSection(prev, out, SLEEPER_TOP), crossSection(cur, out, SLEEPER_TOP),
-						crossSection(cur, out, RailVehicleEntity.RAIL_TOP), crossSection(prev, out, RailVehicleEntity.RAIL_TOP), RAIL_UV, lightAt);
-				builder.quad(crossSection(cur, in, SLEEPER_TOP), crossSection(prev, in, SLEEPER_TOP),
-						crossSection(prev, in, RailVehicleEntity.RAIL_TOP), crossSection(cur, in, RailVehicleEntity.RAIL_TOP), RAIL_UV, lightAt);
+			double s0 = length * (i - 1) / steps;
+			double s1 = length * i / steps;
+			// レール(左右それぞれ、上面と両側面)。分岐器で開通していない側の分岐部は描かない
+			if (s0 >= gapA - 1.0e-6 && s1 <= length - gapB + 1.0e-6) {
+				for (double side : new double[]{-half, half}) {
+					double in = side - RAIL_HALF_WIDTH;
+					double out = side + RAIL_HALF_WIDTH;
+					builder.quad(crossSection(prev, in, RailVehicleEntity.RAIL_TOP), crossSection(prev, out, RailVehicleEntity.RAIL_TOP),
+							crossSection(cur, out, RailVehicleEntity.RAIL_TOP), crossSection(cur, in, RailVehicleEntity.RAIL_TOP), RAIL_UV, lightAt);
+					builder.quad(crossSection(prev, out, SLEEPER_TOP), crossSection(cur, out, SLEEPER_TOP),
+							crossSection(cur, out, RailVehicleEntity.RAIL_TOP), crossSection(prev, out, RailVehicleEntity.RAIL_TOP), RAIL_UV, lightAt);
+					builder.quad(crossSection(cur, in, SLEEPER_TOP), crossSection(prev, in, SLEEPER_TOP),
+							crossSection(prev, in, RailVehicleEntity.RAIL_TOP), crossSection(cur, in, RailVehicleEntity.RAIL_TOP), RAIL_UV, lightAt);
+				}
 			}
-			// バラスト(上面・左右の法面・底面)。桁なら同じ形で鋼製の桁
-			float[] bedUv = deck ? RAIL_UV : BALLAST_UV;
-			builder.quad(topR[i - 1], topL[i - 1], topL[i], topR[i], bedUv, lightAt);
-			builder.quad(footL[i - 1], footL[i], topL[i], topL[i - 1], bedUv, lightAt);
-			builder.quad(footR[i], footR[i - 1], topR[i - 1], topR[i], bedUv, lightAt);
-			builder.quad(footL[i], footL[i - 1], footR[i - 1], footR[i], bedUv, lightAt);
+			// 道床(上面・左右の法面・底面)
+			if (hasBallast) {
+				builder.quad(topR[i - 1], topL[i - 1], topL[i], topR[i], ballastUv, lightAt);
+				builder.quad(footL[i - 1], footL[i], topL[i], topL[i - 1], ballastUv, lightAt);
+				builder.quad(footR[i], footR[i - 1], topR[i - 1], topR[i], ballastUv, lightAt);
+				builder.quad(footL[i], footL[i - 1], footR[i - 1], footR[i], ballastUv, lightAt);
+			}
 		}
-		// バラストの端面(区間の両端。接続先がある所では隠れる)
-		float[] endUv = deck ? RAIL_UV : BALLAST_UV;
-		builder.quad(footR[0], footL[0], topL[0], topR[0], endUv, new Vec3d(samples[0].x(), samples[0].y(), samples[0].z()));
-		builder.quad(footL[steps], footR[steps], topR[steps], topL[steps], endUv,
-				new Vec3d(samples[steps].x(), samples[steps].y(), samples[steps].z()));
+		if (hasBallast) {
+			// 道床の端面(区間の両端。接続先がある所では隠れる)
+			builder.quad(footR[0], footL[0], topL[0], topR[0], ballastUv, new Vec3d(samples[0].x(), samples[0].y(), samples[0].z()));
+			builder.quad(footL[steps], footR[steps], topR[steps], topL[steps], ballastUv,
+					new Vec3d(samples[steps].x(), samples[steps].y(), samples[steps].z()));
+		}
+
+		if (segment.electrified()) {
+			buildCatenary(builder, network, segment, samples, steps);
+		}
 
 		// 枕木(上面と4側面)
 		int sleepers = Math.max(1, (int) Math.floor(length / SLEEPER_SPACING));
@@ -294,6 +402,10 @@ public final class TrackRenderer {
 		for (long id : network.segmentsNear(camera.x, camera.z, radius)) {
 			TrackSegment segment = network.segment(id);
 			if (segment == null) {
+				continue;
+			}
+			// 転車台・遷車台の桁は、動作を滑らかに見せるためFeatureRendererが補間して描く
+			if (network.featureOfSegment(id) instanceof MovingDeckFeature deck && deck.deckSegment() == id) {
 				continue;
 			}
 			Mesh mesh = CACHE.get(id);

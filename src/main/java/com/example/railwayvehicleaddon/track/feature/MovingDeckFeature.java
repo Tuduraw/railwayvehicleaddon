@@ -64,10 +64,15 @@ public abstract class MovingDeckFeature implements TrackFeature {
 	}
 
 	/** 桁のA端の位置(param時)。 */
-	protected abstract Vec3d endA(double param);
+	public abstract Vec3d endA(double param);
 
 	/** 桁のB端の位置(param時)。 */
-	protected abstract Vec3d endB(double param);
+	public abstract Vec3d endB(double param);
+
+	/** 描画用: 2つの位置の間をtで補間する(転車台は角度として近い向きに補間)。 */
+	public double interpolate(double from, double to, double t) {
+		return from - difference(from, to) * t;
+	}
 
 	/** 1tickの移動量。 */
 	protected abstract double speed();
@@ -154,6 +159,13 @@ public abstract class MovingDeckFeature implements TrackFeature {
 		}
 		int size = this.stops.size();
 		this.target = ((this.target + step) % size + size) % size;
+	}
+
+	/** 指定した停止位置(0始まり、範囲外は丸める)へ動かし始める。 */
+	public void selectStop(int index) {
+		if (!this.stops.isEmpty()) {
+			this.target = Math.max(0, Math.min(this.stops.size() - 1, index));
+		}
 	}
 
 	@Override

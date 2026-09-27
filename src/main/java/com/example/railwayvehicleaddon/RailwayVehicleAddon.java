@@ -1,11 +1,16 @@
 package com.example.railwayvehicleaddon;
 
 import com.example.railwayvehicleaddon.entity.RailVehicleEntity;
+import com.example.railwayvehicleaddon.block.DeviceLinks;
+import com.example.railwayvehicleaddon.block.ModBlocks;
 import com.example.railwayvehicleaddon.item.ModItems;
+import com.example.railwayvehicleaddon.network.ElectrifyPayload;
+import com.example.railwayvehicleaddon.network.LinkDevicePayload;
 import com.example.railwayvehicleaddon.survey.SurveyModes;
 import com.example.railwayvehicleaddon.network.FeatureActionPayload;
 import com.example.railwayvehicleaddon.network.FeatureSyncPayload;
 import com.example.railwayvehicleaddon.network.PlaceLayoutPayload;
+import com.example.railwayvehicleaddon.network.PlaceResultPayload;
 import com.example.railwayvehicleaddon.network.RemoveSegmentsPayload;
 import com.example.railwayvehicleaddon.network.ToggleSwitchPayload;
 import com.example.railwayvehicleaddon.network.TrackRemovePayload;
@@ -47,6 +52,7 @@ public class RailwayVehicleAddon implements ModInitializer {
 		RAIL_VEHICLE = ModEntityTypes.registerAddonVehicleType(
 				Identifier.of(MOD_ID, "rail_vehicle"), RailVehicleEntity::new, 2.0f, 2.0f);
 
+		ModBlocks.register();
 		ModItems.register();
 
 		ResourceManagerHelper.get(ResourceType.SERVER_DATA).registerReloadListener(new RailVehicleParamsLoader());
@@ -58,7 +64,10 @@ public class RailwayVehicleAddon implements ModInitializer {
 		PayloadTypeRegistry.playC2S().register(RemoveSegmentsPayload.ID, RemoveSegmentsPayload.CODEC);
 		PayloadTypeRegistry.playC2S().register(ToggleSwitchPayload.ID, ToggleSwitchPayload.CODEC);
 		PayloadTypeRegistry.playC2S().register(FeatureActionPayload.ID, FeatureActionPayload.CODEC);
+		PayloadTypeRegistry.playC2S().register(LinkDevicePayload.ID, LinkDevicePayload.CODEC);
+		PayloadTypeRegistry.playC2S().register(ElectrifyPayload.ID, ElectrifyPayload.CODEC);
 		PayloadTypeRegistry.playS2C().register(FeatureSyncPayload.ID, FeatureSyncPayload.CODEC);
+		PayloadTypeRegistry.playS2C().register(PlaceResultPayload.ID, PlaceResultPayload.CODEC);
 		PayloadTypeRegistry.playS2C().register(TrackSyncPayload.ID, TrackSyncPayload.CODEC);
 		PayloadTypeRegistry.playS2C().register(TrackRemovePayload.ID, TrackRemovePayload.CODEC);
 
@@ -70,6 +79,12 @@ public class RailwayVehicleAddon implements ModInitializer {
 				context.server().execute(() -> TrackManager.toggleSwitch(context.player(), payload.nodeId())));
 		ServerPlayNetworking.registerGlobalReceiver(FeatureActionPayload.ID, (payload, context) ->
 				context.server().execute(() -> TrackManager.featureAction(context.player(), payload.featureId(), payload.step())));
+
+		ServerPlayNetworking.registerGlobalReceiver(LinkDevicePayload.ID, (payload, context) ->
+				context.server().execute(() -> DeviceLinks.linkFromTool(context.player(), payload.pos(), payload.targetId())));
+
+		ServerPlayNetworking.registerGlobalReceiver(ElectrifyPayload.ID, (payload, context) ->
+				context.server().execute(() -> TrackManager.electrify(context.player(), payload.segmentIds())));
 
 		// 転車台・遷車台の動作
 		ServerTickEvents.END_WORLD_TICK.register(TrackManager::tickFeatures);
