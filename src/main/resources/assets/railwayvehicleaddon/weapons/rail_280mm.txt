@@ -1,0 +1,23 @@
+; rail_280mm.txt - 列車砲(sample_railway_gun)の主砲。テスト用
+; 長射程・単発。着弾予測距離をHUDに表示する(DisplayMortarDistance)
+DisplayName = 280mm Gun
+Type = MachineGun2
+Power = 60
+Acceleration = 4.0
+Gravity = 0.04
+Explosion = 6
+; 地形を壊さない(テストしやすさ優先)。壊したい場合はこの行を消すか、正の値にする
+ExplosionBlock = 0
+Delay = 0
+Round = 1
+ReloadTime = 200
+; 補給の設定(説明はrail_76mm.txtを参照)
+MaxAmmo = 8
+SuppliedNum = 2
+Item = 4, iron_ingot
+Item = 4, gunpowder
+; 車体の揺れは0(理由はrail_76mm.txtを参照)。砲身の後退は機体側の recoil_distance で表現する
+Recoil = 0
+DisplayMortarDistance = true
+Sound = rail_heavy_gun
+SoundVolume = 8.0

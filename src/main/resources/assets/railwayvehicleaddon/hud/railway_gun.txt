@@ -1,0 +1,33 @@
+; railway_gun.txt - 列車砲(sample_railway_gun)用HUD。前提MODのHUDスクリプトとして動作する
+; 運転席の無い砲車のため、全座席で同じ表示。着弾予測距離は武器のDisplayMortarDistanceにより
+; 前提MOD側が自動で表示する(このスクリプトでは描かない)
+; 座標は画面中央が原点。パネルは画面右下に寄せる(右端・下端から6ピクセル)
+
+; 照準(画面中央)
+Color = #C0FFFFFF
+DrawRect = -9, 0, 6, 1
+DrawRect = 4, 0, 6, 1
+DrawRect = 0, -9, 1, 6
+DrawRect = 0, 4, 1, 6
+
+Color = #A0101418
+DrawRect = width / 2 - 102, height / 2 - 76, 96, 70
+Color = #FFE8ECF0
+DrawString = width / 2 - 94, height / 2 - 70, "%.0f km/h", speed_kbh
+Color = #FFFFD60A
+DrawString = width / 2 - 94, height / 2 - 56, "%s", wpn_name
+Color = #FFE8ECF0
+DrawString = width / 2 - 94, height / 2 - 44, "AMMO %.0f/%.0f", wpn_ammo, wpn_rm_ammo
+; 装填の残り(ReloadTime = 200tick に合わせたバー)
+Color = #FF373737
+DrawRect = width / 2 - 94, height / 2 - 30, 80, 6
+If = reloading
+Color = #FFFF9F0A
+DrawRect = width / 2 - 94, height / 2 - 30, 80 - 80 * reload_time / 200, 6
+DrawString = width / 2 - 94, height / 2 - 20, "RELOAD %.1fs", reload_time / 20
+EndIf
+If = reloading < 0.5
+Color = #FF4CD964
+DrawRect = width / 2 - 94, height / 2 - 30, 80, 6
+DrawString = width / 2 - 94, height / 2 - 20, "READY"
+EndIf

@@ -1,0 +1,25 @@
+; rail_76mm.txt - 装甲軌道車(sample_armored_railcar)の主砲。テスト用
+; 前提MODの武器設定ファイル(Readme_Weapon.md)。キーの大文字・小文字は区別されない
+DisplayName = 76mm Gun
+Type = MachineGun2
+Power = 20
+Acceleration = 4.0
+Gravity = 0.03
+Explosion = 2
+; 地形を壊さない(テストしやすさ優先)。壊したい場合はこの行を消すか、正の値にする
+ExplosionBlock = 0
+Delay = 40
+Round = 10
+ReloadTime = 100
+; 補給(車両メニューの補給ボタン)。前提MODは Round(弾倉)と SuppliedNum(1回の補給量)の両方が
+; 1以上の武器だけを補給の対象として表示する。MaxAmmo は弾倉を含めた総弾数(省略すると無限で、
+; 補給の意味がなくなる)。Item は1回の補給に必要なアイテム(iron_ingot・gunpowder・redstoneのみ)
+MaxAmmo = 40
+SuppliedNum = 10
+Item = 2, iron_ingot
+Item = 2, gunpowder
+; 車体の揺れ(Recoil)は0にしておく。鉄道車両は線路の傾きで毎tick姿勢を決め直すため、
+; 揺れを入れても正しく表現されない(砲身の後退は機体側の weapon_parts の recoil_distance で表現する)
+Recoil = 0
+Sound = rail_cannon
+SoundVolume = 4.0

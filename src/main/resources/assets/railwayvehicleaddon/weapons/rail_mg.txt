@@ -1,0 +1,19 @@
+; rail_mg.txt - 装甲軌道車(sample_armored_railcar)の後部機銃。テスト用
+DisplayName = Rear MG
+Type = MachineGun1
+Power = 3
+Acceleration = 4.5
+Gravity = 0.01
+Accuracy = 1.5
+Delay = 3
+Round = 100
+ReloadTime = 60
+; 補給の設定(説明はrail_76mm.txtを参照)
+MaxAmmo = 500
+SuppliedNum = 100
+Item = 1, iron_ingot
+Item = 1, gunpowder
+Recoil = 0
+Sound = rail_mg
+SoundVolume = 1.5
+SoundPitchRandom = 0.08

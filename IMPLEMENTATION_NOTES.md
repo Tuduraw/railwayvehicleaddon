@@ -107,6 +107,41 @@
   TrackPos基準点(centerZ)を引く、台車位置の扱いと同じ式)。未指定の車両は従来どおり台車の位置を使う
   (後方互換)。同梱の4両には、実際のOBJの頂点から求めたZの最大・最小値をそのまま設定した。
 
+## 武装の互換性(装甲列車・列車砲)
+
+前提MOD(1.0.5)の武装の処理を確認した結果。
+
+- 発射(`tryFireWeapon`)・連射間隔・装填・冷却・砲塔の追従速度・砲身の後退はすべて
+  `AbstractVehicleEntity.tick()`側の共通処理で、`updateVehicleMovement()`(車種ごとの移動処理)には
+  依存しない。編成の後続車が`updateVehicleMovement()`を早期に抜けても、武装は動く。
+- 発射を止める条件は「撃破されていないか」(`canFireWeapons`)だけで、運転者・燃料は不要。
+  運転席も燃料も無い砲車でも撃てる。
+- 砲塔の相対ヨーは`MathHelper.wrapDegrees(乗員のヨー - 車両のヨー)`で求めているため、鉄道車両の
+  連続ヨー(±180度に折り返さない値)でも照準範囲の判定は正しく動く。
+- 弾の初速には車両の`getVelocity()`が足される。鉄道車両は`applyPlacement()`で毎tick位置の差分を
+  速度として設定しているので、走行中の発砲でも弾が車両の速度を引き継ぐ。
+- **問題1(修正済み)**: 前提MODは「座席0の乗員」を常に操縦者(`getControllingPassenger`)とみなす。
+  このアドオンは運転席の有無を見ずにそれを使っていたため、運転席の無い客車でも座席0の乗客が
+  W/Sで車両を動かせてしまい、編成の加速計算でも全車両の`acceleration`が足されていた。
+  運転席(`SeatDefinition.driver`)を持つ車両だけを動力車とし、`drivingPlayer()`経由で判定するよう
+  直した。
+- **問題2(修正済み)**: `FreeCameraVehicle`を実装した車両では、フリールック中でない操縦者の照準付き
+  武器は既定の向きに固定される(航空機で「視点=操縦」のため)。運転席の無い砲車では座席0の砲手が
+  これに当たってしまうため、`tudursvehiclemod$isEffectiveFreeLook()`を上書きし、運転席の無い車両では
+  全員をフリールック扱いにした。運転席のある車両の運転者は前提MODの仕様のまま(`default_freelook`で回避可)。
+- **問題3(仕様として案内)**: 発砲時の車体の揺れ(`Recoil`)は、前提MODが`updateVehicleMovement()`の後に
+  ピッチ・ロールへ差分を足す方式。鉄道車両は線路から毎tick姿勢を絶対値で決め直すため、揺れが
+  1tickで打ち消され、その後わずかに逆向きへずれる。前提MOD側の値はprivateで補正できないため、
+  鉄道車両の武器では`Recoil = 0`を推奨し、砲身の後退は`recoil_distance`で表現する。
+- 補給ボタンが出なかった件: 前提MODの車両メニューは`WeaponStats.isResuppliable()`
+  (`magazineSize > 0 && suppliedNum > 0`)を満たす武器だけを補給の対象にする。同梱の武器設定ファイルに
+  `SuppliedNum`(と`MaxAmmo`・`Item`)を書いていなかったのが原因で、アドオンのコード側の問題ではなかった。
+  補給の「停車中」判定は`getVelocity()`を見るが、鉄道車両は毎tick位置の差分を速度にしており、停車中は0に
+  なるので問題ない。`SuppliedNum`は前提MODのReadme_Weapon.mdに記載がない(MCヘリ互換の項目)。
+- HUDは座席に関係なく車両ごとに1つのスクリプトなので、`HudVariableProvider`で`rail_seat`・
+  `rail_is_driver`を追加し、スクリプト側で運転者と砲手の表示を分けられるようにした。
+- 同梱の発射音は、ノイズと低音の減衰波形をPythonで合成し、ffmpegでOgg Vorbis(モノラル)にしたもの。
+
 ## 視点の連動
 
 - `RailVehicleEntity` に前提MODの `FreeCameraVehicle` インターフェースを実装するだけで解決した。

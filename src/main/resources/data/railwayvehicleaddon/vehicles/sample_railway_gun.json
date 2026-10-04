@@ -1,0 +1,117 @@
+{
+  "entity_type": "railwayvehicleaddon:rail_vehicle",
+  "model": "railwayvehicleaddon:models/obj/sample_railway_gun.obj",
+  "texture": "railwayvehicleaddon:textures/vehicle/sample_railway_gun.png",
+  "display_name": "Sample Railway Gun",
+  "hud": "railway_gun",
+  "scale": 1.0,
+  "width": 2.8,
+  "height": 3.0,
+  "max_speed": 1.2,
+  "max_health": 800.0,
+  "armor_damage_factor": 0.6,
+  "fuel_consumption": -1.0,
+  "seats": [
+    {
+      "name": "gun_layer",
+      "offset_x": 0.9,
+      "offset_y": 1.4,
+      "offset_z": -1.6
+    },
+    {
+      "name": "crew",
+      "offset_x": -0.6,
+      "offset_y": 1.4,
+      "offset_z": -5.6
+    }
+  ],
+  "weapons": [
+    {
+      "seat_index": 0,
+      "weapon_name": "rail_280mm",
+      "projectile_item": "minecraft:fire_charge",
+      "offsets": [
+        {
+          "x": 0.0,
+          "y": 2.52,
+          "z": 6.8,
+          "linked_part": "$barrel"
+        }
+      ],
+      "aim_range": {
+        "min_yaw": -10.0,
+        "max_yaw": 10.0,
+        "min_pitch": -50.0,
+        "max_pitch": 0.0
+      },
+      "turret_rotation_speed": 6.0
+    }
+  ],
+  "weapon_parts": [
+    {
+      "part": "$mount",
+      "seat_index": 0,
+      "pivot_x": 0.0,
+      "pivot_y": 1.4,
+      "pivot_z": 0.0,
+      "pitch_follow": false,
+      "weapon_name": "rail_280mm",
+      "aim_range": {
+        "min_yaw": -10.0,
+        "max_yaw": 10.0,
+        "min_pitch": -50.0,
+        "max_pitch": 0.0
+      }
+    },
+    {
+      "part": "$barrel",
+      "seat_index": 0,
+      "pivot_x": 0.0,
+      "pivot_y": 2.52,
+      "pivot_z": 1.2,
+      "yaw_follow": false,
+      "pitch_follow": true,
+      "weapon_name": "rail_280mm",
+      "aim_range": {
+        "min_yaw": -10.0,
+        "max_yaw": 10.0,
+        "min_pitch": -50.0,
+        "max_pitch": 0.0
+      },
+      "recoil_distance": 0.6,
+      "child_info": {
+        "parent_yaw_follow": true,
+        "parent_pitch_follow": false,
+        "parent_pivot_x": 0.0,
+        "parent_pivot_y": 1.4,
+        "parent_pivot_z": 0.0
+      }
+    }
+  ],
+  "spawn_item": {
+    "display_name": "Sample Railway Gun",
+    "tier": 3
+  },
+  "rail": {
+    "bogies": [
+      {
+        "part": "$bogie_front",
+        "pivot_x": 0.0,
+        "pivot_y": 0.35,
+        "pivot_z": 5.0
+      },
+      {
+        "part": "$bogie_rear",
+        "pivot_x": 0.0,
+        "pivot_y": 0.35,
+        "pivot_z": -5.0
+      }
+    ],
+    "brake": 0.012,
+    "resistance": 0.0003,
+    "grade_gravity": 0.04,
+    "mass": 4.0,
+    "coupler_front": 7.0,
+    "coupler_rear": -7.0
+  }
+}

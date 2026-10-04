@@ -1,0 +1,166 @@
+{
+  "entity_type": "railwayvehicleaddon:rail_vehicle",
+  "model": "railwayvehicleaddon:models/obj/sample_armored_railcar.obj",
+  "texture": "railwayvehicleaddon:textures/vehicle/sample_armored_railcar.png",
+  "display_name": "Sample Armored Railcar",
+  "hud": "armored_railcar",
+  "scale": 1.0,
+  "width": 2.8,
+  "height": 3.5,
+  "max_speed": 1.2,
+  "acceleration": 0.02,
+  "throttle_up_down": 2.0,
+  "max_health": 600.0,
+  "armor_damage_factor": 0.5,
+  "armor_min_damage": 2.0,
+  "max_fuel": 1200.0,
+  "fuel_consumption": 0.4,
+  "seats": [
+    {
+      "name": "driver",
+      "offset_x": 0.5,
+      "offset_y": 0.9,
+      "offset_z": 3.4,
+      "driver": true
+    },
+    {
+      "name": "turret_gunner",
+      "offset_x": 0.0,
+      "offset_y": 2.3,
+      "offset_z": 0.5
+    },
+    {
+      "name": "rear_gunner",
+      "offset_x": 0.0,
+      "offset_y": 1.4,
+      "offset_z": -3.3
+    }
+  ],
+  "weapons": [
+    {
+      "seat_index": 1,
+      "weapon_name": "rail_76mm",
+      "projectile_item": "minecraft:iron_nugget",
+      "offsets": [
+        {
+          "x": 0.0,
+          "y": 2.9,
+          "z": 3.6,
+          "linked_part": "$gun"
+        }
+      ],
+      "aim_range": {
+        "min_yaw": -180.0,
+        "max_yaw": 180.0,
+        "min_pitch": -20.0,
+        "max_pitch": 5.0
+      },
+      "turret_rotation_speed": 30.0
+    },
+    {
+      "seat_index": 2,
+      "weapon_name": "rail_mg",
+      "projectile_item": "minecraft:iron_nugget",
+      "offsets": [
+        {
+          "x": 0.0,
+          "y": 2.64,
+          "z": -3.15,
+          "linked_part": "$mg_rear"
+        }
+      ],
+      "aim_range": {
+        "default_yaw": 180.0,
+        "min_yaw": -70.0,
+        "max_yaw": 70.0,
+        "min_pitch": -30.0,
+        "max_pitch": 10.0
+      }
+    }
+  ],
+  "weapon_parts": [
+    {
+      "part": "$turret",
+      "seat_index": 1,
+      "pivot_x": 0.0,
+      "pivot_y": 2.5,
+      "pivot_z": 0.5,
+      "pitch_follow": false,
+      "weapon_name": "rail_76mm",
+      "aim_range": {
+        "min_yaw": -180.0,
+        "max_yaw": 180.0,
+        "min_pitch": -20.0,
+        "max_pitch": 5.0
+      }
+    },
+    {
+      "part": "$gun",
+      "seat_index": 1,
+      "pivot_x": 0.0,
+      "pivot_y": 2.9,
+      "pivot_z": 1.3,
+      "yaw_follow": false,
+      "pitch_follow": true,
+      "weapon_name": "rail_76mm",
+      "aim_range": {
+        "min_yaw": -180.0,
+        "max_yaw": 180.0,
+        "min_pitch": -20.0,
+        "max_pitch": 5.0
+      },
+      "recoil_distance": 0.25,
+      "child_info": {
+        "parent_yaw_follow": true,
+        "parent_pitch_follow": false,
+        "parent_pivot_x": 0.0,
+        "parent_pivot_y": 2.5,
+        "parent_pivot_z": 0.5
+      }
+    },
+    {
+      "part": "$mg_rear",
+      "seat_index": 2,
+      "pivot_x": 0.0,
+      "pivot_y": 2.62,
+      "pivot_z": -3.9,
+      "weapon_name": "rail_mg",
+      "aim_range": {
+        "default_yaw": 180.0,
+        "min_yaw": -70.0,
+        "max_yaw": 70.0,
+        "min_pitch": -30.0,
+        "max_pitch": 10.0
+      }
+    }
+  ],
+  "spawn_item": {
+    "display_name": "Sample Armored Railcar",
+    "tier": 3
+  },
+  "rail": {
+    "bogies": [
+      {
+        "part": "$bogie_front",
+        "pivot_x": 0.0,
+        "pivot_y": 0.35,
+        "pivot_z": 3.2
+      },
+      {
+        "part": "$bogie_rear",
+        "pivot_x": 0.0,
+        "pivot_y": 0.35,
+        "pivot_z": -3.2
+      }
+    ],
+    "brake": 0.015,
+    "resistance": 0.0003,
+    "grade_gravity": 0.04,
+    "power_notches": 5,
+    "reverse_notches": 1,
+    "mass": 2.0,
+    "power_source": "fuel",
+    "coupler_front": 4.5,
+    "coupler_rear": -4.5
+  }
+}

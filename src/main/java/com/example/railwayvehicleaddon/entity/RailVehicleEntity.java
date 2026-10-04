@@ -11,6 +11,7 @@ import com.example.railwayvehicleaddon.vehicle.RailVehicleParamsLoader;
 import com.example.tudursvehiclemod.asset.VehicleDefinition;
 import com.example.tudursvehiclemod.entity.AbstractVehicleEntity;
 import com.example.tudursvehiclemod.entity.FreeCameraVehicle;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.MovementType;
 import net.minecraft.entity.data.DataTracker;
@@ -289,7 +290,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		} else {
 			v -= Math.copySign(decel, v);
 		}
-		if (this.getControllingPassenger() == null && Math.abs(v) < 1.0e-3) {
+		if (drivingPlayer() == null && Math.abs(v) < 1.0e-3) {
 			v = 0.0;
 		}
 		v = MathHelper.clamp(v, -maxSpeed, maxSpeed);
@@ -317,7 +318,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 
 	/** この車自身の運転者の入力からノッチ・スロットルを更新する(連結の有無に関わらず共通)。 */
 	private float updateOwnThrottleAndNotch(VehicleDefinition def, RailVehicleParams params) {
-		PlayerEntity driver = this.getControllingPassenger() instanceof PlayerEntity player ? player : null;
+		PlayerEntity driver = drivingPlayer();
 		float handleStep = 0.03f * def.throttleUpDown().orElse(1.0f);
 		if (driver != null) {
 			return params.usesNotches() ? updateNotch(params, handleStep)
@@ -330,11 +331,11 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	}
 
 	private boolean isOwnBraking() {
-		return this.getControllingPassenger() == null || this.getSyncedBrakeInput() || this.tudursvehiclemod$isDestroyed();
+		return drivingPlayer() == null || this.getSyncedBrakeInput() || this.tudursvehiclemod$isDestroyed();
 	}
 
 	private void warnNoPower(RailVehicleParams params) {
-		if (this.getControllingPassenger() instanceof net.minecraft.server.network.ServerPlayerEntity player
+		if (drivingPlayer() instanceof net.minecraft.server.network.ServerPlayerEntity player
 				&& this.powerWarningCooldown-- <= 0) {
 			this.powerWarningCooldown = 60;
 			player.sendMessage(net.minecraft.text.Text.translatable(RailVehicleParams.STEAM.equals(params.powerSource())
@@ -424,6 +425,44 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	}
 
 	// ------------------------------------------------------------------ 連結
+
+	// ------------------------------------------------------------------ 運転席と視点
+
+	/**
+	 * 運転席(座席定義の driver が true)を持つ車両か。前提MODは「座席0の乗員」を常に操縦者
+	 * (getControllingPassenger)として扱うため、運転席の無い客車・砲車でも座席0の乗客が操縦者に
+	 * なってしまう。このアドオンでは、運転席を持つ車両だけを動力車として扱う。
+	 */
+	public boolean hasDriverSeat() {
+		for (com.example.tudursvehiclemod.asset.SeatDefinition seat : this.getDefinition().seats()) {
+			if (seat.driver()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** 実際に運転している(運転席のある車両の座席0にいる)プレイヤー。いなければnull。 */
+	public PlayerEntity drivingPlayer() {
+		if (!hasDriverSeat()) {
+			return null;
+		}
+		return this.getControllingPassenger() instanceof PlayerEntity player ? player : null;
+	}
+
+	/**
+	 * 運転席の無い車両(客車・砲車など)では、座席0の乗員も含めて全員をフリールック扱いにする。
+	 * FreeCameraVehicleを実装しているため、前提MODは座席0の乗員を「視点で操縦する操縦者」とみなし、
+	 * 視点を車両に固定したうえ、照準付きの武器を既定の向きに固定してしまう(航空機向けの仕様)。
+	 * 運転席のある車両はこれまでどおり(運転者の視点は車両に連動。照準はフリールック中のみ)。
+	 */
+	@Override
+	public boolean tudursvehiclemod$isEffectiveFreeLook(Entity viewer) {
+		if (!hasDriverSeat()) {
+			return true;
+		}
+		return super.tudursvehiclemod$isEffectiveFreeLook(viewer);
+	}
 
 	// ------------------------------------------------------------------ 連結の解除(測量ツール)
 
@@ -634,7 +673,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	private static RailVehicleEntity electLeader(List<ConsistMember> members) {
 		RailVehicleEntity leader = null;
 		for (ConsistMember m : members) {
-			if (m.entity().getControllingPassenger() instanceof PlayerEntity
+			if (m.entity().drivingPlayer() != null
 					&& (leader == null || m.entity().getId() < leader.getId())) {
 				leader = m.entity();
 			}
@@ -668,7 +707,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			totalMass += carParams.mass();
 
 			float throttle = car.updateOwnThrottleAndNotch(carDef, carParams);
-			if (car.getControllingPassenger() != null) {
+			if (car.drivingPlayer() != null) {
 				anyDriver = true;
 				if (car.isOwnBraking()) {
 					braking = true;
@@ -683,10 +722,13 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 					effectiveThrottle = 0f;
 				}
 			}
-			double carMaxSpeed = car.tudursvehiclemod$getEffectiveMaxSpeed();
-			double accelMass = carDef.acceleration() * carParams.mass();
-			weightedAccelMass += accelMass;
-			weightedTargetNum += effectiveThrottle * powerFactor * carMaxSpeed * accelMass;
+			// 動力車(運転席のある車両)だけが引張力に寄与する。客車・貨車・砲車などは重さ(mass)だけを足す
+			if (car.hasDriverSeat()) {
+				double carMaxSpeed = car.tudursvehiclemod$getEffectiveMaxSpeed();
+				double accelMass = carDef.acceleration() * carParams.mass();
+				weightedAccelMass += accelMass;
+				weightedTargetNum += effectiveThrottle * powerFactor * carMaxSpeed * accelMass;
+			}
 
 			TrackNetwork.Walk carWalk = network.walk(this.trackPos, m.offset());
 			TrackPoint carPoint = network.pointAt(carWalk.pos());
