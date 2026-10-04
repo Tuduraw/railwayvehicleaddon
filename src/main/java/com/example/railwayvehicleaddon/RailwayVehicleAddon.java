@@ -86,8 +86,9 @@ public class RailwayVehicleAddon implements ModInitializer {
 		ServerPlayNetworking.registerGlobalReceiver(ElectrifyPayload.ID, (payload, context) ->
 				context.server().execute(() -> TrackManager.electrify(context.player(), payload.segmentIds())));
 
-		// 転車台・遷車台の動作
+		// 転車台・遷車台の動作、変電所による給電の計算
 		ServerTickEvents.END_WORLD_TICK.register(TrackManager::tickFeatures);
+		ServerTickEvents.END_WORLD_TICK.register(TrackManager::tickElectricalSupply);
 
 		// 線路データはディメンション単位なので、プレイヤーのいるディメンションが変わるたびに全量を送り直す
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> TrackManager.sendFullSync(handler.player));

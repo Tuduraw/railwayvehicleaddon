@@ -7,6 +7,8 @@ import com.example.railwayvehicleaddon.network.TrackSyncPayload;
 import com.example.railwayvehicleaddon.network.FeatureSyncPayload;
 import com.example.railwayvehicleaddon.network.PlaceResultPayload;
 import com.example.railwayvehicleaddon.entity.RailVehicleEntity;
+import com.example.railwayvehicleaddon.vehicle.RailVehicleParams;
+import com.example.railwayvehicleaddon.vehicle.RailVehicleParamsLoader;
 import com.example.railwayvehicleaddon.track.feature.MovingDeckFeature;
 import com.example.railwayvehicleaddon.track.feature.TrackFeature;
 import com.example.railwayvehicleaddon.survey.LayoutPlan;
@@ -471,6 +473,61 @@ public final class TrackManager {
 			}
 		}
 		return false;
+	}
+
+	// ------------------------------------------------------------------ 電化・給電
+
+	private static final Map<net.minecraft.registry.RegistryKey<net.minecraft.world.World>, Integer> ELECTRICAL_TIMERS = new HashMap<>();
+	/** 給電の計算をやり直す間隔(tick) */
+	private static final int ELECTRICAL_INTERVAL = 10;
+
+	/**
+	 * 給電区画(つながった電化区間のまとまり)ごとに、動いている変電所の容量と、力行中の電車の数(需要)を
+	 * 集計し、区間ごとの給電係数(容量を需要で割った値。容量が無ければ0)を計算して線路データに書き込む。
+	 * 負荷が軽い(数tickに1回)よう、一定間隔でだけ実行する。
+	 */
+	public static void tickElectricalSupply(ServerWorld world) {
+		TrackNetwork network = network(world);
+		int timer = ELECTRICAL_TIMERS.merge(world.getRegistryKey(), 1, Integer::sum);
+		if (timer % ELECTRICAL_INTERVAL != 0) {
+			return;
+		}
+		Map<Long, Integer> components = network.computeElectrifiedComponents();
+		if (components.isEmpty()) {
+			network.setElectricFactors(Map.of());
+			return;
+		}
+		Map<Integer, Double> capacity = new HashMap<>();
+		for (com.example.railwayvehicleaddon.block.SubstationBlockEntity substation
+				: com.example.railwayvehicleaddon.block.SubstationBlockEntity.activeIn(world)) {
+			Integer component = components.get(substation.targetId());
+			if (component != null) {
+				capacity.merge(component, (double) com.example.railwayvehicleaddon.block.SubstationBlockEntity.CAPACITY, Double::sum);
+			}
+		}
+		Map<Integer, Integer> demand = new HashMap<>();
+		for (net.minecraft.entity.Entity entity : world.iterateEntities()) {
+			if (!(entity instanceof RailVehicleEntity vehicle) || !vehicle.isOnTrack() || vehicle.getThrottle() == 0f) {
+				continue;
+			}
+			RailVehicleParams params = RailVehicleParamsLoader.get(vehicle.getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
+			if (!RailVehicleParams.ELECTRIC.equals(params.powerSource())) {
+				continue;
+			}
+			Integer component = components.get(vehicle.currentSegmentId());
+			if (component != null) {
+				demand.merge(component, 1, Integer::sum);
+			}
+		}
+		Map<Long, Double> factors = new HashMap<>();
+		for (Map.Entry<Long, Integer> entry : components.entrySet()) {
+			int component = entry.getValue();
+			double cap = capacity.getOrDefault(component, 0.0);
+			int dem = demand.getOrDefault(component, 0);
+			double factor = cap <= 0.0 ? 0.0 : (dem <= 0 ? 1.0 : Math.min(1.0, cap / dem));
+			factors.put(entry.getKey(), factor);
+		}
+		network.setElectricFactors(factors);
 	}
 
 	/** 毎tick: 動いている設備を進め、変化をクライアントへ送る。 */

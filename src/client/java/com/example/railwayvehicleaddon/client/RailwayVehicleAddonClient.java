@@ -6,6 +6,7 @@ import com.example.railwayvehicleaddon.network.FeatureSyncPayload;
 import com.example.railwayvehicleaddon.network.PlaceResultPayload;
 import com.example.railwayvehicleaddon.network.TrackRemovePayload;
 import com.example.railwayvehicleaddon.network.TrackSyncPayload;
+import com.example.tudursvehiclemod.client.hud.HudVariableProvider;
 import com.example.tudursvehiclemod.client.render.VehicleEntityRenderer;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -37,6 +38,9 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 		SurveyToolItem.clientHandler = SurveySession.INSTANCE;
 
 		EntityRendererRegistry.register(RailwayVehicleAddon.RAIL_VEHICLE, VehicleEntityRenderer::new);
+
+		// 蒸気機関車の石炭・火室状況をHUDスクリプトへ公開する(rail_fire_seconds・rail_coal_count・rail_low_coal)
+		HudVariableProvider.EVENT.register(RailHudVariables.INSTANCE);
 
 		ClientPlayNetworking.registerGlobalReceiver(TrackSyncPayload.ID, (payload, context) ->
 				context.client().execute(() -> ClientTrackData.apply(payload)));

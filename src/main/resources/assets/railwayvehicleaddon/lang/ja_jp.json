@@ -123,5 +123,12 @@
   "message.railwayvehicleaddon.electrified": "電化しました (%s 区間)",
   "message.railwayvehicleaddon.deelectrified": "架線を撤去しました (%s 区間)",
   "message.railwayvehicleaddon.power.no_coal": "石炭(木炭)がありません。車両のインベントリに入れてください",
-  "message.railwayvehicleaddon.power.no_catenary": "架線がありません (電化されていない区間です)"
+  "message.railwayvehicleaddon.power.no_catenary": "架線がありません (電化されていない区間です)",
+  "block.railwayvehicleaddon.substation": "変電所",
+  "message.railwayvehicleaddon.substation.fueled": "燃料をくべました (残り約%s秒)",
+  "message.railwayvehicleaddon.substation.full": "これ以上はくべられません",
+  "message.railwayvehicleaddon.substation.status_active": "稼働中 (残り約%s秒、供給能力%s)",
+  "message.railwayvehicleaddon.substation.status_idle": "停止中 (石炭・木炭・石炭ブロックをくべてください)",
+  "message.railwayvehicleaddon.coupled": "連結しました",
+  "message.railwayvehicleaddon.uncoupled": "連結を解除しました"
 }

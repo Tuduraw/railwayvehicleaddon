@@ -1,0 +1,64 @@
+{
+  "entity_type": "railwayvehicleaddon:rail_vehicle",
+  "model": "railwayvehicleaddon:models/obj/sample_passenger_car.obj",
+  "texture": "railwayvehicleaddon:textures/vehicle/sample_passenger_car.png",
+  "display_name": "Sample Passenger Car",
+  "hud": "blank",
+  "scale": 1.0,
+  "width": 3.0,
+  "height": 3.2,
+  "max_speed": 2.0,
+  "max_health": 180.0,
+  "fuel_consumption": -1.0,
+  "seats": [
+    {
+      "name": "passenger1",
+      "offset_x": -0.6,
+      "offset_y": 1.0,
+      "offset_z": 3.0
+    },
+    {
+      "name": "passenger2",
+      "offset_x": 0.6,
+      "offset_y": 1.0,
+      "offset_z": 1.0
+    },
+    {
+      "name": "passenger3",
+      "offset_x": -0.6,
+      "offset_y": 1.0,
+      "offset_z": -1.0
+    },
+    {
+      "name": "passenger4",
+      "offset_x": 0.6,
+      "offset_y": 1.0,
+      "offset_z": -3.0
+    }
+  ],
+  "spawn_item": {
+    "display_name": "Sample Passenger Car",
+    "tier": 1
+  },
+  "rail": {
+    "bogies": [
+      {
+        "part": "$bogie_front",
+        "pivot_x": 0.0,
+        "pivot_y": 0.35,
+        "pivot_z": 3.4
+      },
+      {
+        "part": "$bogie_rear",
+        "pivot_x": 0.0,
+        "pivot_y": 0.35,
+        "pivot_z": -3.4
+      }
+    ],
+    "brake": 0.01,
+    "resistance": 0.0002,
+    "mass": 1.5,
+    "coupler_front": 5.0,
+    "coupler_rear": -5.0
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "parent": "minecraft:block/cube_column",
+  "textures": {
+    "end": "railwayvehicleaddon:block/substation_top",
+    "side": "railwayvehicleaddon:block/substation_side"
+  }
+}

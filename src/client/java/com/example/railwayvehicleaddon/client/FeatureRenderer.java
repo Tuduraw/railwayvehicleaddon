@@ -38,7 +38,7 @@ public final class FeatureRenderer {
 	private static final float[] STEEL = {0.25f, 0.0f, 0.5f, 1.0f};
 	private static final float[] RED = {0.5f, 0.0f, 0.75f, 1.0f};
 	private static final float[] STRIPE = {0.75f, 0.0f, 1.0f, 1.0f};
-	private static final double MAX_DISTANCE = 192.0;
+
 
 	private static final Map<Long, List<Quad>> CACHE = new HashMap<>();
 	/** 桁のメッシュ(桁の座標系: u=A端からの距離、l=横方向、h=高さ)。桁の長さ・軌間が変わらない限り使い回す */
@@ -113,7 +113,7 @@ public final class FeatureRenderer {
 		return out;
 	}
 
-	private static void renderDecks(WorldRenderContext context, TrackNetwork network, ClientWorld world, Vec3d camera, float tickDelta) {
+	private static void renderDecks(WorldRenderContext context, TrackNetwork network, ClientWorld world, Vec3d camera, float tickDelta, double maxDistance) {
 		float gauge = ClientTrackData.config().gauge();
 		if (gauge != deckGauge) {
 			deckGauge = gauge;
@@ -126,7 +126,7 @@ public final class FeatureRenderer {
 			if (!(feature instanceof MovingDeckFeature deck)) {
 				continue;
 			}
-			double reach = MAX_DISTANCE + feature.radius();
+			double reach = maxDistance + feature.radius();
 			if (feature.center().squaredDistanceTo(camera) > reach * reach) {
 				continue;
 			}
@@ -291,14 +291,17 @@ public final class FeatureRenderer {
 			return;
 		}
 		Vec3d camera = context.worldState().cameraRenderState.pos;
+		double chunkRange = client.options.getClampedViewDistance() * 16.0;
+		double configured = ClientTrackData.config().trackRenderDistance();
+		double maxDistance = configured > 0.0 ? Math.min(configured, chunkRange) : chunkRange;
 		// 桁(線路のテクスチャ)を先に描き、そのあと設備本体(設備のテクスチャ)を描く
-		renderDecks(context, network, world, camera, client.getRenderTickCounter().getTickProgress(true));
+		renderDecks(context, network, world, camera, client.getRenderTickCounter().getTickProgress(true), maxDistance);
 		MatrixStack.Entry entry = context.matrices().peek();
 		Matrix4f pose = entry.getPositionMatrix();
 		VertexConsumer consumer = context.consumers().getBuffer(RenderLayers.entityCutoutNoCull(TEXTURE));
 		for (TrackFeature feature : network.features()) {
 			Vec3d c = feature.center();
-			double reach = MAX_DISTANCE + feature.radius();
+			double reach = maxDistance + feature.radius();
 			if (c.squaredDistanceTo(camera) > reach * reach) {
 				continue;
 			}

@@ -57,8 +57,6 @@ public final class TrackRenderer {
 	/** 架線柱の間隔と、線路中心からの距離(建築限界の片側幅1.5の内側、車体幅の外側) */
 	private static final double MAST_SPACING = 12.0;
 	private static final double MAST_OFFSET = 1.42;
-	/** この距離より遠い区間は描かない(ブロック) */
-	private static final double MAX_DISTANCE = 256.0;
 	/** 近くのメッシュを作り直す間隔(tick)と範囲。地面の変化を反映するため */
 	private static final long REBUILD_INTERVAL = 200L;
 	private static final long INCOMPLETE_REBUILD_INTERVAL = 20L;
@@ -389,7 +387,9 @@ public final class TrackRenderer {
 			CACHE.clear();
 		}
 		Vec3d camera = context.worldState().cameraRenderState.pos;
-		double radius = Math.min(MAX_DISTANCE, client.options.getClampedViewDistance() * 16.0);
+		double chunkRange = client.options.getClampedViewDistance() * 16.0;
+		double configured = config.trackRenderDistance();
+		double radius = configured > 0.0 ? Math.min(configured, chunkRange) : chunkRange;
 		long now = world.getTime();
 		int rebuilds = 0;
 

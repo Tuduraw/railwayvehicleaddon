@@ -18,7 +18,7 @@ import net.minecraft.world.World;
  * 線路装置の状態。連結先(分岐器ノード・転車台/遷車台・区間のID)と、レッドストーン入力の前回値を持つ。
  * 連結先はクライアントにも同期し、測量ツールで装置を狙ったときに連結先を線で示す。
  */
-public class TrackDeviceBlockEntity extends BlockEntity {
+public class TrackDeviceBlockEntity extends BlockEntity implements TrackLinkable {
 	/** 在線検知器の判定間隔(tick) */
 	private static final int DETECT_INTERVAL = 4;
 
@@ -34,10 +34,17 @@ public class TrackDeviceBlockEntity extends BlockEntity {
 		return getCachedState().getBlock() instanceof TrackDeviceBlock block ? block.kind() : DeviceKind.MANUAL_SWITCH;
 	}
 
+	@Override
+	public DeviceKind.TargetType linkTarget() {
+		return kind().target();
+	}
+
+	@Override
 	public long targetId() {
 		return this.targetId;
 	}
 
+	@Override
 	public void setTargetId(long targetId) {
 		this.targetId = targetId;
 		markDirty();

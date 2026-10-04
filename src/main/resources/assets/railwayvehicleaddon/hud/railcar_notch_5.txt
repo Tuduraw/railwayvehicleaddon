@@ -1,0 +1,58 @@
+; railcar_notch_5.txt - 鉄道車両(前進5・後進1ノッチ)用HUD。前提MODのHUDスクリプトとして動作する
+; スロットル(throttle)がノッチのハンドル位置になる
+; 座標は画面中央が原点。パネルは画面右下に寄せる(右端・下端から6ピクセル)
+; パネルの高さ119ピクセル。最小のGUIスケール済み画面(427x240)にも収まることをAddonPackEditorのプレビューで確認済み
+
+; 背景
+Color = #A0101418
+DrawRect = width / 2 - 102, height / 2 - 125, 96, 119
+
+; 速度
+Color = #FFE8ECF0
+DrawString = width / 2 - 94, height / 2 - 119, "%.0f km/h", speed_kbh
+
+; 目盛り(上からP5〜P1・N(切)・R1、1行9ピクセル)
+Color = #60000000
+DrawRect = width / 2 - 74, height / 2 - 99, 30, 63
+Color = #FF4CD964
+DrawString = width / 2 - 94, height / 2 - 98, "P5"
+Color = #FF8A949E
+DrawRect = width / 2 - 74, height / 2 - 95, 6, 1
+Color = #FF4CD964
+DrawString = width / 2 - 94, height / 2 - 89, "P4"
+Color = #FF8A949E
+DrawRect = width / 2 - 74, height / 2 - 86, 6, 1
+Color = #FF4CD964
+DrawString = width / 2 - 94, height / 2 - 80, "P3"
+Color = #FF8A949E
+DrawRect = width / 2 - 74, height / 2 - 77, 6, 1
+Color = #FF4CD964
+DrawString = width / 2 - 94, height / 2 - 71, "P2"
+Color = #FF8A949E
+DrawRect = width / 2 - 74, height / 2 - 68, 6, 1
+Color = #FF4CD964
+DrawString = width / 2 - 94, height / 2 - 62, "P1"
+Color = #FF8A949E
+DrawRect = width / 2 - 74, height / 2 - 59, 6, 1
+Color = #FFE8ECF0
+DrawString = width / 2 - 94, height / 2 - 53, "N"
+Color = #FF8A949E
+DrawRect = width / 2 - 74, height / 2 - 50, 6, 1
+Color = #FFFF9F0A
+DrawString = width / 2 - 94, height / 2 - 44, "R1"
+Color = #FF8A949E
+DrawRect = width / 2 - 74, height / 2 - 41, 6, 1
+
+; ハンドル(ノッチの目標値・throttleへ throttle_up_down の速さで動く)
+Color = #FF000000
+DrawRect = width / 2 - 76, height / 2 - 100 + (5 - (throttle >= 0 ? throttle * 5 : throttle * 1)) * 9, 34, 7
+Color = #FFFFD60A
+DrawRect = width / 2 - 75, height / 2 - 99 + (5 - (throttle >= 0 ? throttle * 5 : throttle * 1)) * 9, 32, 5
+
+; 燃料(電車では常に満タン表示になる)
+Color = #FFE8ECF0
+DrawString = width / 2 - 94, height / 2 - 30, "FUEL %.0f", fuel * 100
+If = low_fuel
+Color = #FFFF453A
+DrawString = width / 2 - 94, height / 2 - 20, "LOW FUEL"
+EndIf

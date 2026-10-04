@@ -69,10 +69,12 @@ public final class TrackCodecs {
 		buf.writeVarInt(v.maxWaypoints());
 		buf.writeFloat(v.maxRouteLength());
 		buf.writeFloat(v.cantTransitionLength());
+		buf.writeFloat(v.trackRenderDistance());
 	}
 
 	public static RailwayConfig.Values readConfig(PacketByteBuf buf) {
 		return new RailwayConfig.Values(buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat(),
-				buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readVarInt(), buf.readFloat(), buf.readFloat());
+				buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readVarInt(), buf.readFloat(), buf.readFloat(),
+				buf.readFloat());
 	}
 }

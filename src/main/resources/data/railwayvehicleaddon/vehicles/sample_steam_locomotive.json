@@ -1,0 +1,52 @@
+{
+  "entity_type": "railwayvehicleaddon:rail_vehicle",
+  "model": "railwayvehicleaddon:models/obj/sample_steam_locomotive.obj",
+  "texture": "railwayvehicleaddon:textures/vehicle/sample_steam_locomotive.png",
+  "display_name": "Sample Steam Locomotive",
+  "hud": "railcar_throttle",
+  "scale": 1.0,
+  "width": 2.4,
+  "height": 3.2,
+  "max_speed": 0.9,
+  "acceleration": 0.01,
+  "max_health": 260.0,
+  "max_fuel": 1000.0,
+  "fuel_consumption": 0.3,
+  "inventory_size": 8,
+  "seats": [
+    {
+      "name": "driver",
+      "offset_x": 0.7,
+      "offset_y": 1.2,
+      "offset_z": -2.4,
+      "driver": true
+    }
+  ],
+  "spawn_item": {
+    "display_name": "Sample Steam Locomotive",
+    "tier": 2
+  },
+  "rail": {
+    "bogies": [
+      {
+        "part": "$bogie_front",
+        "pivot_x": 0.0,
+        "pivot_y": 0.35,
+        "pivot_z": 2.6
+      },
+      {
+        "part": "$bogie_rear",
+        "pivot_x": 0.0,
+        "pivot_y": 0.35,
+        "pivot_z": -2.6
+      }
+    ],
+    "brake": 0.012,
+    "resistance": 0.00025,
+    "grade_gravity": 0.05,
+    "mass": 2.0,
+    "power_source": "steam",
+    "coupler_front": 5.2,
+    "coupler_rear": -4.2
+  }
+}

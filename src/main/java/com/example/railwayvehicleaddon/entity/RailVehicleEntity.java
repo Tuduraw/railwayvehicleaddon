@@ -10,6 +10,7 @@ import com.example.railwayvehicleaddon.vehicle.RailVehicleParams;
 import com.example.railwayvehicleaddon.vehicle.RailVehicleParamsLoader;
 import com.example.tudursvehiclemod.asset.VehicleDefinition;
 import com.example.tudursvehiclemod.entity.AbstractVehicleEntity;
+import com.example.tudursvehiclemod.entity.FreeCameraVehicle;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.MovementType;
 import net.minecraft.entity.data.DataTracker;
@@ -27,10 +28,18 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import org.joml.Matrix4f;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import net.minecraft.util.math.Box;
+import net.minecraft.util.Hand;
+import net.minecraft.util.ActionResult;
 
 /**
  * 独自レール上を走る鉄道車両。
@@ -46,7 +55,7 @@ import java.util.Map;
  * 打ち消す(restorePlacedState参照。高速走行時・カーブでのバニラ補間のがたつきを避けるため)。
  * 通信遅延による差は、速度で先読みしたうえで少しずつ詰める。
  */
-public class RailVehicleEntity extends AbstractVehicleEntity {
+public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCameraVehicle {
 
 	/** 線路基面からレール上面までの高さ(TrackRendererの描画寸法と一致させる) */
 	public static final double RAIL_TOP = 0.25;
@@ -75,6 +84,12 @@ public class RailVehicleEntity extends AbstractVehicleEntity {
 	/** 石炭・木炭1個で燃やせる時間(出力100%でのtick数) */
 	private static final int COAL_TICKS = 1600;
 
+	/** 蒸気機関車のHUD表示用(HudVariableProviderで"rail_fire_seconds"・"rail_coal_count"として公開) */
+	private static final TrackedData<Float> FIRE_SECONDS_SYNC =
+			DataTracker.registerData(RailVehicleEntity.class, TrackedDataHandlerRegistry.FLOAT);
+	private static final TrackedData<Integer> COAL_COUNT_SYNC =
+			DataTracker.registerData(RailVehicleEntity.class, TrackedDataHandlerRegistry.INTEGER);
+
 	// サーバー側
 	private TrackPos trackPos;
 	private double speed;
@@ -85,6 +100,24 @@ public class RailVehicleEntity extends AbstractVehicleEntity {
 	/** 蒸気機関車: 火室に残っている燃焼時間(tick、出力100%で1ずつ減る) */
 	private double fireTicks;
 	private int powerWarningCooldown;
+
+	// ------------------------------------------------------------------ 連結
+
+	/** 自動で連結を試みる、端から相手の端までの距離 */
+	private static final double COUPLE_DISTANCE = 0.8;
+	/** 連結した車両間の隙間(前後台車の張り出しに加えて確保する分) */
+	private static final double COUPLER_GAP = 0.4;
+	/** 連結相手を探す間隔(tick) */
+	private static final int COUPLE_SCAN_INTERVAL = 5;
+	/** この編成の位置更新を先頭車がまとめて済ませたワールド時刻。自分の番が来たときの二重処理を防ぐ */
+	private long consistHandledTick = -1L;
+	private int coupleScanCooldown;
+
+	/** frontZ側(A)・rearZ側(B)の連結相手。reversedは、相手の車首がこちらと逆向きかどうか(連結時に固定) */
+	private Optional<UUID> couplingA = Optional.empty();
+	private Optional<UUID> couplingB = Optional.empty();
+	private boolean couplingAReversed;
+	private boolean couplingBReversed;
 
 	// クライアント側
 	private TrackPos clientPos;
@@ -128,6 +161,8 @@ public class RailVehicleEntity extends AbstractVehicleEntity {
 		builder.add(TRACK_FACING, (byte) 1);
 		builder.add(RAIL_SPEED, 0f);
 		builder.add(BOGIE_SPEC, "");
+		builder.add(FIRE_SECONDS_SYNC, 0f);
+		builder.add(COAL_COUNT_SYNC, 0);
 	}
 
 	/**
@@ -146,12 +181,27 @@ public class RailVehicleEntity extends AbstractVehicleEntity {
 		return false;
 	}
 
+	/** 火室の残り燃焼時間(秒)。蒸気機関車のHUD表示用。 */
+	public float getFireSeconds() {
+		return this.dataTracker.get(FIRE_SECONDS_SYNC);
+	}
+
+	/** インベントリに残っている石炭・木炭・石炭ブロックの個数(ブロックも1個として数える)。 */
+	public int getCoalCount() {
+		return this.dataTracker.get(COAL_COUNT_SYNC);
+	}
+
 	public double getRailSpeed() {
 		return this.dataTracker.get(RAIL_SPEED);
 	}
 
 	public boolean isOnTrack() {
 		return this.dataTracker.get(TRACK_SEGMENT) >= 0L;
+	}
+
+	/** 現在載っている区間(中心)のID。載っていなければ-1。給電計算(TrackManager)から呼ばれる。 */
+	public long currentSegmentId() {
+		return this.trackPos == null ? -1L : this.trackPos.segmentId();
 	}
 
 	// ------------------------------------------------------------------ 移動
@@ -163,9 +213,14 @@ public class RailVehicleEntity extends AbstractVehicleEntity {
 			return;
 		}
 		ServerWorld world = (ServerWorld) this.getEntityWorld();
+		if (this.consistHandledTick == world.getTime()) {
+			// この編成の位置は、今tickすでに先頭車がまとめて更新済み
+			return;
+		}
 		TrackNetwork network = TrackManager.network(world);
 		RailVehicleParams params = RailVehicleParamsLoader.get(this.getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
 		updateBogieSpec(params);
+		syncStatus(params);
 
 		if (this.trackPos != null && network.segment(this.trackPos.segmentId()) == null) {
 			// 区間が分割された(線路の途中に分岐器・渡り線を入れた)なら新しい区間へ載せ替え、
@@ -183,29 +238,35 @@ public class RailVehicleEntity extends AbstractVehicleEntity {
 			}
 		}
 
-		PlayerEntity driver = this.getControllingPassenger() instanceof PlayerEntity player ? player : null;
-		float throttle;
-		boolean braking;
-		float handleStep = 0.03f * def.throttleUpDown().orElse(1.0f);
-		if (driver != null) {
-			throttle = params.usesNotches() ? updateNotch(params, handleStep)
-					: updateThrottle(driver, handleStep, -1.0f, 1.0f);
-			braking = this.getSyncedBrakeInput() || this.tudursvehiclemod$isDestroyed();
-		} else {
-			// 無人の車両は停止保持(フェーズ2で編成・自動運転を扱うまでの暫定)
-			this.setThrottleDirect(0f);
-			this.notch = 0;
-			throttle = 0f;
-			braking = true;
+		if (--this.coupleScanCooldown <= 0) {
+			this.coupleScanCooldown = COUPLE_SCAN_INTERVAL;
+			tryAutoCouple(world, network);
 		}
-		// 動力が得られなければ(石炭が無い・架線が無い)力行できない。ハンドル(表示)はそのまま動かせる
-		if (throttle != 0f && !consumePower(network, params, throttle)) {
-			if (driver instanceof net.minecraft.server.network.ServerPlayerEntity player && this.powerWarningCooldown-- <= 0) {
-				this.powerWarningCooldown = 60;
-				player.sendMessage(net.minecraft.text.Text.translatable(RailVehicleParams.STEAM.equals(params.powerSource())
-						? "message.railwayvehicleaddon.power.no_coal" : "message.railwayvehicleaddon.power.no_catenary"), true);
+
+		List<ConsistMember> consist = buildConsist(world);
+		if (consist.size() > 1) {
+			RailVehicleEntity leader = electLeader(consist);
+			if (leader != this) {
+				// 先頭車が今tickのうちにこの車両も含めて位置を更新する(処理順は問わない)
+				return;
 			}
-			throttle = 0f;
+			if (this.trackPos != null) {
+				runConsistPhysics(world, network, consist, world.getTime());
+				return;
+			}
+			// 先頭車自身が未着線なら編成として動かせない(各車がそれぞれ単独車扱いになる)
+		}
+
+		float throttle = updateOwnThrottleAndNotch(def, params);
+		boolean braking = isOwnBraking();
+		// 動力が得られなければ(石炭が無い・架線や給電が無い)力行できない。ハンドル(表示)はそのまま動かせる。
+		// 架線の給電が混雑しているときは、0より大きく1未満の割合で力行が弱まる
+		float powerFactor = 1f;
+		if (throttle != 0f) {
+			powerFactor = consumePower(network, params, throttle);
+			if (powerFactor <= 0f) {
+				warnNoPower(params);
+			}
 		}
 
 		TrackPoint center = network.pointAt(this.trackPos);
@@ -214,9 +275,10 @@ public class RailVehicleEntity extends AbstractVehicleEntity {
 		// 前提MODの車と同じく、スロットルに応じた目標速度へacceleration(追従度)で近づく。
 		// ノッチを下げた・切にしたときは減速させず惰行する(走行抵抗で少しずつ落ちる)
 		double acceleration = def.acceleration();
-		double target = throttle * maxSpeed;
+		double effectiveThrottle = throttle * powerFactor;
+		double target = effectiveThrottle * maxSpeed;
 		double v = this.speed;
-		boolean powering = throttle > 0f ? target > v : throttle < 0f && target < v;
+		boolean powering = effectiveThrottle > 0 ? target > v : effectiveThrottle < 0 && target < v;
 		if (powering) {
 			v += (target - v) * acceleration;
 		}
@@ -227,7 +289,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity {
 		} else {
 			v -= Math.copySign(decel, v);
 		}
-		if (driver == null && Math.abs(v) < 1.0e-3) {
+		if (this.getControllingPassenger() == null && Math.abs(v) < 1.0e-3) {
 			v = 0.0;
 		}
 		v = MathHelper.clamp(v, -maxSpeed, maxSpeed);
@@ -251,6 +313,33 @@ public class RailVehicleEntity extends AbstractVehicleEntity {
 		this.dataTracker.set(TRACK_FACING, (byte) this.trackPos.facing());
 		this.dataTracker.set(RAIL_SPEED, (float) v);
 		applyPlacement(network, this.trackPos);
+	}
+
+	/** この車自身の運転者の入力からノッチ・スロットルを更新する(連結の有無に関わらず共通)。 */
+	private float updateOwnThrottleAndNotch(VehicleDefinition def, RailVehicleParams params) {
+		PlayerEntity driver = this.getControllingPassenger() instanceof PlayerEntity player ? player : null;
+		float handleStep = 0.03f * def.throttleUpDown().orElse(1.0f);
+		if (driver != null) {
+			return params.usesNotches() ? updateNotch(params, handleStep)
+					: updateThrottle(driver, handleStep, -1.0f, 1.0f);
+		}
+		// 無人の車両は停止保持(連結先の判断に使われないよう、常にノッチ切のまま)
+		this.setThrottleDirect(0f);
+		this.notch = 0;
+		return 0f;
+	}
+
+	private boolean isOwnBraking() {
+		return this.getControllingPassenger() == null || this.getSyncedBrakeInput() || this.tudursvehiclemod$isDestroyed();
+	}
+
+	private void warnNoPower(RailVehicleParams params) {
+		if (this.getControllingPassenger() instanceof net.minecraft.server.network.ServerPlayerEntity player
+				&& this.powerWarningCooldown-- <= 0) {
+			this.powerWarningCooldown = 60;
+			player.sendMessage(net.minecraft.text.Text.translatable(RailVehicleParams.STEAM.equals(params.powerSource())
+					? "message.railwayvehicleaddon.power.no_coal" : "message.railwayvehicleaddon.power.no_catenary"), true);
+		}
 	}
 
 	/**
@@ -288,7 +377,17 @@ public class RailVehicleEntity extends AbstractVehicleEntity {
 	 *   <li>electric: 車両(中心・前後の台車のいずれか)が電化区間にいれば架線から給電される</li>
 	 * </ul>
 	 */
-	private boolean consumePower(TrackNetwork network, RailVehicleParams params, float throttle) {
+	/**
+	 * 動力を得る。得られた割合(0.0〜1.0)を返す。0は力行不可。
+	 * <ul>
+	 *   <li>fuel: 前提MODの燃料システムに任せる(常に1。燃料切れはスロットル側で0になる)</li>
+	 *   <li>steam: 車両のインベントリの石炭・木炭(石炭ブロック)を火室へくべて燃やす。
+	 *       水は前提MODの燃料を水として使い、給水塔で補給する(常に0か1)</li>
+	 *   <li>electric: 車両(中心・前後の台車のいずれか)がいる区間の給電係数(変電所の供給能力に対する
+	 *       需要の割合。混雑時は1未満になる)。架線が無い・給電が無ければ0</li>
+	 * </ul>
+	 */
+	private float consumePower(TrackNetwork network, RailVehicleParams params, float throttle) {
 		String source = params.powerSource();
 		if (RailVehicleParams.STEAM.equals(source)) {
 			if (this.fireTicks <= 0.0) {
@@ -304,25 +403,356 @@ public class RailVehicleEntity extends AbstractVehicleEntity {
 				}
 			}
 			if (this.fireTicks <= 0.0) {
-				return false;
+				return 0f;
 			}
 			this.fireTicks -= Math.abs(throttle);
-			return true;
+			return 1f;
 		}
 		if (RailVehicleParams.ELECTRIC.equals(source)) {
 			if (this.trackPos == null) {
-				return false;
+				return 0f;
 			}
 			double zc = centerZ();
+			double best = 0.0;
 			for (double offset : new double[]{0.0, this.frontZ - zc, this.rearZ - zc}) {
-				TrackSegment segment = network.segment(network.walk(this.trackPos, offset).segmentId());
-				if (segment != null && segment.electrified()) {
-					return true;
+				long segmentId = network.walk(this.trackPos, offset).segmentId();
+				best = Math.max(best, network.electricFactor(segmentId));
+			}
+			return (float) best;
+		}
+		return 1f;
+	}
+
+	// ------------------------------------------------------------------ 連結
+
+	// ------------------------------------------------------------------ 連結の解除(測量ツール)
+
+	/**
+	 * 測量ツールを持って右クリックすると、プレイヤーに近い方の端を連結解除する。
+	 * 通常の右クリック(乗車)・スニーク+右クリック(前提MODの収納)とは衝突しないよう、
+	 * 道具を持っているときだけ割り込む。
+	 */
+	@Override
+	public ActionResult interact(PlayerEntity player, Hand hand) {
+		if (player.getStackInHand(hand).isOf(com.example.railwayvehicleaddon.item.ModItems.SURVEY_TOOL)) {
+			if (!this.getEntityWorld().isClient() && this.getEntityWorld() instanceof ServerWorld serverWorld) {
+				uncoupleNearestEnd(player, TrackManager.network(serverWorld));
+			}
+			return ActionResult.SUCCESS;
+		}
+		return super.interact(player, hand);
+	}
+
+	/** 連結の有無による車体の性能や編成内での位置を表す。offsetは先頭車の中心からの符号付き距離(先頭車基準)。 */
+	private record ConsistMember(RailVehicleEntity entity, double offset, int sign) {
+	}
+
+	/**
+	 * TrackPosの基準点(台車位置から求めたcenterZ)から見た、その端(A=前側、B=後側)の連結器までの
+	 * 局所距離。車両JSONの rail.coupler_front / rail.coupler_rear(モデル座標Z、scale倍する前の値)を
+	 * 優先して使う。未指定(NaN)の場合は、台車の位置(frontZ/rearZ)をそのまま使う(車体が台車より
+	 * 外側へ張り出している車両では、連結時に車体どうしが重なって見えるため、車体の実際の前後端に
+	 * 合わせてこの項目を指定することを推奨する)。
+	 */
+	private double couplerOffset(boolean aEnd) {
+		RailVehicleParams params = RailVehicleParamsLoader.get(this.getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
+		float local = aEnd ? params.couplerFront() : params.couplerRear();
+		double zc = centerZ();
+		if (Float.isNaN(local)) {
+			return (aEnd ? this.frontZ : this.rearZ) - zc;
+		}
+		return local * this.getScale() - zc;
+	}
+
+	/** その端のワールド座標。線路に載っていなければnull。 */
+	private Vec3d endPosition(TrackNetwork network, boolean aEnd) {
+		if (this.trackPos == null) {
+			return null;
+		}
+		TrackNetwork.Walk walk = network.walk(this.trackPos, couplerOffset(aEnd));
+		TrackPoint p = network.pointAt(walk.pos());
+		return p == null ? null : new Vec3d(p.x(), p.y(), p.z());
+	}
+
+	/** この車の「車首」が向く実世界の水平方向(サンプル点の接線に向きを合わせたもの)。 */
+	private double[] noseDirection(TrackNetwork network) {
+		if (this.trackPos == null) {
+			return null;
+		}
+		TrackPoint p = network.pointAt(this.trackPos);
+		return p == null ? null : new double[]{p.dirX() * this.trackPos.facing(), p.dirZ() * this.trackPos.facing()};
+	}
+
+	private boolean endConnectsTo(boolean aEnd, UUID id) {
+		return (aEnd ? this.couplingA : this.couplingB).map(id::equals).orElse(false);
+	}
+
+	/**
+	 * 連結相手を探して自動で連結する。実際の連結器のように、互いの端が触れると自動的につながる
+	 * (気軽さを優先し、専用の操作は要求しない)。外すには測量ツールを持って右クリックする。
+	 */
+	private void tryAutoCouple(ServerWorld world, TrackNetwork network) {
+		if (this.trackPos == null) {
+			return;
+		}
+		for (boolean aEnd : new boolean[]{true, false}) {
+			if ((aEnd ? this.couplingA : this.couplingB).isPresent()) {
+				continue;
+			}
+			Vec3d myEnd = endPosition(network, aEnd);
+			if (myEnd == null) {
+				continue;
+			}
+			Box area = new Box(myEnd.x - 1.0, myEnd.y - 1.0, myEnd.z - 1.0, myEnd.x + 1.0, myEnd.y + 1.0, myEnd.z + 1.0);
+			for (RailVehicleEntity other : world.getEntitiesByClass(RailVehicleEntity.class, area, e -> e != this)) {
+				if (other.trackPos == null) {
+					continue;
+				}
+				for (boolean otherEnd : new boolean[]{true, false}) {
+					if ((otherEnd ? other.couplingA : other.couplingB).isPresent()) {
+						continue;
+					}
+					Vec3d otherPos = other.endPosition(network, otherEnd);
+					if (otherPos != null && myEnd.squaredDistanceTo(otherPos) <= COUPLE_DISTANCE * COUPLE_DISTANCE) {
+						coupleWith(other, aEnd, otherEnd, network);
+						return;
+					}
 				}
 			}
+		}
+	}
+
+	private void coupleWith(RailVehicleEntity other, boolean selfAEnd, boolean otherAEnd, TrackNetwork network) {
+		double[] myNose = noseDirection(network);
+		double[] otherNose = other.noseDirection(network);
+		boolean reversed = myNose == null || otherNose == null
+				|| (myNose[0] * otherNose[0] + myNose[1] * otherNose[1]) < 0.0;
+		if (selfAEnd) {
+			this.couplingA = Optional.of(other.getUuid());
+			this.couplingAReversed = reversed;
+		} else {
+			this.couplingB = Optional.of(other.getUuid());
+			this.couplingBReversed = reversed;
+		}
+		if (otherAEnd) {
+			other.couplingA = Optional.of(this.getUuid());
+			other.couplingAReversed = reversed;
+		} else {
+			other.couplingB = Optional.of(this.getUuid());
+			other.couplingBReversed = reversed;
+		}
+		if (this.getControllingPassenger() instanceof net.minecraft.server.network.ServerPlayerEntity player) {
+			player.sendMessage(net.minecraft.text.Text.translatable("message.railwayvehicleaddon.coupled"), true);
+		}
+		if (other.getControllingPassenger() instanceof net.minecraft.server.network.ServerPlayerEntity player) {
+			player.sendMessage(net.minecraft.text.Text.translatable("message.railwayvehicleaddon.coupled"), true);
+		}
+	}
+
+	/** プレイヤーの位置から近い方の端を連結解除する。測量ツールでの右クリックから呼ばれる。 */
+	public void uncoupleNearestEnd(PlayerEntity player, TrackNetwork network) {
+		Vec3d a = endPosition(network, true);
+		Vec3d b = endPosition(network, false);
+		boolean aEnd;
+		if (a != null && b != null) {
+			aEnd = player.getEntityPos().squaredDistanceTo(a) <= player.getEntityPos().squaredDistanceTo(b);
+		} else if (a != null) {
+			aEnd = true;
+		} else if (b != null) {
+			aEnd = false;
+		} else {
+			return;
+		}
+		if (uncoupleEnd(aEnd) && player instanceof net.minecraft.server.network.ServerPlayerEntity serverPlayer) {
+			serverPlayer.sendMessage(net.minecraft.text.Text.translatable("message.railwayvehicleaddon.uncoupled"), true);
+		}
+	}
+
+	private boolean uncoupleEnd(boolean aEnd) {
+		Optional<UUID> neighborId = aEnd ? this.couplingA : this.couplingB;
+		if (neighborId.isEmpty()) {
 			return false;
 		}
+		if (aEnd) {
+			this.couplingA = Optional.empty();
+		} else {
+			this.couplingB = Optional.empty();
+		}
+		if (this.getEntityWorld().getEntity(neighborId.get()) instanceof RailVehicleEntity other) {
+			if (other.couplingA.equals(Optional.of(this.getUuid()))) {
+				other.couplingA = Optional.empty();
+			}
+			if (other.couplingB.equals(Optional.of(this.getUuid()))) {
+				other.couplingB = Optional.empty();
+			}
+		}
 		return true;
+	}
+
+	/**
+	 * この車を起点に、連結でつながった編成全体を集める(自分自身も含む)。
+	 * offsetは「自分の中心から見た、そのメンバーの中心までの符号付き距離」、
+	 * signは「自分の前後と同じ向きなら+1、車首が逆向きに連結されていれば-1」。
+	 */
+	private List<ConsistMember> buildConsist(World world) {
+		List<ConsistMember> members = new ArrayList<>();
+		Set<UUID> visited = new HashSet<>();
+		visited.add(this.getUuid());
+		ConsistMember self = new ConsistMember(this, 0.0, 1);
+		members.add(self);
+		ArrayDeque<ConsistMember> queue = new ArrayDeque<>();
+		queue.add(self);
+		while (!queue.isEmpty() && members.size() < 64) {
+			ConsistMember cur = queue.poll();
+			for (boolean aEnd : new boolean[]{true, false}) {
+				Optional<UUID> neighborId = aEnd ? cur.entity().couplingA : cur.entity().couplingB;
+				if (neighborId.isEmpty() || !visited.add(neighborId.get())) {
+					continue;
+				}
+				if (!(world.getEntity(neighborId.get()) instanceof RailVehicleEntity neighbor)) {
+					continue;
+				}
+				boolean reversed = aEnd ? cur.entity().couplingAReversed : cur.entity().couplingBReversed;
+				boolean neighborIsAEnd = neighbor.endConnectsTo(true, cur.entity().getUuid());
+				double hop = Math.abs(cur.entity().couplerOffset(aEnd)) + COUPLER_GAP
+						+ Math.abs(neighbor.couplerOffset(neighborIsAEnd));
+				int direction = aEnd ? 1 : -1;
+				double offset = cur.offset() + cur.sign() * direction * hop;
+				int sign = cur.sign() * (reversed ? -1 : 1);
+				ConsistMember next = new ConsistMember(neighbor, offset, sign);
+				members.add(next);
+				queue.add(next);
+			}
+		}
+		return members;
+	}
+
+	/**
+	 * 編成の中で、今tickの位置計算をまとめて行う車を選ぶ。運転者がいる車を優先し(複数いれば
+	 * IDが最小のもの)、誰も乗っていなければIDが最小の車にする。結果はどの車から見ても同じになる。
+	 */
+	private static RailVehicleEntity electLeader(List<ConsistMember> members) {
+		RailVehicleEntity leader = null;
+		for (ConsistMember m : members) {
+			if (m.entity().getControllingPassenger() instanceof PlayerEntity
+					&& (leader == null || m.entity().getId() < leader.getId())) {
+				leader = m.entity();
+			}
+		}
+		if (leader == null) {
+			for (ConsistMember m : members) {
+				if (leader == null || m.entity().getId() < leader.getId()) {
+					leader = m.entity();
+				}
+			}
+		}
+		return leader;
+	}
+
+	/**
+	 * 編成全体の速度を1つだけ計算し(動力車の(acceleration×mass)の合計で重み付けした目標速度・追従度)、
+	 * 先頭車(=this)を基準に各車の位置をoffsetぶん歩いた場所へ置く。隊列は常に剛体として扱うため、
+	 * 曲線や勾配の途中でも車間は一定に保たれる。
+	 */
+	private void runConsistPhysics(ServerWorld world, TrackNetwork network, List<ConsistMember> members, long tick) {
+		double totalMass = 0.0;
+		double weightedAccelMass = 0.0;
+		double weightedTargetNum = 0.0;
+		double weightedGradeMass = 0.0;
+		boolean anyDriver = false;
+		boolean braking = false;
+		for (ConsistMember m : members) {
+			RailVehicleEntity car = m.entity();
+			RailVehicleParams carParams = RailVehicleParamsLoader.get(car.getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
+			VehicleDefinition carDef = car.getDefinition();
+			totalMass += carParams.mass();
+
+			float throttle = car.updateOwnThrottleAndNotch(carDef, carParams);
+			if (car.getControllingPassenger() != null) {
+				anyDriver = true;
+				if (car.isOwnBraking()) {
+					braking = true;
+				}
+			}
+			float effectiveThrottle = throttle * m.sign();
+			float powerFactor = 1f;
+			if (effectiveThrottle != 0f) {
+				powerFactor = car.consumePower(network, carParams, effectiveThrottle);
+				if (powerFactor <= 0f) {
+					car.warnNoPower(carParams);
+					effectiveThrottle = 0f;
+				}
+			}
+			double carMaxSpeed = car.tudursvehiclemod$getEffectiveMaxSpeed();
+			double accelMass = carDef.acceleration() * carParams.mass();
+			weightedAccelMass += accelMass;
+			weightedTargetNum += effectiveThrottle * powerFactor * carMaxSpeed * accelMass;
+
+			TrackNetwork.Walk carWalk = network.walk(this.trackPos, m.offset());
+			TrackPoint carPoint = network.pointAt(carWalk.pos());
+			double carGrade = carPoint != null ? carPoint.grade() * carWalk.pos().facing() * m.sign() : 0.0;
+			weightedGradeMass += carParams.gradeGravity() * carGrade * carParams.mass();
+		}
+		if (!anyDriver) {
+			braking = true;
+		}
+
+		double effAcceleration = weightedAccelMass > 1.0e-9 ? weightedAccelMass / totalMass : 0.0;
+		double target = weightedAccelMass > 1.0e-9 ? weightedTargetNum / weightedAccelMass : 0.0;
+		double meanGrade = totalMass > 1.0e-9 ? weightedGradeMass / totalMass : 0.0;
+		double meanBrake = 0.0;
+		double meanResistance = 0.0;
+		for (ConsistMember m : members) {
+			RailVehicleParams carParams = RailVehicleParamsLoader.get(m.entity().getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
+			meanBrake += carParams.brake() * carParams.mass();
+			meanResistance += carParams.resistance() * carParams.mass();
+		}
+		if (totalMass > 1.0e-9) {
+			meanBrake /= totalMass;
+			meanResistance /= totalMass;
+		}
+
+		double v = this.speed;
+		boolean powering = target > 0 ? target > v : target < 0 && target < v;
+		if (powering) {
+			v += (target - v) * effAcceleration;
+		}
+		v -= meanGrade;
+		double decel = (powering ? 0.0 : meanResistance) + (braking ? meanBrake : 0.0);
+		if (Math.abs(v) <= decel) {
+			v = 0.0;
+		} else {
+			v -= Math.copySign(decel, v);
+		}
+		double leadMaxSpeed = this.tudursvehiclemod$getEffectiveMaxSpeed();
+		v = MathHelper.clamp(v, -leadMaxSpeed, leadMaxSpeed);
+
+		TrackNetwork.Walk leaderMoved = v != 0.0 ? network.walk(this.trackPos, v) : new TrackNetwork.Walk(
+				this.trackPos.segmentId(), this.trackPos.s(), this.trackPos.facing(), false, 0.0);
+		if (leaderMoved.blocked()) {
+			v = 0.0;
+			leaderMoved = network.walk(this.trackPos, 0.0);
+		}
+		TrackPos newLeaderPos = leaderMoved.pos();
+
+		for (ConsistMember m : members) {
+			RailVehicleEntity car = m.entity();
+			RailVehicleParams carParams = RailVehicleParamsLoader.get(car.getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
+			TrackNetwork.Walk carWalk = network.walk(newLeaderPos, m.offset());
+			TrackPos carPos = carWalk.pos();
+			double carSpeed = v * m.sign();
+			car.trackPos = carPos;
+			car.speed = carSpeed;
+			car.cruiseSpeed = (float) carSpeed;
+			car.dataTracker.set(TRACK_SEGMENT, carPos.segmentId());
+			car.dataTracker.set(TRACK_S, (float) carPos.s());
+			car.dataTracker.set(TRACK_FACING, (byte) carPos.facing());
+			car.dataTracker.set(RAIL_SPEED, (float) carSpeed);
+			car.updateBogieSpec(carParams);
+			car.syncStatus(carParams);
+			car.applyPlacement(network, carPos);
+			car.consistHandledTick = tick;
+		}
 	}
 
 	private void tryAttach(TrackNetwork network) {
@@ -557,6 +987,22 @@ public class RailVehicleEntity extends AbstractVehicleEntity {
 	}
 
 	/** サーバー側: パラメータから台車設定文字列を作って同期する。 */
+	/** 蒸気機関車のHUD向けに、火室の残り時間とインベントリの石炭個数を同期する(毎tick、サーバーのみ)。 */
+	private void syncStatus(RailVehicleParams params) {
+		if (!RailVehicleParams.STEAM.equals(params.powerSource())) {
+			return;
+		}
+		this.dataTracker.set(FIRE_SECONDS_SYNC, (float) (this.fireTicks / 20.0));
+		int count = 0;
+		for (int i = 0; i < this.size(); i++) {
+			ItemStack stack = this.getStack(i);
+			if (stack.isOf(Items.COAL) || stack.isOf(Items.CHARCOAL) || stack.isOf(Items.COAL_BLOCK)) {
+				count += stack.getCount();
+			}
+		}
+		this.dataTracker.set(COAL_COUNT_SYNC, count);
+	}
+
 	private void updateBogieSpec(RailVehicleParams params) {
 		StringBuilder sb = new StringBuilder();
 		float scale = this.getScale();
@@ -659,6 +1105,10 @@ public class RailVehicleEntity extends AbstractVehicleEntity {
 		view.putDouble("RailSpeed", this.speed);
 		view.putInt("RailNotch", this.notch);
 		view.putDouble("RailFire", this.fireTicks);
+		this.couplingA.ifPresent(id -> view.putString("CouplingA", id.toString()));
+		this.couplingB.ifPresent(id -> view.putString("CouplingB", id.toString()));
+		view.putBoolean("CouplingAReversed", this.couplingAReversed);
+		view.putBoolean("CouplingBReversed", this.couplingBReversed);
 	}
 
 	@Override
@@ -672,5 +1122,20 @@ public class RailVehicleEntity extends AbstractVehicleEntity {
 		this.speed = view.getDouble("RailSpeed", 0.0);
 		this.notch = view.getInt("RailNotch", 0);
 		this.fireTicks = view.getDouble("RailFire", 0.0);
+		this.couplingA = parseUuid(view.getString("CouplingA", ""));
+		this.couplingB = parseUuid(view.getString("CouplingB", ""));
+		this.couplingAReversed = view.getBoolean("CouplingAReversed", false);
+		this.couplingBReversed = view.getBoolean("CouplingBReversed", false);
+	}
+
+	private static Optional<UUID> parseUuid(String value) {
+		if (value.isEmpty()) {
+			return Optional.empty();
+		}
+		try {
+			return Optional.of(UUID.fromString(value));
+		} catch (IllegalArgumentException e) {
+			return Optional.empty();
+		}
 	}
 }

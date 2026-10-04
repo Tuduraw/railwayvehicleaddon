@@ -2,8 +2,7 @@ package com.example.railwayvehicleaddon.client;
 
 import com.example.railwayvehicleaddon.RailwayConfig;
 import com.example.railwayvehicleaddon.block.DeviceLinks;
-import com.example.railwayvehicleaddon.block.TrackDeviceBlock;
-import com.example.railwayvehicleaddon.block.TrackDeviceBlockEntity;
+import com.example.railwayvehicleaddon.block.TrackLinkable;
 import com.example.railwayvehicleaddon.entity.RailVehicleEntity;
 import com.example.railwayvehicleaddon.survey.SurveyPoint;
 import com.example.railwayvehicleaddon.track.BlockCategory;
@@ -204,13 +203,12 @@ public final class SurveyPreviewRenderer {
 	private static void drawDeviceLinks(MinecraftClient client, TrackNetwork network, SurveySession session) {
 		BlockPos looked = SurveySession.lookedAtDevice(client.player);
 		for (BlockPos pos : new BlockPos[]{looked, session.linkDevice()}) {
-			if (pos == null || !(client.world.getBlockEntity(pos) instanceof TrackDeviceBlockEntity entity)
-					|| !(client.world.getBlockState(pos).getBlock() instanceof TrackDeviceBlock block)) {
+			if (pos == null || !(client.world.getBlockEntity(pos) instanceof TrackLinkable entity)) {
 				continue;
 			}
 			int color = pos.equals(session.linkDevice()) ? COLOR_SELECTED : COLOR_SWITCH;
 			GizmoDrawing.box(pos, DrawStyle.stroked(color, LINE_WIDTH)).ignoreOcclusion();
-			Vec3d target = DeviceLinks.targetPosition(network, block.kind(), entity.targetId());
+			Vec3d target = DeviceLinks.targetPosition(network, entity.linkTarget(), entity.targetId());
 			if (target != null) {
 				GizmoDrawing.line(Vec3d.ofCenter(pos), target.add(0.0, 0.5, 0.0), color, LINE_WIDTH).ignoreOcclusion();
 			}

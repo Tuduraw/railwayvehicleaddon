@@ -46,6 +46,12 @@ public final class RailwayConfig {
 	/** 1回の敷設の最大延長(水平距離、ブロック) */
 	public float max_route_length = 2048.0f;
 	/**
+	 * 線路の最大描画距離(ブロック、クライアント側の設定)。この値がクライアントのチャンク表示距離
+	 * (ブロック換算)を超える場合は、チャンク表示距離に合わせる(見えないチャンクの線路は
+	 * どのみち描けないため)。0以下を指定するとチャンク表示距離をそのまま使う。
+	 */
+	public float track_render_distance = 256.0f;
+	/**
 	 * 撤去したブロックのドロップ(サバイバル時のみ。クリエイティブでは常にドロップしない)。
 	 * "none" / "player_placed"(設置物のみ) / "all"
 	 */
@@ -83,12 +89,13 @@ public final class RailwayConfig {
 	public Values values() {
 		return new Values(this.gauge, this.min_curve_radius, this.max_grade, this.vertical_curve_length,
 				this.clearance_half_width, this.clearance_height, this.unbreakable_hardness, this.design_speed_kmh,
-				this.max_waypoints, this.max_route_length, this.cant_transition_length);
+				this.max_waypoints, this.max_route_length, this.cant_transition_length, this.track_render_distance);
 	}
 
 	public record Values(float gauge, float minCurveRadius, float maxGrade, float verticalCurveLength,
 						 float clearanceHalfWidth, float clearanceHeight, float unbreakableHardness,
-						 float designSpeedKmh, int maxWaypoints, float maxRouteLength, float cantTransitionLength) {
+						 float designSpeedKmh, int maxWaypoints, float maxRouteLength, float cantTransitionLength,
+						 float trackRenderDistance) {
 		public static final Values DEFAULT = new RailwayConfig().values();
 	}
 }

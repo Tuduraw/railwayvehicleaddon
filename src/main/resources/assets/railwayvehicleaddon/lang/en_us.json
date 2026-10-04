@@ -123,5 +123,12 @@
   "message.railwayvehicleaddon.electrified": "Electrified (%s segments)",
   "message.railwayvehicleaddon.deelectrified": "Overhead wires removed (%s segments)",
   "message.railwayvehicleaddon.power.no_coal": "No coal (or charcoal). Put some in the vehicle's inventory",
-  "message.railwayvehicleaddon.power.no_catenary": "No overhead wire (this section is not electrified)"
+  "message.railwayvehicleaddon.power.no_catenary": "No overhead wire (this section is not electrified)",
+  "block.railwayvehicleaddon.substation": "Substation",
+  "message.railwayvehicleaddon.substation.fueled": "Fuel added (about %s seconds left)",
+  "message.railwayvehicleaddon.substation.full": "Cannot add any more fuel",
+  "message.railwayvehicleaddon.substation.status_active": "Running (about %s seconds left, supplies %s)",
+  "message.railwayvehicleaddon.substation.status_idle": "Idle (add coal, charcoal or a block of coal)",
+  "message.railwayvehicleaddon.coupled": "Coupled",
+  "message.railwayvehicleaddon.uncoupled": "Uncoupled"
 }

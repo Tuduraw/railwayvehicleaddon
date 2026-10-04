@@ -70,11 +70,11 @@ public abstract class TrackDeviceBlock extends BlockWithEntity {
 	public void onPlaced(World world, BlockPos pos, BlockState state, LivingEntity placer, ItemStack itemStack) {
 		super.onPlaced(world, pos, state, placer, itemStack);
 		if (world instanceof ServerWorld serverWorld && world.getBlockEntity(pos) instanceof TrackDeviceBlockEntity entity) {
-			long target = DeviceLinks.findNearest(serverWorld, pos, kind());
+			long target = DeviceLinks.findNearest(serverWorld, pos, kind().target());
 			entity.setTargetId(target);
 			entity.setLastPower(world.getReceivedRedstonePower(pos));
 			if (placer instanceof PlayerEntity player) {
-				player.sendMessage(target >= 0 ? DeviceLinks.describe(serverWorld, kind(), target)
+				player.sendMessage(target >= 0 ? DeviceLinks.describe(serverWorld, kind().target(), target)
 						: Text.translatable("message.railwayvehicleaddon.device.no_target"), true);
 			}
 		}

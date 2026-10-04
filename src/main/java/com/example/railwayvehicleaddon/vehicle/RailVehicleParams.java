@@ -23,7 +23,9 @@ import java.util.List;
  *   "power_notches": 7,
  *   "reverse_notches": 2,
  *   "mass": 1.0,
- *   "power_source": "fuel"
+ *   "power_source": "fuel",
+ *   "coupler_front": 4.5,
+ *   "coupler_rear": -4.5
  * }
  * </pre>
  *
@@ -33,17 +35,23 @@ import java.util.List;
  * @param gradeGravity   勾配で車両にかかる重力加速度(ブロック/tick²)。勾配を掛けた分が加減速になる
  * @param powerNotches   前進側のノッチ数。前進・後進とも0ならノッチ式を使わず、前提MODと同じスロットル式になる
  * @param reverseNotches 後進側のノッチ数
- * @param mass           重さ(編成の加速に使う予定。単車では加速に影響しない)
+ * @param mass           重さ(編成の加速に使う)。単車では加速に影響しない
  * @param powerSource    動力: "fuel"(前提MODの燃料)、"steam"(石炭・木炭と水)、"electric"(架線から給電)
+ * @param couplerFront   連結器の位置(モデル座標のZ、前側)。未指定(NaN)なら台車の位置をそのまま使う
+ *                       (車体が台車より外へ張り出している車両では連結時に車体が重なって見えるため、
+ *                       車体の実際の前端に合わせて指定することを推奨する)
+ * @param couplerRear    連結器の位置(モデル座標のZ、後側)。未指定(NaN)の扱いはcouplerFrontと同じ
  */
 public record RailVehicleParams(List<Bogie> bogies, float brake, float resistance, float gradeGravity,
-								int powerNotches, int reverseNotches, float mass, String powerSource) {
+								int powerNotches, int reverseNotches, float mass, String powerSource,
+								float couplerFront, float couplerRear) {
 
 	public static final String FUEL = "fuel";
 	public static final String STEAM = "steam";
 	public static final String ELECTRIC = "electric";
 
-	public static final RailVehicleParams DEFAULT = new RailVehicleParams(List.of(), 0.015f, 0.0003f, 0.04f, 0, 0, 1.0f, FUEL);
+	public static final RailVehicleParams DEFAULT =
+			new RailVehicleParams(List.of(), 0.015f, 0.0003f, 0.04f, 0, 0, 1.0f, FUEL, Float.NaN, Float.NaN);
 
 	/** ノッチ式か(前進・後進どちらかのノッチ数が1以上)。 */
 	public boolean usesNotches() {
@@ -84,6 +92,8 @@ public record RailVehicleParams(List<Bogie> bogies, float brake, float resistanc
 			Codec.INT.optionalFieldOf("power_notches", 0).forGetter(RailVehicleParams::powerNotches),
 			Codec.INT.optionalFieldOf("reverse_notches", 0).forGetter(RailVehicleParams::reverseNotches),
 			Codec.FLOAT.optionalFieldOf("mass", 1.0f).forGetter(RailVehicleParams::mass),
-			Codec.STRING.optionalFieldOf("power_source", FUEL).forGetter(RailVehicleParams::powerSource)
+			Codec.STRING.optionalFieldOf("power_source", FUEL).forGetter(RailVehicleParams::powerSource),
+			Codec.FLOAT.optionalFieldOf("coupler_front", Float.NaN).forGetter(RailVehicleParams::couplerFront),
+			Codec.FLOAT.optionalFieldOf("coupler_rear", Float.NaN).forGetter(RailVehicleParams::couplerRear)
 	).apply(instance, RailVehicleParams::new));
 }

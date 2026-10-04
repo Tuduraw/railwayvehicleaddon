@@ -1,5 +1,6 @@
 package com.example.railwayvehicleaddon.track;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -40,6 +41,13 @@ public final class TrackNetwork {
 	private final Map<Long, SplitResult> splitHistory = new java.util.LinkedHashMap<>();
 	/** 分岐器ノード → 開通している分岐側の区間ID */
 	private final Map<Long, Long> switchStates = new HashMap<>();
+	/**
+	 * 電化区間の給電係数(区間ID→0.0〜1.0)。変電所の供給能力(容量)に対して、その給電区画
+	 * (つながった電化区間のまとまり)で同時に力行している電車が多いときは1.0未満になる
+	 * (需要を容量で割った値)。容量が無い(動いている変電所が無い)区画は0.0。
+	 * TrackManagerが定期的に計算して書き込む。保存しない(常にサーバーが持ち直す)。
+	 */
+	private Map<Long, Double> electricFactors = Map.of();
 	private long nextId = 1L;
 
 	public long allocateId() {
@@ -61,6 +69,7 @@ public final class TrackNetwork {
 		this.chunkIndex.clear();
 		this.segmentChunks.clear();
 		this.switchStates.clear();
+		this.electricFactors = Map.of();
 		this.cantTables.clear();
 		this.links.clear();
 		this.endMargins.clear();
@@ -372,6 +381,52 @@ public final class TrackNetwork {
 					: new TrackPos(split.secondSegment(), current.s() - split.splitS(), current.facing());
 		}
 		return this.segments.containsKey(current.segmentId()) ? current : null;
+	}
+
+	// ------------------------------------------------------------------ 電化・給電
+
+	/**
+	 * 電化区間を「つながり」でグループ分けする。ノードを共有する電化区間どうしは同じ区画になる
+	 * (電化されていない区間を挟むと別の区画になる = そこがデッドセクションとして働く)。
+	 *
+	 * @return 区間ID → 区画番号
+	 */
+	public Map<Long, Integer> computeElectrifiedComponents() {
+		Map<Long, Integer> result = new HashMap<>();
+		int next = 0;
+		for (TrackSegment segment : this.segments.values()) {
+			if (!segment.electrified() || result.containsKey(segment.id())) {
+				continue;
+			}
+			int component = next++;
+			ArrayDeque<Long> stack = new ArrayDeque<>();
+			stack.push(segment.id());
+			result.put(segment.id(), component);
+			while (!stack.isEmpty()) {
+				TrackSegment current = this.segments.get(stack.pop());
+				if (current == null) {
+					continue;
+				}
+				for (long node : new long[]{current.nodeA(), current.nodeB()}) {
+					for (long adjacentId : segmentsAt(node)) {
+						TrackSegment adjacent = this.segments.get(adjacentId);
+						if (adjacent != null && adjacent.electrified() && result.putIfAbsent(adjacentId, component) == null) {
+							stack.push(adjacentId);
+						}
+					}
+				}
+			}
+		}
+		return result;
+	}
+
+	public void setElectricFactors(Map<Long, Double> factors) {
+		this.electricFactors = factors;
+	}
+
+	/** その区間の給電係数(0.0〜1.0)。電化されていない、または給電が無ければ0.0。 */
+	public double electricFactor(long segmentId) {
+		return this.electricFactors.getOrDefault(segmentId, 0.0);
 	}
 
 	// ------------------------------------------------------------------ 分岐器

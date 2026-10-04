@@ -27,8 +27,8 @@ public final class DeviceLinks {
 	}
 
 	/** 対象の位置(表示・距離判定用)。対象が無ければnull。 */
-	public static Vec3d targetPosition(TrackNetwork network, DeviceKind kind, long id) {
-		switch (kind.target()) {
+	public static Vec3d targetPosition(TrackNetwork network, DeviceKind.TargetType type, long id) {
+		switch (type) {
 			case SWITCH -> {
 				TrackNode node = network.node(id);
 				return node == null || !network.isSwitch(id) ? null : new Vec3d(node.x(), node.y(), node.z());
@@ -52,12 +52,12 @@ public final class DeviceLinks {
 	}
 
 	/** 装置の近くで最も近い対象。無ければ-1。 */
-	public static long findNearest(ServerWorld world, BlockPos pos, DeviceKind kind) {
+	public static long findNearest(ServerWorld world, BlockPos pos, DeviceKind.TargetType type) {
 		TrackNetwork network = TrackManager.network(world);
 		Vec3d center = Vec3d.ofCenter(pos);
 		long best = -1L;
 		double bestDist = Double.MAX_VALUE;
-		switch (kind.target()) {
+		switch (type) {
 			case SWITCH -> {
 				for (TrackNode node : network.nodes()) {
 					double d = center.squaredDistanceTo(node.x(), node.y(), node.z());
@@ -91,12 +91,12 @@ public final class DeviceLinks {
 		return best;
 	}
 
-	public static Text describe(ServerWorld world, DeviceKind kind, long id) {
-		Vec3d p = targetPosition(TrackManager.network(world), kind, id);
+	public static Text describe(ServerWorld world, DeviceKind.TargetType type, long id) {
+		Vec3d p = targetPosition(TrackManager.network(world), type, id);
 		if (p == null) {
 			return Text.translatable("message.railwayvehicleaddon.device.no_target");
 		}
-		return Text.translatable("message.railwayvehicleaddon.device.linked." + kind.target().name().toLowerCase(java.util.Locale.ROOT),
+		return Text.translatable("message.railwayvehicleaddon.device.linked." + type.name().toLowerCase(java.util.Locale.ROOT),
 				(int) Math.floor(p.x), (int) Math.floor(p.y), (int) Math.floor(p.z));
 	}
 
@@ -107,11 +107,11 @@ public final class DeviceLinks {
 		}
 		ServerWorld world = (ServerWorld) player.getEntityWorld();
 		if (player.getEyePos().squaredDistanceTo(Vec3d.ofCenter(pos)) > PLAYER_REACH * PLAYER_REACH
-				|| !(world.getBlockEntity(pos) instanceof TrackDeviceBlockEntity entity)) {
+				|| !(world.getBlockEntity(pos) instanceof TrackLinkable entity)) {
 			return;
 		}
-		DeviceKind kind = entity.kind();
-		Vec3d target = targetPosition(TrackManager.network(world), kind, targetId);
+		DeviceKind.TargetType type = entity.linkTarget();
+		Vec3d target = targetPosition(TrackManager.network(world), type, targetId);
 		if (target == null) {
 			player.sendMessage(Text.translatable("message.railwayvehicleaddon.device.wrong_target"), true);
 			return;
@@ -121,6 +121,6 @@ public final class DeviceLinks {
 			return;
 		}
 		entity.setTargetId(targetId);
-		player.sendMessage(describe(world, kind, targetId), true);
+		player.sendMessage(describe(world, type, targetId), true);
 	}
 }

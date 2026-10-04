@@ -4,7 +4,7 @@ import com.example.railwayvehicleaddon.RailwayConfig;
 import com.example.railwayvehicleaddon.item.ModItems;
 import com.example.railwayvehicleaddon.item.SurveyToolItem;
 import com.example.railwayvehicleaddon.block.DeviceKind;
-import com.example.railwayvehicleaddon.block.TrackDeviceBlock;
+import com.example.railwayvehicleaddon.block.TrackLinkable;
 import com.example.railwayvehicleaddon.network.ElectrifyPayload;
 import com.example.railwayvehicleaddon.network.FeatureActionPayload;
 import com.example.railwayvehicleaddon.network.LinkDevicePayload;
@@ -162,9 +162,9 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		return this.linkDevice;
 	}
 
-	/** 装置の種類に応じた、今狙っている連結対象のID。 */
-	private long linkTargetFor(DeviceKind kind) {
-		return switch (kind.target()) {
+	/** 連結先の種類に応じた、今狙っている対象のID。 */
+	private long linkTargetFor(DeviceKind.TargetType type) {
+		return switch (type) {
 			case SWITCH -> this.targetSwitch;
 			case DECK -> this.targetFeature;
 			case SEGMENT -> this.targetSegment;
@@ -172,14 +172,14 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		};
 	}
 
-	/** 視線の先の線路装置(無ければnull)。 */
+	/** 視線の先の線路装置(転てつてこ等、変電所を含む。無ければnull)。 */
 	public static BlockPos lookedAtDevice(ClientPlayerEntity player) {
 		HitResult hit = player.raycast(DEVICE_REACH, 1.0f, false);
 		if (hit.getType() != HitResult.Type.BLOCK || player.getEntityWorld() == null) {
 			return null;
 		}
 		BlockPos pos = ((BlockHitResult) hit).getBlockPos();
-		return player.getEntityWorld().getBlockState(pos).getBlock() instanceof TrackDeviceBlock ? pos : null;
+		return player.getEntityWorld().getBlockEntity(pos) instanceof TrackLinkable ? pos : null;
 	}
 
 	public Set<Long> removeFeatureSelection() {
@@ -292,14 +292,14 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		if (this.linkDevice == null) {
 			return;
 		}
-		if (!(player.getEntityWorld().getBlockState(this.linkDevice).getBlock() instanceof TrackDeviceBlock block)) {
+		if (!(player.getEntityWorld().getBlockEntity(this.linkDevice) instanceof TrackLinkable entity)) {
 			this.linkDevice = null;
 			return;
 		}
-		long target = linkTargetFor(block.kind());
+		long target = linkTargetFor(entity.linkTarget());
 		if (target < 0) {
 			player.sendMessage(Text.translatable("message.railwayvehicleaddon.device.aim_target."
-					+ block.kind().target().name().toLowerCase(java.util.Locale.ROOT)), true);
+					+ entity.linkTarget().name().toLowerCase(java.util.Locale.ROOT)), true);
 			return;
 		}
 		ClientPlayNetworking.send(new LinkDevicePayload(this.linkDevice, target));
@@ -599,9 +599,9 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		if (this.targetFeature >= 0 && remove) {
 			this.targetSegment = -1L;
 		}
-		if (link && this.linkDevice != null && player.getEntityWorld().getBlockState(this.linkDevice).getBlock() instanceof TrackDeviceBlock block) {
+		if (link && this.linkDevice != null && player.getEntityWorld().getBlockEntity(this.linkDevice) instanceof TrackLinkable linkable) {
 			// 選んだ装置が連結できる種類の対象だけを狙う
-			DeviceKind.TargetType type = block.kind().target();
+			DeviceKind.TargetType type = linkable.linkTarget();
 			if (type != DeviceKind.TargetType.SWITCH) {
 				this.targetSwitch = -1L;
 			}
