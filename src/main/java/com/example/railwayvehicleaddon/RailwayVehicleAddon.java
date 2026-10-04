@@ -3,6 +3,7 @@ package com.example.railwayvehicleaddon;
 import com.example.railwayvehicleaddon.entity.RailVehicleEntity;
 import com.example.railwayvehicleaddon.block.DeviceLinks;
 import com.example.railwayvehicleaddon.block.ModBlocks;
+import com.example.railwayvehicleaddon.screen.ModScreenHandlers;
 import com.example.railwayvehicleaddon.item.ModItems;
 import com.example.railwayvehicleaddon.network.ElectrifyPayload;
 import com.example.railwayvehicleaddon.network.LinkDevicePayload;
@@ -52,6 +53,7 @@ public class RailwayVehicleAddon implements ModInitializer {
 		RAIL_VEHICLE = ModEntityTypes.registerAddonVehicleType(
 				Identifier.of(MOD_ID, "rail_vehicle"), RailVehicleEntity::new, 2.0f, 2.0f);
 
+		ModScreenHandlers.register();
 		ModBlocks.register();
 		ModItems.register();
 
@@ -84,7 +86,7 @@ public class RailwayVehicleAddon implements ModInitializer {
 				context.server().execute(() -> DeviceLinks.linkFromTool(context.player(), payload.pos(), payload.targetId())));
 
 		ServerPlayNetworking.registerGlobalReceiver(ElectrifyPayload.ID, (payload, context) ->
-				context.server().execute(() -> TrackManager.electrify(context.player(), payload.segmentIds())));
+				context.server().execute(() -> TrackManager.electrify(context.player(), payload.segmentIds(), payload.electrification())));
 
 		// 転車台・遷車台の動作、変電所による給電の計算
 		ServerTickEvents.END_WORLD_TICK.register(TrackManager::tickFeatures);

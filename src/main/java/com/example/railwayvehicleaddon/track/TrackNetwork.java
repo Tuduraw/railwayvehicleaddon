@@ -346,9 +346,9 @@ public final class TrackNetwork {
 		TrackPoint p = segment.sample(s);
 		TrackNode node = new TrackNode(allocateId(), p.x(), p.y(), p.z());
 		TrackSegment first = new TrackSegment(allocateId(), segment.nodeA(), node.id(), halves[0],
-				segment.profile().sub(0.0, length), segment.designSpeed(), segment.ballast(), segment.electrified());
+				segment.profile().sub(0.0, length), segment.designSpeed(), segment.ballast(), segment.electrification());
 		TrackSegment second = new TrackSegment(allocateId(), node.id(), segment.nodeB(), halves[1],
-				segment.profile().sub(s, length), segment.designSpeed(), segment.ballast(), segment.electrified());
+				segment.profile().sub(s, length), segment.designSpeed(), segment.ballast(), segment.electrification());
 		Long switchState = null;
 		removeSegment(segmentId);
 		putNode(node);

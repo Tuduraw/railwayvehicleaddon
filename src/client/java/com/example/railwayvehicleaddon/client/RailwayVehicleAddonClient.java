@@ -15,7 +15,9 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
+import com.example.railwayvehicleaddon.screen.ModScreenHandlers;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.ingame.HandledScreens;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.util.Identifier;
@@ -30,7 +32,6 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 	private static KeyBinding paramDownKey;
 	private static KeyBinding ballastKey;
 	private static KeyBinding forceKey;
-	private static KeyBinding electrifyKey;
 
 	@Override
 	public void onInitializeClient() {
@@ -38,6 +39,8 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 		SurveyToolItem.clientHandler = SurveySession.INSTANCE;
 
 		EntityRendererRegistry.register(RailwayVehicleAddon.RAIL_VEHICLE, VehicleEntityRenderer::new);
+
+		HandledScreens.register(ModScreenHandlers.SUBSTATION, SubstationScreen::new);
 
 		// 蒸気機関車の石炭・火室状況をHUDスクリプトへ公開する(rail_fire_seconds・rail_coal_count・rail_low_coal)
 		HudVariableProvider.EVENT.register(RailHudVariables.INSTANCE);
@@ -73,8 +76,6 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 				"key.railwayvehicleaddon.survey_ballast", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_I, category));
 		forceKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
 				"key.railwayvehicleaddon.survey_force", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_HOME, category));
-		electrifyKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-				"key.railwayvehicleaddon.survey_electrify", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_END, category));
 
 		ClientTickEvents.END_CLIENT_TICK.register(RailwayVehicleAddonClient::onClientTick);
 		WorldRenderEvents.BEFORE_TRANSLUCENT.register(TrackRenderer::render);
@@ -117,17 +118,17 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 		}
 		while (ballastKey.wasPressed()) {
 			if (holding) {
-				SurveySession.INSTANCE.cycleBallast();
+				// 通常は道床の種類、スニーク中は電化方式を切り替える(同じキーを共用する)
+				if (client.player.isSneaking()) {
+					SurveySession.INSTANCE.cycleElectrification();
+				} else {
+					SurveySession.INSTANCE.cycleBallast();
+				}
 			}
 		}
 		while (forceKey.wasPressed()) {
 			if (holding) {
 				SurveySession.INSTANCE.toggleForce();
-			}
-		}
-		while (electrifyKey.wasPressed()) {
-			if (holding) {
-				SurveySession.INSTANCE.toggleElectrify();
 			}
 		}
 		ClientTrackData.tickDecks();

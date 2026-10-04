@@ -6,6 +6,7 @@ import com.example.railwayvehicleaddon.entity.RailVehicleEntity;
 import com.example.railwayvehicleaddon.track.TrackNetwork;
 import com.example.railwayvehicleaddon.track.TrackPoint;
 import com.example.railwayvehicleaddon.track.BallastType;
+import com.example.railwayvehicleaddon.track.ElectrificationType;
 import com.example.railwayvehicleaddon.track.TrackSegment;
 import com.example.railwayvehicleaddon.track.feature.MovingDeckFeature;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
@@ -252,11 +253,17 @@ public final class TrackRenderer {
 		builder.quad(a.add(0.0, -half, 0.0), a.add(0.0, half, 0.0), b.add(0.0, half, 0.0), b.add(0.0, -half, 0.0), RAIL_UV, a);
 	}
 
+	/** 第三軌条: 走行レールの外側・一段低い位置に導体レールを這わせ、一定間隔で碍子(支持架)を立てる。 */
+	private static final double THIRD_RAIL_OFFSET = 0.55;
+	private static final double THIRD_RAIL_TOP = 0.18;
+	private static final double THIRD_RAIL_HALF_WIDTH = 0.09;
+	private static final double THIRD_RAIL_SUPPORT_SPACING = 3.0;
+
 	/**
-	 * 架線(電化区間): 線路中心の真上にトロリ線を張り、区間に沿って一定間隔で片側に架線柱と
+	 * 架線(電化区間・架線式): 線路中心の真上にトロリ線を張り、区間に沿って一定間隔で片側に架線柱と
 	 * 腕金(カンチレバー)を立てる。架線柱は建築限界の内側(車両に当たらない位置)に置く。
 	 */
-	private static void buildCatenary(MeshBuilder builder, TrackNetwork network, TrackSegment segment, TrackPoint[] samples, int steps) {
+	private static void buildOverhead(MeshBuilder builder, TrackNetwork network, TrackSegment segment, TrackPoint[] samples, int steps) {
 		for (int i = 1; i <= steps; i++) {
 			TrackPoint a = samples[i - 1];
 			TrackPoint b = samples[i];
@@ -276,6 +283,31 @@ public final class TrackRenderer {
 			wire(builder, armStart, armEnd, 0.035);
 			// ハンガー: 腕金からトロリ線へ
 			wire(builder, armEnd, new Vec3d(center.x, p.y() + WIRE_HEIGHT, center.z), 0.015);
+		}
+	}
+
+	private static void buildThirdRail(MeshBuilder builder, TrackNetwork network, TrackSegment segment, TrackPoint[] samples, int steps, double gauge) {
+		double lat = gauge / 2.0 + THIRD_RAIL_OFFSET;
+		double in = lat - THIRD_RAIL_HALF_WIDTH;
+		double out = lat + THIRD_RAIL_HALF_WIDTH;
+		for (int i = 1; i <= steps; i++) {
+			TrackPoint prev = samples[i - 1];
+			TrackPoint cur = samples[i];
+			Vec3d lightAt = new Vec3d(cur.x(), cur.y(), cur.z());
+			builder.quad(crossSection(prev, in, THIRD_RAIL_TOP), crossSection(prev, out, THIRD_RAIL_TOP),
+					crossSection(cur, out, THIRD_RAIL_TOP), crossSection(cur, in, THIRD_RAIL_TOP), RAIL_UV, lightAt);
+			builder.quad(crossSection(prev, out, 0.0), crossSection(cur, out, 0.0),
+					crossSection(cur, out, THIRD_RAIL_TOP), crossSection(prev, out, THIRD_RAIL_TOP), RAIL_UV, lightAt);
+			builder.quad(crossSection(cur, in, 0.0), crossSection(prev, in, 0.0),
+					crossSection(prev, in, THIRD_RAIL_TOP), crossSection(cur, in, THIRD_RAIL_TOP), RAIL_UV, lightAt);
+		}
+		double length = segment.length();
+		int supports = Math.max(1, (int) Math.ceil(length / THIRD_RAIL_SUPPORT_SPACING));
+		for (int k = 0; k < supports; k++) {
+			double s = (k + 0.5) * length / supports;
+			TrackPoint p = network.sample(segment, s);
+			Vec3d base = new Vec3d(p.x() + p.lateralX() * lat, p.y(), p.z() + p.lateralZ() * lat);
+			column(builder, base, p.dirX(), p.dirZ(), 0.05, p.y(), p.y() + THIRD_RAIL_TOP, RAIL_UV);
 		}
 	}
 
@@ -342,8 +374,12 @@ public final class TrackRenderer {
 					new Vec3d(samples[steps].x(), samples[steps].y(), samples[steps].z()));
 		}
 
-		if (segment.electrified()) {
-			buildCatenary(builder, network, segment, samples, steps);
+		switch (segment.electrificationType()) {
+			case OVERHEAD -> buildOverhead(builder, network, segment, samples, steps);
+			case THIRD_RAIL -> buildThirdRail(builder, network, segment, samples, steps, gauge);
+			case NONE, HIDDEN -> {
+				// 非電化、または「非表示」(給電の対象だが何も描かない)
+			}
 		}
 
 		// 枕木(上面と4側面)

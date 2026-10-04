@@ -9,9 +9,9 @@ import net.minecraft.block.entity.BlockEntityType;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
+import net.minecraft.util.ItemScatterer;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
@@ -71,33 +71,26 @@ public class SubstationBlock extends BlockWithEntity {
 			// 測量ツールの連結モードを優先する
 			return ActionResult.PASS;
 		}
-		int amount = stack.isOf(Items.COAL) || stack.isOf(Items.CHARCOAL) ? SubstationBlockEntity.coalBurnTime()
-				: stack.isOf(Items.COAL_BLOCK) ? SubstationBlockEntity.coalBlockBurnTime() : 0;
-		if (amount <= 0) {
-			return ActionResult.PASS;
-		}
-		if (world instanceof ServerWorld && world.getBlockEntity(pos) instanceof SubstationBlockEntity entity) {
-			if (entity.addFuel(amount)) {
-				if (!player.isCreative()) {
-					stack.decrement(1);
-				}
-				player.sendMessage(Text.translatable("message.railwayvehicleaddon.substation.fueled",
-						entity.burnTime() / 20), true);
-			} else {
-				player.sendMessage(Text.translatable("message.railwayvehicleaddon.substation.full"), true);
-			}
-		}
-		return ActionResult.SUCCESS;
+		// 持っているものに関わらず、通常の右クリック(onUse)でGUIを開く
+		return ActionResult.PASS_TO_DEFAULT_BLOCK_ACTION;
 	}
 
 	@Override
 	protected ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player, BlockHitResult hit) {
-		if (world.getBlockEntity(pos) instanceof SubstationBlockEntity entity) {
-			player.sendMessage(entity.isActive()
-					? Text.translatable("message.railwayvehicleaddon.substation.status_active",
-							entity.burnTime() / 20, SubstationBlockEntity.CAPACITY)
-					: Text.translatable("message.railwayvehicleaddon.substation.status_idle"), true);
+		if (!(world instanceof ServerWorld)) {
+			return ActionResult.SUCCESS;
+		}
+		if (world.getBlockEntity(pos) instanceof SubstationBlockEntity entity
+				&& player instanceof net.minecraft.server.network.ServerPlayerEntity serverPlayer) {
+			serverPlayer.openHandledScreen(entity);
 		}
 		return ActionResult.SUCCESS;
+	}
+
+	/** 壊したとき、燃料スロットの中身を地面に落とす。 */
+	@Override
+	protected void onStateReplaced(BlockState state, ServerWorld world, BlockPos pos, boolean moved) {
+		ItemScatterer.onStateReplaced(state, world, pos);
+		super.onStateReplaced(state, world, pos, moved);
 	}
 }

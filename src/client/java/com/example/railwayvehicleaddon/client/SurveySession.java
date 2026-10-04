@@ -17,6 +17,7 @@ import com.example.railwayvehicleaddon.survey.SurveyMode;
 import com.example.railwayvehicleaddon.survey.SurveyModes;
 import com.example.railwayvehicleaddon.survey.SurveyPoint;
 import com.example.railwayvehicleaddon.track.BallastType;
+import com.example.railwayvehicleaddon.track.ElectrificationType;
 import com.example.railwayvehicleaddon.track.BlockCategory;
 import com.example.railwayvehicleaddon.track.ClearanceScanner;
 import com.example.railwayvehicleaddon.track.RoutePlanner;
@@ -88,7 +89,7 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 	/** 強制置換(クリエイティブのみ有効) */
 	private boolean forceReplace;
 	/** 敷設する線路を電化する */
-	private boolean electrify;
+	private ElectrificationType electrification = ElectrificationType.NONE;
 
 	private boolean dirty;
 	private int rescanTimer;
@@ -190,13 +191,20 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		return this.ballast;
 	}
 
-	public void toggleElectrify() {
-		this.electrify = !this.electrify;
+	public ElectrificationType electrification() {
+		return this.electrification;
+	}
+
+	/** 道床の種類(Iキー)・電化方式(スニーク+Iキー)は同じキーで切り替える。 */
+	public void cycleElectrification() {
+		this.electrification = this.electrification.next();
+		this.dirty = true;
 		this.statusTimer = 0;
 		ClientPlayerEntity player = MinecraftClient.getInstance().player;
 		if (player != null) {
-			player.sendMessage(Text.translatable(this.electrify
-					? "message.railwayvehicleaddon.survey.electrify_on" : "message.railwayvehicleaddon.survey.electrify_off"), true);
+			player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.electrification_changed",
+					Text.translatable("message.railwayvehicleaddon.electrification."
+							+ this.electrification.name().toLowerCase(java.util.Locale.ROOT))), true);
 		}
 	}
 
@@ -524,7 +532,7 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		}
 		if (this.mode == SurveyModes.ELECTRIFY) {
 			if (!this.removeSelection.isEmpty()) {
-				ClientPlayNetworking.send(new ElectrifyPayload(new ArrayList<>(this.removeSelection)));
+				ClientPlayNetworking.send(new ElectrifyPayload(new ArrayList<>(this.removeSelection), this.electrification.id()));
 				this.removeSelection.clear();
 			}
 			return;
@@ -552,7 +560,7 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 	}
 
 	private SurveyInput currentInput() {
-		return new SurveyInput(new ArrayList<>(this.points), this.closed, param(), this.ballast.id(), effectiveForce(), this.electrify);
+		return new SurveyInput(new ArrayList<>(this.points), this.closed, param(), this.ballast.id(), effectiveForce(), this.electrification.id());
 	}
 
 	// ------------------------------------------------------------------ 毎tick
@@ -646,7 +654,9 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 			return;
 		}
 		if (this.mode == SurveyModes.ELECTRIFY) {
-			player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.status_electrify", modeName,
+			Text typeName = Text.translatable("message.railwayvehicleaddon.electrification."
+					+ this.electrification.name().toLowerCase(java.util.Locale.ROOT));
+			player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.status_electrify", modeName, typeName,
 					this.removeSelection.size()), true);
 			return;
 		}
@@ -661,8 +671,10 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		}
 		paramText = paramText.copy().append(Text.translatable("message.railwayvehicleaddon.survey.tag_ballast",
 				Text.translatable("message.railwayvehicleaddon.ballast." + this.ballast.name().toLowerCase(java.util.Locale.ROOT))));
-		if (this.electrify) {
-			paramText = paramText.copy().append(Text.translatable("message.railwayvehicleaddon.survey.tag_electrify"));
+		if (this.electrification != ElectrificationType.NONE) {
+			paramText = paramText.copy().append(Text.translatable("message.railwayvehicleaddon.survey.tag_electrify",
+					Text.translatable("message.railwayvehicleaddon.electrification."
+							+ this.electrification.name().toLowerCase(java.util.Locale.ROOT))));
 		}
 		if (effectiveForce()) {
 			paramText = paramText.copy().append(Text.translatable("message.railwayvehicleaddon.survey.tag_force"));

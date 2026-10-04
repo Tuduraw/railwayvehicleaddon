@@ -121,7 +121,7 @@ public final class TrackManager {
 		boolean force = input.force() && player.isCreative();
 		BallastType ballast = BallastType.byId(input.ballast());
 		LayoutPlan plan = mode.plan(network, new SurveyInput(points, input.closed() && mode.supportsClose(), param,
-				ballast.id(), force, input.electrify()), config);
+				ballast.id(), force, input.electrification()), config);
 		if (!plan.isValid()) {
 			if (!plan.issues().isEmpty()) {
 				RoutePlanner.Issue issue = plan.issues().get(0);
@@ -175,7 +175,7 @@ public final class TrackManager {
 			RoutePlanner.PlannedSegment geometry = edge.geometry();
 			TrackSegment segment = new TrackSegment(network.allocateId(), resolve(edge.a(), createdIds, splitIds),
 					resolve(edge.b(), createdIds, splitIds), geometry.plan(), geometry.profile(), config.designSpeedKmh(),
-					ballast.id(), input.electrify());
+					ballast.id(), input.electrification());
 			network.putSegment(segment);
 			edgeSegments.add(segment);
 		}
@@ -363,10 +363,10 @@ public final class TrackManager {
 	}
 
 	/**
-	 * 電化モード: 選んだ区間の電化を切り替える。選んだ区間に1つでも未電化があれば全部を電化し、
-	 * すべて電化済みなら全部の架線を撤去する。設備(転車台・遷車台の桁)は対象外。
+	 * 電化モード: 選んだ区間へ、要求された電化方式を適用する。選んだ区間が全部すでにその方式なら、
+	 * 代わりに非電化へ戻す(トグル)。設備(転車台・遷車台の桁)は対象外。
 	 */
-	public static void electrify(ServerPlayerEntity player, List<Long> segmentIds) {
+	public static void electrify(ServerPlayerEntity player, List<Long> segmentIds, int electrification) {
 		if (!player.getMainHandStack().isOf(ModItems.SURVEY_TOOL)) {
 			return;
 		}
@@ -383,17 +383,21 @@ public final class TrackManager {
 		if (targets.isEmpty()) {
 			return;
 		}
-		boolean value = targets.stream().anyMatch(s -> !s.electrified());
+		int requested = ElectrificationType.byId(electrification).id();
+		boolean allAlreadyRequested = targets.stream().allMatch(s -> s.electrification() == requested);
+		int value = allAlreadyRequested ? ElectrificationType.NONE.id() : requested;
 		List<TrackSegment> changed = new ArrayList<>();
 		for (TrackSegment segment : targets) {
-			TrackSegment updated = segment.withElectrified(value);
+			TrackSegment updated = segment.withElectrification(value);
 			network.putSegment(updated);
 			changed.add(updated);
 		}
 		markDirty(world);
 		broadcast(world, new TrackSyncPayload(false, RailwayConfig.get().values(), List.of(), changed, Map.of()));
-		player.sendMessage(Text.translatable(value ? "message.railwayvehicleaddon.electrified" : "message.railwayvehicleaddon.deelectrified",
-				changed.size()), true);
+		Text typeName = Text.translatable("message.railwayvehicleaddon.electrification." + ElectrificationType.byId(value).name().toLowerCase(java.util.Locale.ROOT));
+		player.sendMessage(Text.translatable(value != ElectrificationType.NONE.id()
+				? "message.railwayvehicleaddon.electrified" : "message.railwayvehicleaddon.deelectrified",
+				changed.size(), typeName), true);
 	}
 
 	// ------------------------------------------------------------------ 設備の動作

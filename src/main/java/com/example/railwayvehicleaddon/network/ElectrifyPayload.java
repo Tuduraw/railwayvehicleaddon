@@ -9,8 +9,13 @@ import net.minecraft.util.Identifier;
 import java.util.ArrayList;
 import java.util.List;
 
-/** クライアント→サーバー: 電化モードで選んだ区間の電化を切り替える。 */
-public record ElectrifyPayload(List<Long> segmentIds) implements CustomPayload {
+/**
+ * クライアント→サーバー: 電化モードで選んだ区間の電化方式を切り替える。
+ *
+ * @param electrification 適用する電化方式(ElectrificationType.id())。選んだ区間が全部すでに
+ *                        この方式なら、サーバー側で非電化に戻す(トグル)
+ */
+public record ElectrifyPayload(List<Long> segmentIds, int electrification) implements CustomPayload {
 
 	public static final CustomPayload.Id<ElectrifyPayload> ID =
 			new CustomPayload.Id<>(Identifier.of(RailwayVehicleAddon.MOD_ID, "electrify"));
@@ -21,6 +26,7 @@ public record ElectrifyPayload(List<Long> segmentIds) implements CustomPayload {
 			(buf, payload) -> {
 				buf.writeVarInt(payload.segmentIds().size());
 				payload.segmentIds().forEach(buf::writeLong);
+				buf.writeVarInt(payload.electrification());
 			},
 			buf -> {
 				int count = Math.min(buf.readVarInt(), HARD_LIMIT);
@@ -28,7 +34,8 @@ public record ElectrifyPayload(List<Long> segmentIds) implements CustomPayload {
 				for (int i = 0; i < count; i++) {
 					ids.add(buf.readLong());
 				}
-				return new ElectrifyPayload(ids);
+				int electrification = buf.readVarInt();
+				return new ElectrifyPayload(ids, electrification);
 			});
 
 	@Override

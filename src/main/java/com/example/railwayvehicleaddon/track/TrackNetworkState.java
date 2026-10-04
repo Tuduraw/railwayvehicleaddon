@@ -31,7 +31,7 @@ public final class TrackNetworkState extends PersistentState {
 			Codec.DOUBLE.listOf().fieldOf("profile").forGetter(seg -> toList(seg.profile().toArray())),
 			Codec.FLOAT.optionalFieldOf("design_speed", 80.0f).forGetter(TrackSegment::designSpeed),
 			Codec.INT.optionalFieldOf("ballast", 0).forGetter(TrackSegment::ballast),
-			Codec.BOOL.optionalFieldOf("electrified", false).forGetter(TrackSegment::electrified)
+			Codec.INT.optionalFieldOf("electrification", 0).forGetter(TrackSegment::electrification)
 	).apply(instance, (id, a, b, plan, profile, designSpeed, ballast, electrified) -> new TrackSegment(id, a, b,
 			PlanCurve.fromControlPoints(toArray(plan, 8)), HeightProfile.fromArray(toArray(profile, 8)), designSpeed,
 			ballast, electrified)));
