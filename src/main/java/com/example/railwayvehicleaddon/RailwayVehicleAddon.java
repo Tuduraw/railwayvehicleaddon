@@ -86,7 +86,7 @@ public class RailwayVehicleAddon implements ModInitializer {
 				context.server().execute(() -> DeviceLinks.linkFromTool(context.player(), payload.pos(), payload.targetId())));
 
 		ServerPlayNetworking.registerGlobalReceiver(ElectrifyPayload.ID, (payload, context) ->
-				context.server().execute(() -> TrackManager.electrify(context.player(), payload.segmentIds(), payload.electrification())));
+				context.server().execute(() -> TrackManager.electrify(context.player(), payload.segmentIds(), payload.electrification(), payload.wireHeight())));
 
 		// 転車台・遷車台の動作、変電所による給電の計算
 		ServerTickEvents.END_WORLD_TICK.register(TrackManager::tickFeatures);

@@ -135,5 +135,17 @@
   "screen.railwayvehicleaddon.substation.capacity_idle": "Capacity %s cars (idle)",
   "screen.railwayvehicleaddon.substation.linked": "Linked: (%s, %s, %s)",
   "screen.railwayvehicleaddon.substation.link_none": "Not linked (use Link mode)",
-  "screen.railwayvehicleaddon.substation.link_not_electrified": "Track not electrified"
+  "screen.railwayvehicleaddon.substation.link_not_electrified": "Track not electrified",
+  "key.railwayvehicleaddon.survey_wire_up": "Survey: Raise overhead wire (0.5 blocks)",
+  "key.railwayvehicleaddon.survey_wire_down": "Survey: Lower overhead wire (0.5 blocks)",
+  "key.railwayvehicleaddon.survey_radius_up": "Survey: Raise minimum curve radius (5 blocks)",
+  "key.railwayvehicleaddon.survey_radius_down": "Survey: Lower minimum curve radius (5 blocks)",
+  "key.railwayvehicleaddon.survey_placement_reset": "Survey: Reset wire height and minimum radius",
+  "message.railwayvehicleaddon.survey.wire_height": "Overhead wire height: %s blocks",
+  "message.railwayvehicleaddon.survey.min_radius": "Minimum curve radius: %s blocks",
+  "message.railwayvehicleaddon.survey.placement_reset": "Reset to defaults (wire %s blocks, minimum radius %s blocks)",
+  "message.railwayvehicleaddon.survey.tag_radius": " R≥%s",
+  "message.railwayvehicleaddon.survey.tag_wire": " wire %sm",
+  "message.railwayvehicleaddon.power.no_power_unit": "This train has no powered car",
+  "message.railwayvehicleaddon.power.no_power_supply": "No power is reaching the powered cars (check coal, fuel, overhead wire and substation)"
 }

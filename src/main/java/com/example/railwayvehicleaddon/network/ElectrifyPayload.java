@@ -15,7 +15,7 @@ import java.util.List;
  * @param electrification 適用する電化方式(ElectrificationType.id())。選んだ区間が全部すでに
  *                        この方式なら、サーバー側で非電化に戻す(トグル)
  */
-public record ElectrifyPayload(List<Long> segmentIds, int electrification) implements CustomPayload {
+public record ElectrifyPayload(List<Long> segmentIds, int electrification, float wireHeight) implements CustomPayload {
 
 	public static final CustomPayload.Id<ElectrifyPayload> ID =
 			new CustomPayload.Id<>(Identifier.of(RailwayVehicleAddon.MOD_ID, "electrify"));
@@ -27,6 +27,7 @@ public record ElectrifyPayload(List<Long> segmentIds, int electrification) imple
 				buf.writeVarInt(payload.segmentIds().size());
 				payload.segmentIds().forEach(buf::writeLong);
 				buf.writeVarInt(payload.electrification());
+				buf.writeFloat(payload.wireHeight());
 			},
 			buf -> {
 				int count = Math.min(buf.readVarInt(), HARD_LIMIT);
@@ -35,7 +36,8 @@ public record ElectrifyPayload(List<Long> segmentIds, int electrification) imple
 					ids.add(buf.readLong());
 				}
 				int electrification = buf.readVarInt();
-				return new ElectrifyPayload(ids, electrification);
+				float wireHeight = buf.readFloat();
+				return new ElectrifyPayload(ids, electrification, wireHeight);
 			});
 
 	@Override

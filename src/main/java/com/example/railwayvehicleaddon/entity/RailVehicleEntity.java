@@ -77,6 +77,9 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	private static final TrackedData<Float> RAIL_SPEED =
 			DataTracker.registerData(RailVehicleEntity.class, TrackedDataHandlerRegistry.FLOAT);
 	/** 台車の設定。クライアントがマルチプレイでもサーバーのデータを知らずに済むよう文字列で同期する */
+	/** 排煙の発生源(rail.smoke)。rail設定はサーバー側のデータなので、BOGIE_SPECと同じく文字列で同期する */
+	private static final TrackedData<String> SMOKE_SPEC =
+			DataTracker.registerData(RailVehicleEntity.class, TrackedDataHandlerRegistry.STRING);
 	private static final TrackedData<String> BOGIE_SPEC =
 			DataTracker.registerData(RailVehicleEntity.class, TrackedDataHandlerRegistry.STRING);
 	/** ノッチを押し続けたときに次の段へ進むまでのtick数(最初の1段目の後と、それ以降) */
@@ -162,6 +165,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		builder.add(TRACK_FACING, (byte) 1);
 		builder.add(RAIL_SPEED, 0f);
 		builder.add(BOGIE_SPEC, "");
+		builder.add(SMOKE_SPEC, "");
 		builder.add(FIRE_SECONDS_SYNC, 0f);
 		builder.add(COAL_COUNT_SYNC, 0);
 	}
@@ -222,6 +226,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		RailVehicleParams params = RailVehicleParamsLoader.get(this.getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
 		updateBogieSpec(params);
 		syncStatus(params);
+		syncSmokeSpec(params);
 
 		if (this.trackPos != null && network.segment(this.trackPos.segmentId()) == null) {
 			// 区間が分割された(線路の途中に分岐器・渡り線を入れた)なら新しい区間へ載せ替え、
@@ -264,9 +269,15 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		// 架線の給電が混雑しているときは、0より大きく1未満の割合で力行が弱まる
 		float powerFactor = 1f;
 		if (throttle != 0f) {
-			powerFactor = consumePower(network, params, throttle);
-			if (powerFactor <= 0f) {
-				warnNoPower(params);
+			if (!isPowerUnit(params)) {
+				// 運転台はあるが動力の無い車両(制御車)だけで走らせようとしている
+				powerFactor = 0f;
+				warnDriver("message.railwayvehicleaddon.power.no_power_unit");
+			} else {
+				powerFactor = consumePower(network, params, throttle);
+				if (powerFactor <= 0f) {
+					warnNoPower(params);
+				}
 			}
 		}
 
@@ -332,6 +343,19 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 
 	private boolean isOwnBraking() {
 		return drivingPlayer() == null || this.getSyncedBrakeInput() || this.tudursvehiclemod$isDestroyed();
+	}
+
+	/** 動力車か。rail.powered を指定していなければ、運転席がある車両を動力車とみなす(従来どおり)。 */
+	public boolean isPowerUnit(RailVehicleParams params) {
+		return params.powered().orElseGet(this::hasDriverSeat);
+	}
+
+	/** 運転者にだけ、一定間隔でアクションバーに知らせる。 */
+	private void warnDriver(String key) {
+		if (drivingPlayer() instanceof net.minecraft.server.network.ServerPlayerEntity player && this.powerWarningCooldown-- <= 0) {
+			this.powerWarningCooldown = 60;
+			player.sendMessage(net.minecraft.text.Text.translatable(key), true);
+		}
 	}
 
 	private void warnNoPower(RailVehicleParams params) {
@@ -698,36 +722,41 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		double weightedAccelMass = 0.0;
 		double weightedTargetNum = 0.0;
 		double weightedGradeMass = 0.0;
-		boolean anyDriver = false;
-		boolean braking = false;
+		// 総括制御: 先頭車(=this。運転者がいれば必ず運転している車両)のハンドルを、編成のすべての動力車に伝える。
+		// 他の運転台にいる人のノッチ操作は使わない(ブレーキだけは、どの運転台からでも編成全体に効く)
+		RailVehicleParams leaderParams = RailVehicleParamsLoader.get(this.getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
+		float handle = this.updateOwnThrottleAndNotch(this.getDefinition(), leaderParams);
+		boolean braking = this.drivingPlayer() == null || this.isOwnBraking();
+		int powerUnits = 0;
+		int poweredUnits = 0;
 		for (ConsistMember m : members) {
 			RailVehicleEntity car = m.entity();
 			RailVehicleParams carParams = RailVehicleParamsLoader.get(car.getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
 			VehicleDefinition carDef = car.getDefinition();
 			totalMass += carParams.mass();
-
-			float throttle = car.updateOwnThrottleAndNotch(carDef, carParams);
-			if (car.drivingPlayer() != null) {
-				anyDriver = true;
-				if (car.isOwnBraking()) {
+			boolean powerUnit = car.isPowerUnit(carParams);
+			if (car != this) {
+				if (car.drivingPlayer() != null && car.isOwnBraking()) {
 					braking = true;
 				}
+				// 各車のハンドル表示・燃料消費も先頭車のハンドルに合わせる(向きが逆の車両は符号を反転)
+				car.setThrottleDirect(powerUnit ? handle * m.sign() : 0f);
 			}
-			float effectiveThrottle = throttle * m.sign();
-			float powerFactor = 1f;
-			if (effectiveThrottle != 0f) {
-				powerFactor = car.consumePower(network, carParams, effectiveThrottle);
-				if (powerFactor <= 0f) {
-					car.warnNoPower(carParams);
-					effectiveThrottle = 0f;
+			// 動力車だけが引張力に寄与する。客車・貨車・制御車などは重さ(mass)だけを足す
+			if (powerUnit) {
+				powerUnits++;
+				float powerFactor = 1f;
+				if (handle != 0f) {
+					powerFactor = car.tudursvehiclemod$isOutOfFuel() || car.tudursvehiclemod$isDestroyed()
+							? 0f : car.consumePower(network, carParams, handle);
+					if (powerFactor > 0f) {
+						poweredUnits++;
+					}
 				}
-			}
-			// 動力車(運転席のある車両)だけが引張力に寄与する。客車・貨車・砲車などは重さ(mass)だけを足す
-			if (car.hasDriverSeat()) {
 				double carMaxSpeed = car.tudursvehiclemod$getEffectiveMaxSpeed();
 				double accelMass = carDef.acceleration() * carParams.mass();
 				weightedAccelMass += accelMass;
-				weightedTargetNum += effectiveThrottle * powerFactor * carMaxSpeed * accelMass;
+				weightedTargetNum += handle * powerFactor * carMaxSpeed * accelMass;
 			}
 
 			TrackNetwork.Walk carWalk = network.walk(this.trackPos, m.offset());
@@ -735,8 +764,12 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			double carGrade = carPoint != null ? carPoint.grade() * carWalk.pos().facing() * m.sign() : 0.0;
 			weightedGradeMass += carParams.gradeGravity() * carGrade * carParams.mass();
 		}
-		if (!anyDriver) {
-			braking = true;
+		if (handle != 0f) {
+			if (powerUnits == 0) {
+				warnDriver("message.railwayvehicleaddon.power.no_power_unit");
+			} else if (poweredUnits == 0) {
+				warnDriver("message.railwayvehicleaddon.power.no_power_supply");
+			}
 		}
 
 		double effAcceleration = weightedAccelMass > 1.0e-9 ? weightedAccelMass / totalMass : 0.0;
@@ -792,6 +825,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			car.dataTracker.set(RAIL_SPEED, (float) carSpeed);
 			car.updateBogieSpec(carParams);
 			car.syncStatus(carParams);
+			car.syncSmokeSpec(carParams);
 			car.applyPlacement(network, carPos);
 			car.consistHandledTick = tick;
 		}
@@ -823,6 +857,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	}
 
 	private void clientMovement() {
+		emitSmoke();
 		TrackNetwork network = RailwayVehicleAddon.clientTrackNetwork.get();
 		long segment = this.dataTracker.get(TRACK_SEGMENT);
 		if (network == null || segment < 0L || network.segment(segment) == null) {
@@ -1043,6 +1078,92 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			}
 		}
 		this.dataTracker.set(COAL_COUNT_SYNC, count);
+	}
+
+	// ------------------------------------------------------------------ 排煙
+
+	private String parsedSmokeSpec = "";
+	private float[][] smokeEmitters = new float[0][];
+	private String[] smokeTypes = new String[0];
+
+	/** サーバー: rail.smoke を文字列にして同期する(変わったときだけ書き込む)。 */
+	private void syncSmokeSpec(RailVehicleParams params) {
+		StringBuilder sb = new StringBuilder();
+		for (RailVehicleParams.SmokeEmitter e : params.smoke()) {
+			if (!sb.isEmpty()) {
+				sb.append(';');
+			}
+			sb.append(e.x()).append('|').append(e.y()).append('|').append(e.z()).append('|').append(e.type())
+					.append('|').append(e.rate()).append('|').append(e.idleRate());
+		}
+		String spec = sb.toString();
+		if (!spec.equals(this.dataTracker.get(SMOKE_SPEC))) {
+			this.dataTracker.set(SMOKE_SPEC, spec);
+		}
+	}
+
+	/**
+	 * クライアント: 運転者がいるか走行中のとき、各発生源から煙を出す。粒子数は
+	 * 停車・惰行中の idle_rate から、出力(スロットルの絶対値)に応じて rate まで増える。
+	 * 位置は車体の向き・傾き(getBodyOrientation)に合わせて回す。
+	 */
+	private void emitSmoke() {
+		String spec = this.dataTracker.get(SMOKE_SPEC);
+		if (!spec.equals(this.parsedSmokeSpec)) {
+			this.parsedSmokeSpec = spec;
+			List<float[]> list = new ArrayList<>();
+			List<String> types = new ArrayList<>();
+			if (!spec.isEmpty()) {
+				for (String entry : spec.split(";")) {
+					String[] f = entry.split("\\|");
+					if (f.length < 6) {
+						continue;
+					}
+					try {
+						list.add(new float[]{Float.parseFloat(f[0]), Float.parseFloat(f[1]), Float.parseFloat(f[2]),
+								Float.parseFloat(f[4]), Float.parseFloat(f[5])});
+						types.add(f[3]);
+					} catch (NumberFormatException ignored) {
+						// 壊れた項目は無視する
+					}
+				}
+			}
+			this.smokeEmitters = list.toArray(new float[0][]);
+			this.smokeTypes = types.toArray(new String[0]);
+		}
+		if (this.smokeEmitters.length == 0 || this.tudursvehiclemod$isDestroyed()) {
+			return;
+		}
+		boolean active = this.getControllingPassenger() != null || Math.abs(this.getRailSpeed()) > 0.01;
+		if (!active) {
+			return;
+		}
+		float intensity = MathHelper.clamp(Math.abs(this.getThrottle()), 0f, 1f);
+		org.joml.Quaternionf orientation = this.tudursvehiclemod$getBodyOrientation();
+		float scale = this.getScale();
+		net.minecraft.util.math.random.Random random = this.getRandom();
+		for (int i = 0; i < this.smokeEmitters.length; i++) {
+			float[] e = this.smokeEmitters[i];
+			float perTick = e[4] + (e[3] - e[4]) * intensity;
+			int count = (int) perTick + (random.nextFloat() < perTick - (int) perTick ? 1 : 0);
+			if (count <= 0) {
+				continue;
+			}
+			org.joml.Vector3f local = new org.joml.Vector3f(e[0] * scale, e[1] * scale, e[2] * scale);
+			orientation.transform(local);
+			net.minecraft.particle.ParticleEffect effect = switch (this.smokeTypes[i]) {
+				case "campfire" -> net.minecraft.particle.ParticleTypes.CAMPFIRE_COSY_SMOKE;
+				case "steam" -> net.minecraft.particle.ParticleTypes.CLOUD;
+				default -> net.minecraft.particle.ParticleTypes.LARGE_SMOKE;
+			};
+			for (int k = 0; k < count; k++) {
+				double x = this.getX() + local.x + (random.nextDouble() - 0.5) * 0.25;
+				double y = this.getY() + local.y;
+				double z = this.getZ() + local.z + (random.nextDouble() - 0.5) * 0.25;
+				this.getEntityWorld().addParticleClient(effect, true, false, x, y, z,
+						(random.nextDouble() - 0.5) * 0.02, 0.06 + random.nextDouble() * 0.06, (random.nextDouble() - 0.5) * 0.02);
+			}
+		}
 	}
 
 	private void updateBogieSpec(RailVehicleParams params) {

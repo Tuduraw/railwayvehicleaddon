@@ -120,8 +120,10 @@ public final class TrackManager {
 		// 強制置換はクリエイティブのみ(クライアントの申告は信用しない)
 		boolean force = input.force() && player.isCreative();
 		BallastType ballast = BallastType.byId(input.ballast());
+		// 曲線半径のしきい値(測量ツールで指定。設定値は下回れない)と、架線の高さに応じた建築限界を反映した設定
+		RailwayConfig.Values placeConfig = config.forPlacement(input.minRadius(), input.electrification(), input.wireHeight());
 		LayoutPlan plan = mode.plan(network, new SurveyInput(points, input.closed() && mode.supportsClose(), param,
-				ballast.id(), force, input.electrification()), config);
+				ballast.id(), force, input.electrification(), input.wireHeight(), input.minRadius()), placeConfig);
 		if (!plan.isValid()) {
 			if (!plan.issues().isEmpty()) {
 				RoutePlanner.Issue issue = plan.issues().get(0);
@@ -134,7 +136,7 @@ public final class TrackManager {
 		for (LayoutPlan.FeatureSpec spec : plan.features()) {
 			extra.addAll(spec.clearance(config));
 		}
-		ClearanceScanner.ScanResult scan = ClearanceScanner.scan(world, plan.previewSegments(config.designSpeedKmh()), extra, config, true);
+		ClearanceScanner.ScanResult scan = ClearanceScanner.scan(world, plan.previewSegments(config.designSpeedKmh()), extra, placeConfig, true);
 		if (scan.hasBlocking(force)) {
 			player.sendMessage(Text.translatable("message.railwayvehicleaddon.place_blocked",
 					scan.count(BlockCategory.BLOCKED_FLUID), scan.count(BlockCategory.BLOCKED_HARD),
@@ -175,7 +177,7 @@ public final class TrackManager {
 			RoutePlanner.PlannedSegment geometry = edge.geometry();
 			TrackSegment segment = new TrackSegment(network.allocateId(), resolve(edge.a(), createdIds, splitIds),
 					resolve(edge.b(), createdIds, splitIds), geometry.plan(), geometry.profile(), config.designSpeedKmh(),
-					ballast.id(), input.electrification());
+					ballast.id(), input.electrification(), input.wireHeight());
 			network.putSegment(segment);
 			edgeSegments.add(segment);
 		}
@@ -366,7 +368,7 @@ public final class TrackManager {
 	 * 電化モード: 選んだ区間へ、要求された電化方式を適用する。選んだ区間が全部すでにその方式なら、
 	 * 代わりに非電化へ戻す(トグル)。設備(転車台・遷車台の桁)は対象外。
 	 */
-	public static void electrify(ServerPlayerEntity player, List<Long> segmentIds, int electrification) {
+	public static void electrify(ServerPlayerEntity player, List<Long> segmentIds, int electrification, float wireHeight) {
 		if (!player.getMainHandStack().isOf(ModItems.SURVEY_TOOL)) {
 			return;
 		}
@@ -384,11 +386,14 @@ public final class TrackManager {
 			return;
 		}
 		int requested = ElectrificationType.byId(electrification).id();
-		boolean allAlreadyRequested = targets.stream().allMatch(s -> s.electrification() == requested);
+		// 架線は高さも同じときだけ「適用済み」とみなす(高さだけ変えたいときは、もう一度Enterで張り直せる)
+		boolean overhead = requested == ElectrificationType.OVERHEAD.id();
+		boolean allAlreadyRequested = targets.stream().allMatch(s -> s.electrification() == requested
+				&& (!overhead || Math.abs(s.wireHeight() - wireHeight) < 0.01f));
 		int value = allAlreadyRequested ? ElectrificationType.NONE.id() : requested;
 		List<TrackSegment> changed = new ArrayList<>();
 		for (TrackSegment segment : targets) {
-			TrackSegment updated = segment.withElectrification(value);
+			TrackSegment updated = segment.withElectrification(value, wireHeight);
 			network.putSegment(updated);
 			changed.add(updated);
 		}

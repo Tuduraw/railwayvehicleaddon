@@ -135,5 +135,17 @@
   "screen.railwayvehicleaddon.substation.capacity_idle": "供給能力 %s両 (停止中)",
   "screen.railwayvehicleaddon.substation.linked": "連結先 (%s, %s, %s)",
   "screen.railwayvehicleaddon.substation.link_none": "連結先なし(連結モードで設定)",
-  "screen.railwayvehicleaddon.substation.link_not_electrified": "連結先が電化されていません"
+  "screen.railwayvehicleaddon.substation.link_not_electrified": "連結先が電化されていません",
+  "key.railwayvehicleaddon.survey_wire_up": "測量: 架線の高さを上げる(0.5ブロック)",
+  "key.railwayvehicleaddon.survey_wire_down": "測量: 架線の高さを下げる(0.5ブロック)",
+  "key.railwayvehicleaddon.survey_radius_up": "測量: 曲線半径のしきい値を上げる(5ブロック)",
+  "key.railwayvehicleaddon.survey_radius_down": "測量: 曲線半径のしきい値を下げる(5ブロック)",
+  "key.railwayvehicleaddon.survey_placement_reset": "測量: 架線の高さ・曲線半径のしきい値を既定値に戻す",
+  "message.railwayvehicleaddon.survey.wire_height": "架線の高さ: %sブロック",
+  "message.railwayvehicleaddon.survey.min_radius": "曲線半径のしきい値: %sブロック以上",
+  "message.railwayvehicleaddon.survey.placement_reset": "既定値に戻しました(架線 %sブロック・曲線半径 %sブロック以上)",
+  "message.railwayvehicleaddon.survey.tag_radius": " R≧%s",
+  "message.railwayvehicleaddon.survey.tag_wire": " 架線%sm",
+  "message.railwayvehicleaddon.power.no_power_unit": "この編成には動力車がありません",
+  "message.railwayvehicleaddon.power.no_power_supply": "動力車に動力が届いていません(石炭・燃料・架線と変電所を確認してください)"
 }

@@ -36,6 +36,7 @@ public final class TrackCodecs {
 		buf.writeFloat(segment.designSpeed());
 		buf.writeByte(segment.ballast());
 		buf.writeByte(segment.electrification());
+		buf.writeFloat(segment.wireHeight());
 	}
 
 	public static TrackSegment readSegment(PacketByteBuf buf) {
@@ -53,8 +54,9 @@ public final class TrackCodecs {
 		float designSpeed = buf.readFloat();
 		int ballast = buf.readByte();
 		int electrification = buf.readByte();
+		float wireHeight = buf.readFloat();
 		return new TrackSegment(id, a, b, PlanCurve.fromControlPoints(plan), HeightProfile.fromArray(profile), designSpeed,
-				ballast, electrification);
+				ballast, electrification, wireHeight);
 	}
 
 	public static void writeConfig(PacketByteBuf buf, RailwayConfig.Values v) {
@@ -70,11 +72,12 @@ public final class TrackCodecs {
 		buf.writeFloat(v.maxRouteLength());
 		buf.writeFloat(v.cantTransitionLength());
 		buf.writeFloat(v.trackRenderDistance());
+		buf.writeFloat(v.catenaryHeight());
 	}
 
 	public static RailwayConfig.Values readConfig(PacketByteBuf buf) {
 		return new RailwayConfig.Values(buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat(),
 				buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readVarInt(), buf.readFloat(), buf.readFloat(),
-				buf.readFloat());
+				buf.readFloat(), buf.readFloat());
 	}
 }

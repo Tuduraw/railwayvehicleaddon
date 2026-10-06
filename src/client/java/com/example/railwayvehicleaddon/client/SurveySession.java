@@ -33,6 +33,7 @@ import net.minecraft.block.Block;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.text.Text;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
@@ -90,6 +91,15 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 	private boolean forceReplace;
 	/** 敷設する線路を電化する */
 	private ElectrificationType electrification = ElectrificationType.NONE;
+	/** 架線の高さ(0以下なら設定の catenary_height)。0.5ブロック刻み */
+	private float wireHeight = -1f;
+	/** 曲線半径のしきい値(0以下なら設定の min_curve_radius)。設定値は下回れない */
+	private float minRadius = -1f;
+	private static final float WIRE_STEP = 0.5f;
+	private static final float WIRE_MIN = 2.0f;
+	private static final float WIRE_MAX = 12.0f;
+	private static final float RADIUS_STEP = 5.0f;
+	private static final float RADIUS_MAX = 1000.0f;
 
 	private boolean dirty;
 	private int rescanTimer;
@@ -193,6 +203,52 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 
 	public ElectrificationType electrification() {
 		return this.electrification;
+	}
+
+	public float effectiveWireHeight() {
+		return this.wireHeight > 0f ? this.wireHeight : ClientTrackData.config().catenaryHeight();
+	}
+
+	public float effectiveMinRadius() {
+		return Math.max(ClientTrackData.config().minCurveRadius(), this.minRadius > 0f ? this.minRadius : 0f);
+	}
+
+	/** 架線の高さを0.5ブロック上げ下げする(既定: ↑・↓)。 */
+	public void adjustWireHeight(int direction) {
+		float h = Math.round(effectiveWireHeight() / WIRE_STEP) * WIRE_STEP + direction * WIRE_STEP;
+		this.wireHeight = MathHelper.clamp(h, WIRE_MIN, WIRE_MAX);
+		this.dirty = true;
+		this.statusTimer = 0;
+		notify(Text.translatable("message.railwayvehicleaddon.survey.wire_height", String.format("%.1f", this.wireHeight)));
+	}
+
+	/** 曲線半径のしきい値を5ブロック刻みで上げ下げする(既定: →・←)。設定の min_curve_radius は下回れない。 */
+	public void adjustMinRadius(int direction) {
+		float floor = ClientTrackData.config().minCurveRadius();
+		float r = effectiveMinRadius();
+		float next = direction > 0 ? (float) (Math.floor(r / RADIUS_STEP) + 1) * RADIUS_STEP
+				: (float) (Math.ceil(r / RADIUS_STEP) - 1) * RADIUS_STEP;
+		this.minRadius = MathHelper.clamp(next, floor, RADIUS_MAX);
+		this.dirty = true;
+		this.statusTimer = 0;
+		notify(Text.translatable("message.railwayvehicleaddon.survey.min_radius", String.format("%.0f", this.minRadius)));
+	}
+
+	/** 架線の高さと曲線半径のしきい値を、設定の既定値に戻す(既定: R)。 */
+	public void resetPlacementSettings() {
+		this.wireHeight = -1f;
+		this.minRadius = -1f;
+		this.dirty = true;
+		this.statusTimer = 0;
+		notify(Text.translatable("message.railwayvehicleaddon.survey.placement_reset",
+				String.format("%.1f", effectiveWireHeight()), String.format("%.0f", effectiveMinRadius())));
+	}
+
+	private static void notify(Text text) {
+		ClientPlayerEntity player = MinecraftClient.getInstance().player;
+		if (player != null) {
+			player.sendMessage(text, true);
+		}
 	}
 
 	/** 道床の種類(Iキー)・電化方式(スニーク+Iキー)は同じキーで切り替える。 */
@@ -532,7 +588,7 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		}
 		if (this.mode == SurveyModes.ELECTRIFY) {
 			if (!this.removeSelection.isEmpty()) {
-				ClientPlayNetworking.send(new ElectrifyPayload(new ArrayList<>(this.removeSelection), this.electrification.id()));
+				ClientPlayNetworking.send(new ElectrifyPayload(new ArrayList<>(this.removeSelection), this.electrification.id(), effectiveWireHeight()));
 				this.removeSelection.clear();
 			}
 			return;
@@ -560,7 +616,8 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 	}
 
 	private SurveyInput currentInput() {
-		return new SurveyInput(new ArrayList<>(this.points), this.closed, param(), this.ballast.id(), effectiveForce(), this.electrification.id());
+		return new SurveyInput(new ArrayList<>(this.points), this.closed, param(), this.ballast.id(), effectiveForce(), this.electrification.id(),
+				effectiveWireHeight(), effectiveMinRadius());
 	}
 
 	// ------------------------------------------------------------------ 毎tick
@@ -635,7 +692,8 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 			this.preview = null;
 			return;
 		}
-		RailwayConfig.Values config = ClientTrackData.config();
+		// サーバーと同じ判定にするため、曲線半径のしきい値・架線の高さを反映した設定で計画・走査する
+		RailwayConfig.Values config = ClientTrackData.config().forPlacement(effectiveMinRadius(), this.electrification.id(), effectiveWireHeight());
 		LayoutPlan plan = this.mode.plan(ClientTrackData.network(), currentInput(), config);
 		List<TrackSegment> segments = plan.previewSegments(config.designSpeedKmh());
 		Set<BlockPos> extra = new java.util.HashSet<>();
@@ -671,6 +729,10 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		}
 		paramText = paramText.copy().append(Text.translatable("message.railwayvehicleaddon.survey.tag_ballast",
 				Text.translatable("message.railwayvehicleaddon.ballast." + this.ballast.name().toLowerCase(java.util.Locale.ROOT))));
+		paramText = paramText.copy().append(Text.translatable("message.railwayvehicleaddon.survey.tag_radius", String.format("%.0f", effectiveMinRadius())));
+		if (this.electrification == ElectrificationType.OVERHEAD) {
+			paramText = paramText.copy().append(Text.translatable("message.railwayvehicleaddon.survey.tag_wire", String.format("%.1f", effectiveWireHeight())));
+		}
 		if (this.electrification != ElectrificationType.NONE) {
 			paramText = paramText.copy().append(Text.translatable("message.railwayvehicleaddon.survey.tag_electrify",
 					Text.translatable("message.railwayvehicleaddon.electrification."

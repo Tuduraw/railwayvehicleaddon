@@ -32,6 +32,13 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 	private static KeyBinding paramDownKey;
 	private static KeyBinding ballastKey;
 	private static KeyBinding forceKey;
+	/**
+	 * 敷設時の調整キー(架線の高さ↑↓・曲線半径のしきい値→←・リセットR)。既定のキーは本体MODの操作と重なるため、
+	 * キー入力の配信(KeyBindingの押下状態)には頼らず、割り当てたキーの物理的な状態を直接読む。測量ツールを持ち、
+	 * 画面を開いていないときだけ反応する。割り当ては操作設定で個別に変えられる。
+	 */
+	private static KeyBinding[] placementKeys;
+	private static final boolean[] PLACEMENT_KEY_DOWN = new boolean[5];
 
 	@Override
 	public void onInitializeClient() {
@@ -76,6 +83,12 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 				"key.railwayvehicleaddon.survey_ballast", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_I, category));
 		forceKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
 				"key.railwayvehicleaddon.survey_force", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_HOME, category));
+		placementKeys = new KeyBinding[]{
+				KeyBindingHelper.registerKeyBinding(new KeyBinding("key.railwayvehicleaddon.survey_wire_up", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_UP, category)),
+				KeyBindingHelper.registerKeyBinding(new KeyBinding("key.railwayvehicleaddon.survey_wire_down", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_DOWN, category)),
+				KeyBindingHelper.registerKeyBinding(new KeyBinding("key.railwayvehicleaddon.survey_radius_up", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT, category)),
+				KeyBindingHelper.registerKeyBinding(new KeyBinding("key.railwayvehicleaddon.survey_radius_down", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_LEFT, category)),
+				KeyBindingHelper.registerKeyBinding(new KeyBinding("key.railwayvehicleaddon.survey_placement_reset", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_R, category))};
 
 		ClientTickEvents.END_CLIENT_TICK.register(RailwayVehicleAddonClient::onClientTick);
 		WorldRenderEvents.BEFORE_TRANSLUCENT.register(TrackRenderer::render);
@@ -126,6 +139,7 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 				}
 			}
 		}
+		pollPlacementKeys(client, holding);
 		while (forceKey.wasPressed()) {
 			if (holding) {
 				SurveySession.INSTANCE.toggleForce();
@@ -135,5 +149,28 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 		DeviceOverlayRenderer.tick(client);
 		SurveySession.INSTANCE.tick(client);
 		SurveyPreviewRenderer.tick(client);
+	}
+
+	/** 敷設時の調整キーを、割り当てたキーの物理的な状態から読む(押した瞬間だけ反応)。 */
+	private static void pollPlacementKeys(MinecraftClient client, boolean holding) {
+		for (int i = 0; i < placementKeys.length; i++) {
+			KeyBinding binding = placementKeys[i];
+			while (binding.wasPressed()) {
+				// 配信された押下は使わない(読み捨てて溜めない)
+			}
+			InputUtil.Key key = KeyBindingHelper.getBoundKeyOf(binding);
+			boolean down = holding && client.currentScreen == null && key.getCategory() == InputUtil.Type.KEYSYM
+					&& key.getCode() != GLFW.GLFW_KEY_UNKNOWN && InputUtil.isKeyPressed(client.getWindow(), key.getCode());
+			if (down && !PLACEMENT_KEY_DOWN[i]) {
+				switch (i) {
+					case 0 -> SurveySession.INSTANCE.adjustWireHeight(1);
+					case 1 -> SurveySession.INSTANCE.adjustWireHeight(-1);
+					case 2 -> SurveySession.INSTANCE.adjustMinRadius(1);
+					case 3 -> SurveySession.INSTANCE.adjustMinRadius(-1);
+					default -> SurveySession.INSTANCE.resetPlacementSettings();
+				}
+			}
+			PLACEMENT_KEY_DOWN[i] = down;
+		}
 	}
 }

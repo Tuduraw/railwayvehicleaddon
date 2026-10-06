@@ -42,6 +42,8 @@ public record PlaceLayoutPayload(String modeId, SurveyInput input) implements Cu
 				buf.writeVarInt(payload.input().ballast());
 				buf.writeBoolean(payload.input().force());
 				buf.writeVarInt(payload.input().electrification());
+				buf.writeFloat(payload.input().wireHeight());
+				buf.writeFloat(payload.input().minRadius());
 			},
 			buf -> {
 				String modeId = buf.readString(64);
@@ -56,7 +58,9 @@ public record PlaceLayoutPayload(String modeId, SurveyInput input) implements Cu
 				int ballast = buf.readVarInt();
 				boolean force = buf.readBoolean();
 				int electrification = buf.readVarInt();
-				return new PlaceLayoutPayload(modeId, new SurveyInput(points, closed, param, ballast, force, electrification));
+				float wireHeight = buf.readFloat();
+				float minRadius = buf.readFloat();
+				return new PlaceLayoutPayload(modeId, new SurveyInput(points, closed, param, ballast, force, electrification, wireHeight, minRadius));
 			});
 
 	@Override

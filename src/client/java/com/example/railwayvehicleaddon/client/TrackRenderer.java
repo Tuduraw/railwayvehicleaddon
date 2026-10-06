@@ -53,8 +53,6 @@ public final class TrackRenderer {
 	private static final double BALLAST_MAX_DEPTH = 3.0;
 	private static final double BALLAST_BRIDGE_DEPTH = 0.3;
 	private static final double RAIL_STEP = 0.5;
-	/** トロリ線の高さ(線路基面から)。建築限界(既定4.0)の内側に収める */
-	private static final double WIRE_HEIGHT = 3.7;
 	/** 架線柱の間隔と、線路中心からの距離(建築限界の片側幅1.5の内側、車体幅の外側) */
 	private static final double MAST_SPACING = 12.0;
 	private static final double MAST_OFFSET = 1.42;
@@ -263,11 +261,11 @@ public final class TrackRenderer {
 	 * 架線(電化区間・架線式): 線路中心の真上にトロリ線を張り、区間に沿って一定間隔で片側に架線柱と
 	 * 腕金(カンチレバー)を立てる。架線柱は建築限界の内側(車両に当たらない位置)に置く。
 	 */
-	private static void buildOverhead(MeshBuilder builder, TrackNetwork network, TrackSegment segment, TrackPoint[] samples, int steps) {
+	private static void buildOverhead(MeshBuilder builder, TrackNetwork network, TrackSegment segment, TrackPoint[] samples, int steps, double wire) {
 		for (int i = 1; i <= steps; i++) {
 			TrackPoint a = samples[i - 1];
 			TrackPoint b = samples[i];
-			wire(builder, new Vec3d(a.x(), a.y() + WIRE_HEIGHT, a.z()), new Vec3d(b.x(), b.y() + WIRE_HEIGHT, b.z()), 0.02);
+			wire(builder, new Vec3d(a.x(), a.y() + wire, a.z()), new Vec3d(b.x(), b.y() + wire, b.z()), 0.02);
 		}
 		double length = segment.length();
 		int masts = Math.max(1, (int) Math.ceil(length / MAST_SPACING));
@@ -276,13 +274,13 @@ public final class TrackRenderer {
 			TrackPoint p = network.sample(segment, s);
 			Vec3d center = new Vec3d(p.x(), p.y(), p.z());
 			Vec3d base = center.add(p.lateralX() * MAST_OFFSET, 0.0, p.lateralZ() * MAST_OFFSET);
-			column(builder, base, p.dirX(), p.dirZ(), 0.07, p.y(), p.y() + WIRE_HEIGHT + 0.28, RAIL_UV);
+			column(builder, base, p.dirX(), p.dirZ(), 0.07, p.y(), p.y() + wire + 0.28, RAIL_UV);
 			// 腕金: 架線柱の上部から線路中心の上へ
-			Vec3d armStart = new Vec3d(base.x, p.y() + WIRE_HEIGHT + 0.25, base.z);
-			Vec3d armEnd = new Vec3d(center.x, p.y() + WIRE_HEIGHT + 0.25, center.z);
+			Vec3d armStart = new Vec3d(base.x, p.y() + wire + 0.25, base.z);
+			Vec3d armEnd = new Vec3d(center.x, p.y() + wire + 0.25, center.z);
 			wire(builder, armStart, armEnd, 0.035);
 			// ハンガー: 腕金からトロリ線へ
-			wire(builder, armEnd, new Vec3d(center.x, p.y() + WIRE_HEIGHT, center.z), 0.015);
+			wire(builder, armEnd, new Vec3d(center.x, p.y() + wire, center.z), 0.015);
 		}
 	}
 
@@ -375,7 +373,8 @@ public final class TrackRenderer {
 		}
 
 		switch (segment.electrificationType()) {
-			case OVERHEAD -> buildOverhead(builder, network, segment, samples, steps);
+			case OVERHEAD -> buildOverhead(builder, network, segment, samples, steps,
+					segment.wireHeight() > 0f ? segment.wireHeight() : ClientTrackData.config().catenaryHeight());
 			case THIRD_RAIL -> buildThirdRail(builder, network, segment, samples, steps, gauge);
 			case NONE, HIDDEN -> {
 				// 非電化、または「非表示」(給電の対象だが何も描かない)

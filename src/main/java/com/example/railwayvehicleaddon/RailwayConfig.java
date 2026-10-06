@@ -52,6 +52,11 @@ public final class RailwayConfig {
 	 */
 	public float track_render_distance = 256.0f;
 	/**
+	 * 架線(電化方式「架線」)の高さの既定値(線路基面からのブロック数)。敷設時に測量ツールで0.5ブロック刻みに
+	 * 変えられ、Rキー(既定)でこの値に戻る。実寸(1:1)の車両(屋根約4m、パンタグラフを上げて約5m)に合わせた値。
+	 */
+	public float catenary_height = 5.0f;
+	/**
 	 * 撤去したブロックのドロップ(サバイバル時のみ。クリエイティブでは常にドロップしない)。
 	 * "none" / "player_placed"(設置物のみ) / "all"
 	 */
@@ -89,13 +94,31 @@ public final class RailwayConfig {
 	public Values values() {
 		return new Values(this.gauge, this.min_curve_radius, this.max_grade, this.vertical_curve_length,
 				this.clearance_half_width, this.clearance_height, this.unbreakable_hardness, this.design_speed_kmh,
-				this.max_waypoints, this.max_route_length, this.cant_transition_length, this.track_render_distance);
+				this.max_waypoints, this.max_route_length, this.cant_transition_length, this.track_render_distance,
+				this.catenary_height);
 	}
 
 	public record Values(float gauge, float minCurveRadius, float maxGrade, float verticalCurveLength,
 						 float clearanceHalfWidth, float clearanceHeight, float unbreakableHardness,
 						 float designSpeedKmh, int maxWaypoints, float maxRouteLength, float cantTransitionLength,
-						 float trackRenderDistance) {
+						 float trackRenderDistance, float catenaryHeight) {
 		public static final Values DEFAULT = new RailwayConfig().values();
+
+		/**
+		 * 敷設1回分の判定に使う設定。曲線半径の下限は、設定値と測量ツールで指定したしきい値の大きい方
+		 * (設定値は下回れない)。架線を張る場合は、架線の高さ+0.6を建築限界の高さの下限にする
+		 * (架線と架線柱がブロックに埋まらないよう、その分のブロックも撤去する)。
+		 */
+		public Values forPlacement(float minRadius, int electrification, float wireHeight) {
+			float radius = Math.max(this.minCurveRadius, minRadius);
+			float clearance = this.clearanceHeight;
+			if (electrification == com.example.railwayvehicleaddon.track.ElectrificationType.OVERHEAD.id()) {
+				float wire = wireHeight > 0f ? wireHeight : this.catenaryHeight;
+				clearance = Math.max(clearance, wire + 0.6f);
+			}
+			return new Values(this.gauge, radius, this.maxGrade, this.verticalCurveLength, this.clearanceHalfWidth, clearance,
+					this.unbreakableHardness, this.designSpeedKmh, this.maxWaypoints, this.maxRouteLength,
+					this.cantTransitionLength, this.trackRenderDistance, this.catenaryHeight);
+		}
 	}
 }

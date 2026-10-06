@@ -25,7 +25,8 @@ import java.util.List;
  *   "mass": 1.0,
  *   "power_source": "fuel",
  *   "coupler_front": 4.5,
- *   "coupler_rear": -4.5
+ *   "coupler_rear": -4.5,
+ *   "smoke": [ { "x": 0.0, "y": 4.2, "z": 8.9, "type": "campfire", "rate": 2.5, "idle_rate": 0.25 } ]
  * }
  * </pre>
  *
@@ -41,17 +42,20 @@ import java.util.List;
  *                       (車体が台車より外へ張り出している車両では連結時に車体が重なって見えるため、
  *                       車体の実際の前端に合わせて指定することを推奨する)
  * @param couplerRear    連結器の位置(モデル座標のZ、後側)。未指定(NaN)の扱いはcouplerFrontと同じ
+ * @param smoke          排煙(蒸気機関車の煙突・ディーゼルの排気など)。運転中または走行中に、出力に応じて煙を出す
+ * @param powered        動力車か(引張力を持つか)。省略時は「運転席がある車両=動力車」。運転台の無い電動車(モハ等)は true、
+ *                       運転台はあるが動力の無い制御車(クハ等)は false にする。編成では運転者のノッチが全動力車に伝わる(総括制御)
  */
 public record RailVehicleParams(List<Bogie> bogies, float brake, float resistance, float gradeGravity,
 								int powerNotches, int reverseNotches, float mass, String powerSource,
-								float couplerFront, float couplerRear) {
+								float couplerFront, float couplerRear, List<SmokeEmitter> smoke, java.util.Optional<Boolean> powered) {
 
 	public static final String FUEL = "fuel";
 	public static final String STEAM = "steam";
 	public static final String ELECTRIC = "electric";
 
 	public static final RailVehicleParams DEFAULT =
-			new RailVehicleParams(List.of(), 0.015f, 0.0003f, 0.04f, 0, 0, 1.0f, FUEL, Float.NaN, Float.NaN);
+			new RailVehicleParams(List.of(), 0.015f, 0.0003f, 0.04f, 0, 0, 1.0f, FUEL, Float.NaN, Float.NaN, List.of(), java.util.Optional.empty());
 
 	/** ノッチ式か(前進・後進どちらかのノッチ数が1以上)。 */
 	public boolean usesNotches() {
@@ -84,6 +88,27 @@ public record RailVehicleParams(List<Bogie> bogies, float brake, float resistanc
 		).apply(instance, Bogie::new));
 	}
 
+	/**
+	 * 排煙の発生源。
+	 *
+	 * @param x        発生位置(モデル座標。scaleが掛かる)
+	 * @param y        発生位置(モデル座標)
+	 * @param z        発生位置(モデル座標)
+	 * @param type     煙の種類: "smoke"(黒っぽい煙。短く消える)、"campfire"(高く立ちのぼる灰白色の煙。蒸気機関車向け)、"steam"(白い蒸気)
+	 * @param rate     出力100%のときの1tickあたりの粒子数(小数は確率で出す)
+	 * @param idleRate 停車中・惰行中(運転者がいるか走行中)の1tickあたりの粒子数
+	 */
+	public record SmokeEmitter(float x, float y, float z, String type, float rate, float idleRate) {
+		public static final Codec<SmokeEmitter> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+				Codec.FLOAT.optionalFieldOf("x", 0.0f).forGetter(SmokeEmitter::x),
+				Codec.FLOAT.optionalFieldOf("y", 0.0f).forGetter(SmokeEmitter::y),
+				Codec.FLOAT.optionalFieldOf("z", 0.0f).forGetter(SmokeEmitter::z),
+				Codec.STRING.optionalFieldOf("type", "smoke").forGetter(SmokeEmitter::type),
+				Codec.FLOAT.optionalFieldOf("rate", 1.0f).forGetter(SmokeEmitter::rate),
+				Codec.FLOAT.optionalFieldOf("idle_rate", 0.1f).forGetter(SmokeEmitter::idleRate)
+		).apply(instance, SmokeEmitter::new));
+	}
+
 	public static final Codec<RailVehicleParams> CODEC = RecordCodecBuilder.create(instance -> instance.group(
 			Bogie.CODEC.listOf().optionalFieldOf("bogies", List.of()).forGetter(RailVehicleParams::bogies),
 			Codec.FLOAT.optionalFieldOf("brake", DEFAULT.brake).forGetter(RailVehicleParams::brake),
@@ -94,6 +119,8 @@ public record RailVehicleParams(List<Bogie> bogies, float brake, float resistanc
 			Codec.FLOAT.optionalFieldOf("mass", 1.0f).forGetter(RailVehicleParams::mass),
 			Codec.STRING.optionalFieldOf("power_source", FUEL).forGetter(RailVehicleParams::powerSource),
 			Codec.FLOAT.optionalFieldOf("coupler_front", Float.NaN).forGetter(RailVehicleParams::couplerFront),
-			Codec.FLOAT.optionalFieldOf("coupler_rear", Float.NaN).forGetter(RailVehicleParams::couplerRear)
+			Codec.FLOAT.optionalFieldOf("coupler_rear", Float.NaN).forGetter(RailVehicleParams::couplerRear),
+			SmokeEmitter.CODEC.listOf().optionalFieldOf("smoke", List.of()).forGetter(RailVehicleParams::smoke),
+			Codec.BOOL.optionalFieldOf("powered").forGetter(RailVehicleParams::powered)
 	).apply(instance, RailVehicleParams::new));
 }

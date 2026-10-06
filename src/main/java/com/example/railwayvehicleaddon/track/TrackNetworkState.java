@@ -31,10 +31,11 @@ public final class TrackNetworkState extends PersistentState {
 			Codec.DOUBLE.listOf().fieldOf("profile").forGetter(seg -> toList(seg.profile().toArray())),
 			Codec.FLOAT.optionalFieldOf("design_speed", 80.0f).forGetter(TrackSegment::designSpeed),
 			Codec.INT.optionalFieldOf("ballast", 0).forGetter(TrackSegment::ballast),
-			Codec.INT.optionalFieldOf("electrification", 0).forGetter(TrackSegment::electrification)
-	).apply(instance, (id, a, b, plan, profile, designSpeed, ballast, electrified) -> new TrackSegment(id, a, b,
+			Codec.INT.optionalFieldOf("electrification", 0).forGetter(TrackSegment::electrification),
+			Codec.FLOAT.optionalFieldOf("wire_height", 0f).forGetter(TrackSegment::wireHeight)
+	).apply(instance, (id, a, b, plan, profile, designSpeed, ballast, electrified, wireHeight) -> new TrackSegment(id, a, b,
 			PlanCurve.fromControlPoints(toArray(plan, 8)), HeightProfile.fromArray(toArray(profile, 8)), designSpeed,
-			ballast, electrified)));
+			ballast, electrified, wireHeight)));
 
 	private record SwitchEntry(long node, long segment) {
 		static final Codec<SwitchEntry> CODEC = RecordCodecBuilder.create(instance -> instance.group(

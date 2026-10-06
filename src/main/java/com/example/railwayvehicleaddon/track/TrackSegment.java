@@ -7,21 +7,26 @@ package com.example.railwayvehicleaddon.track;
  * @param designSpeed 設計速度(km/h)。カントの計算に使う
  * @param ballast        道床の見た目(BallastType.id())
  * @param electrification 電化方式(ElectrificationType.id())。給電の可否には方式を区別しない(NONE以外なら等しく給電対象)
+ * @param wireHeight     架線の高さ(線路基面から。0以下なら設定の catenary_height を使う)
  */
 public record TrackSegment(long id, long nodeA, long nodeB, PlanCurve plan, HeightProfile profile, float designSpeed,
-						   int ballast, int electrification) {
+						   int ballast, int electrification, float wireHeight) {
 
 	public TrackSegment(long id, long nodeA, long nodeB, PlanCurve plan, HeightProfile profile, float designSpeed) {
-		this(id, nodeA, nodeB, plan, profile, designSpeed, BallastType.GRAVEL.id(), ElectrificationType.NONE.id());
+		this(id, nodeA, nodeB, plan, profile, designSpeed, BallastType.GRAVEL.id(), ElectrificationType.NONE.id(), 0f);
 	}
 
 	public TrackSegment(long id, long nodeA, long nodeB, PlanCurve plan, HeightProfile profile, float designSpeed, int ballast) {
-		this(id, nodeA, nodeB, plan, profile, designSpeed, ballast, ElectrificationType.NONE.id());
+		this(id, nodeA, nodeB, plan, profile, designSpeed, ballast, ElectrificationType.NONE.id(), 0f);
+	}
+
+	public TrackSegment(long id, long nodeA, long nodeB, PlanCurve plan, HeightProfile profile, float designSpeed, int ballast, int electrification) {
+		this(id, nodeA, nodeB, plan, profile, designSpeed, ballast, electrification, 0f);
 	}
 
 	/** 電化方式だけを変えた区間。 */
-	public TrackSegment withElectrification(int value) {
-		return new TrackSegment(this.id, this.nodeA, this.nodeB, this.plan, this.profile, this.designSpeed, this.ballast, value);
+	public TrackSegment withElectrification(int value, float height) {
+		return new TrackSegment(this.id, this.nodeA, this.nodeB, this.plan, this.profile, this.designSpeed, this.ballast, value, height);
 	}
 
 	public BallastType ballastType() {
