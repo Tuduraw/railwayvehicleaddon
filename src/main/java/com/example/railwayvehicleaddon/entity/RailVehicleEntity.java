@@ -28,6 +28,7 @@ import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import org.joml.Matrix4f;
+import org.joml.Quaternionf;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -82,6 +83,12 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			DataTracker.registerData(RailVehicleEntity.class, TrackedDataHandlerRegistry.STRING);
 	private static final TrackedData<String> BOGIE_SPEC =
 			DataTracker.registerData(RailVehicleEntity.class, TrackedDataHandlerRegistry.STRING);
+	/** 関節部(炭水車)・回る車輪・ロッドの設定(rail.articulated / wheels / rods)。BOGIE_SPECと同じく文字列で同期する */
+	private static final TrackedData<String> ANIM_SPEC =
+			DataTracker.registerData(RailVehicleEntity.class, TrackedDataHandlerRegistry.STRING);
+	/** 動作音の設定(rail.sounds と動力から決めた既定値)。BOGIE_SPECと同じく文字列で同期する */
+	private static final TrackedData<String> SOUND_SPEC =
+			DataTracker.registerData(RailVehicleEntity.class, TrackedDataHandlerRegistry.STRING);
 	/** ノッチを押し続けたときに次の段へ進むまでのtick数(最初の1段目の後と、それ以降) */
 	private static final int NOTCH_REPEAT_FIRST = 10;
 	private static final int NOTCH_REPEAT = 5;
@@ -135,6 +142,9 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	private Optional<UUID> uncoupledA = Optional.empty();
 	private Optional<UUID> uncoupledB = Optional.empty();
 	private int reverserWarningCooldown;
+	private int hornCooldown;
+	private String parsedSoundSpec = null;
+	private SoundSpec soundSpec = null;
 
 	// クライアント側
 	private TrackPos clientPos;
@@ -155,10 +165,19 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	private List<BogieSpec> bogies = List.of();
 	private double frontZ = 1.0;
 	private double rearZ = -1.0;
-	private float[] bogieYaw = new float[0];
-	private float[] prevBogieYaw = new float[0];
-	private float[] bogiePitch = new float[0];
-	private float[] prevBogiePitch = new float[0];
+	// 表示(クライアント): 線路に追随する部品の姿勢(モデル座標の変換行列)と、車輪の回転量
+	private Map<String, Matrix4f> partPoses = Map.of();
+	private Map<String, Matrix4f> prevPartPoses = Map.of();
+	private String parsedAnimSpec = null;
+	private List<ArticulatedSpec> articulatedParts = List.of();
+	private List<WheelSpec> wheelParts = List.of();
+	private List<RodSpec> rodParts = List.of();
+	/** 走った距離の累計(ブロック、車両の前向きを正)。車輪・ロッドの回転角に使う */
+	private double rolled;
+	private double prevRolled;
+	/** 車輪の回転の速さ(周速、ブロック/tick)。空転を表すためスロットルに引っ張られる */
+	private double spinSpeed;
+	private boolean spinByThrottle = true;
 	private boolean placedOnce;
 
 	public RailVehicleEntity(EntityType<?> type, World world) {
@@ -178,6 +197,8 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		builder.add(TRACK_FACING, (byte) 1);
 		builder.add(RAIL_SPEED, 0f);
 		builder.add(BOGIE_SPEC, "");
+		builder.add(ANIM_SPEC, "");
+		builder.add(SOUND_SPEC, "");
 		builder.add(SMOKE_SPEC, "");
 		builder.add(FIRE_SECONDS_SYNC, 0f);
 		builder.add(COAL_COUNT_SYNC, 0);
@@ -233,6 +254,9 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		ServerWorld world = (ServerWorld) this.getEntityWorld();
 		if (this.reverserWarningCooldown > 0) {
 			this.reverserWarningCooldown--;
+		}
+		if (this.hornCooldown > 0) {
+			this.hornCooldown--;
 		}
 		if (this.consistHandledTick == world.getTime()) {
 			// この編成の位置は、今tickすでに先頭車がまとめて更新済み
@@ -783,6 +807,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			other.couplingBReversed = reversed;
 			other.uncoupledB = Optional.empty();
 		}
+		playRailSound("couple");
 		if (this.getControllingPassenger() instanceof net.minecraft.server.network.ServerPlayerEntity player) {
 			player.sendMessage(net.minecraft.text.Text.translatable("message.railwayvehicleaddon.coupled"), true);
 		}
@@ -803,6 +828,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			this.couplingB = Optional.empty();
 			this.uncoupledB = neighborId;
 		}
+		playRailSound("couple");
 		if (this.getEntityWorld().getEntity(neighborId.get()) instanceof RailVehicleEntity other) {
 			Optional<UUID> self = Optional.of(this.getUuid());
 			if (other.couplingA.equals(self)) {
@@ -1092,6 +1118,14 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			}
 		}
 		this.cruiseSpeed = (float) v;
+		this.prevRolled = this.rolled;
+		this.rolled += wheelSpinSpeed(v);
+		if (Math.abs(this.rolled) > 1.0e6) {
+			// 精度が落ちないよう、十分大きくなったら巻き戻す(どの半径でも角度が連続するように両方同じ量だけずらす)
+			double shift = this.rolled;
+			this.rolled -= shift;
+			this.prevRolled -= shift;
+		}
 		restorePlacedState();
 		applyPlacement(network, this.clientPos);
 		this.hasPlacedState = true;
@@ -1181,8 +1215,12 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 
 	private void applyPlacement(TrackNetwork network, TrackPos center) {
 		double zc = centerZ();
-		TrackNetwork.Walk frontWalk = network.walk(center, this.frontZ - zc);
-		TrackNetwork.Walk rearWalk = network.walk(center, this.rearZ - zc);
+		// サーバーでは、台車が開通していない分岐側から分岐器を通り抜けたら分岐器を進入側へ切り替える(割り出し)。
+		// これをしないと、先頭の台車の通過後に後ろの台車・後続車が分岐器の開通方向へ逸れる
+		java.util.function.BiConsumer<Long, Long> trailing = this.getEntityWorld() instanceof ServerWorld serverWorld
+				? (node, segment) -> TrackManager.trailSwitch(serverWorld, node, segment) : null;
+		TrackNetwork.Walk frontWalk = network.walk(center, this.frontZ - zc, trailing);
+		TrackNetwork.Walk rearWalk = network.walk(center, this.rearZ - zc, trailing);
 		Vec3d front = contactPoint(network, frontWalk, this.frontZ - zc);
 		Vec3d rear = contactPoint(network, rearWalk, this.rearZ - zc);
 		if (front == null || rear == null) {
@@ -1218,39 +1256,141 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		this.prevRoll = this.roll;
 		this.roll = (float) Math.toDegrees(cant);
 
-		updateBogieAngles(network, center, targetYaw, targetPitch);
+		if (this.getEntityWorld().isClient()) {
+			updatePartPoses(network, center, targetYaw, targetPitch, this.roll);
+		}
 	}
 
-	private void updateBogieAngles(TrackNetwork network, TrackPos center, float bodyYaw, float bodyPitch) {
-		int n = this.bogies.size();
-		if (this.bogieYaw.length != n) {
-			this.bogieYaw = new float[n];
-			this.prevBogieYaw = new float[n];
-			this.bogiePitch = new float[n];
-			this.prevBogiePitch = new float[n];
+	/**
+	 * 線路に追随する部品(carry=falseを含む全台車・関節部)の姿勢を、車体から見たモデル座標の行列として求める(クライアントのみ)。
+	 * 台車は「回転中心が実際の線路の真上に来る」ように横・上下にも動かす(曲線で車体の弦から外れる先台車・炭水車の台車が
+	 * 線路に載って見えるように)。関節部は前端の関節を車体に固定したまま、後端が線路に載るように振る。
+	 */
+	private void updatePartPoses(TrackNetwork network, TrackPos center, float bodyYaw, float bodyPitch, float bodyRoll) {
+		Map<String, Matrix4f> poses = new HashMap<>();
+		float scale = this.getScale();
+		if (scale <= 0f) {
+			scale = 1f;
 		}
+		Quaternionf bodyRot = orientation(bodyYaw, bodyPitch, bodyRoll);
+		Quaternionf bodyInv = new Quaternionf(bodyRot).conjugate();
+		Vec3d entity = new Vec3d(this.getX(), this.getY(), this.getZ());
 		double zc = centerZ();
-		for (int i = 0; i < n; i++) {
-			BogieSpec bogie = this.bogies.get(i);
-			TrackNetwork.Walk walk = network.walk(center, bogie.contactZ - zc);
+		for (BogieSpec bogie : this.bogies) {
+			if (bogie.part.isEmpty()) {
+				continue;
+			}
+			double offset = bogie.contactZ - zc;
+			TrackNetwork.Walk walk = network.walk(center, offset);
 			TrackPoint p = network.pointAt(walk.pos());
-			this.prevBogieYaw[i] = this.bogieYaw[i];
-			this.prevBogiePitch[i] = this.bogiePitch[i];
-			if (p == null) {
+			Vec3d contact = contactPoint(network, walk, offset);
+			if (p == null || contact == null) {
 				continue;
 			}
 			double dirX = p.dirX() * walk.facing();
 			double dirZ = p.dirZ() * walk.facing();
 			float yaw = (float) Math.toDegrees(Math.atan2(-dirX, dirZ));
 			float pitch = (float) -Math.toDegrees(Math.atan(p.grade() * walk.facing()));
-			this.bogieYaw[i] = MathHelper.wrapDegrees(yaw - bodyYaw);
-			this.bogiePitch[i] = pitch - bodyPitch;
+			float roll = (float) Math.toDegrees(p.cantRad() * walk.facing());
+			Quaternionf trackRot = orientation(yaw, pitch, roll);
+			// 回転中心の行き先(ワールド)→モデル座標
+			org.joml.Vector3f local = new org.joml.Vector3f(bogie.pivotX * scale, bogie.pivotY * scale, 0f);
+			trackRot.transform(local);
+			org.joml.Vector3f target = new org.joml.Vector3f(
+					(float) (contact.x + local.x - entity.x),
+					(float) (contact.y + RAIL_TOP + local.y - entity.y),
+					(float) (contact.z + local.z - entity.z));
+			bodyInv.transform(target);
+			target.div(scale);
+			Quaternionf rel = new Quaternionf(bodyInv).mul(trackRot);
+			poses.put(bogie.part, new Matrix4f()
+					.translate(target)
+					.rotate(rel)
+					.translate(-bogie.pivotX, -bogie.pivotY, -bogie.pivotZ));
 		}
+		for (ArticulatedSpec art : this.articulatedParts) {
+			org.joml.Vector3f hingeLocal = new org.joml.Vector3f(0f, art.hingeY * scale, art.hingeZ * scale);
+			bodyRot.transform(hingeLocal);
+			Vec3d hinge = entity.add(hingeLocal.x, hingeLocal.y, hingeLocal.z);
+			double length = (art.hingeZ - art.rearZ) * scale;
+			if (length <= 1.0e-3) {
+				continue;
+			}
+			// 弦の長さが関節〜後端の長さに一致するよう、線路上の後端の位置を少しずつ合わせる
+			double distance = art.rearZ * scale - zc;
+			TrackNetwork.Walk walk = null;
+			Vec3d rear = null;
+			for (int iter = 0; iter < 4; iter++) {
+				walk = network.walk(center, distance);
+				Vec3d c = contactPoint(network, walk, distance);
+				if (c == null) {
+					break;
+				}
+				rear = c.add(0.0, RAIL_TOP + art.hingeY * scale, 0.0);
+				double chord = hinge.distanceTo(rear);
+				distance += chord - length;
+			}
+			if (rear == null || walk == null) {
+				continue;
+			}
+			Vec3d axis = hinge.subtract(rear);
+			double horizontal = Math.hypot(axis.x, axis.z);
+			float yaw = (float) Math.toDegrees(Math.atan2(-axis.x, axis.z));
+			float pitch = (float) -Math.toDegrees(Math.atan2(axis.y, Math.max(1.0e-6, horizontal)));
+			TrackPoint p = network.pointAt(walk.pos());
+			float roll = p == null ? 0f : (float) Math.toDegrees(p.cantRad() * walk.facing());
+			Quaternionf rel = new Quaternionf(bodyInv).mul(orientation(yaw, pitch, roll));
+			poses.put(art.part, new Matrix4f()
+					.translate(0f, art.hingeY, art.hingeZ)
+					.rotate(rel)
+					.translate(0f, -art.hingeY, -art.hingeZ));
+		}
+		this.prevPartPoses = this.partPoses.isEmpty() ? poses : this.partPoses;
+		this.partPoses = poses;
+	}
+
+	/**
+	 * 車輪の周速。"throttle"では、スロットルが求める速さ(スロットル×最高速度)が実際の速度を上回っている間
+	 * (発進・加速中など)はそちらで回し、空転して見えるようにする。惰行中・減速中は走行どおりに回る。
+	 * 急に変わらないよう少しずつ追従させる。
+	 */
+	private double wheelSpinSpeed(double v) {
+		double target = v;
+		if (this.spinByThrottle) {
+			double demand = this.getThrottle() * this.getDefinition().maxSpeed();
+			boolean sameDirection = demand * v >= 0.0 || Math.abs(v) < 0.005;
+			if (sameDirection && Math.abs(demand) > Math.abs(v)) {
+				target = demand;
+			}
+		}
+		this.spinSpeed += (target - this.spinSpeed) * 0.15;
+		if (Math.abs(target - this.spinSpeed) < 1.0e-4) {
+			this.spinSpeed = target;
+		}
+		return this.spinSpeed;
+	}
+
+	/** 車体の描画と同じ規約(rotationY(-yaw)→rotateX(pitch)→rotateZ(roll))の回転。 */
+	private static Quaternionf orientation(float yaw, float pitch, float roll) {
+		return new Quaternionf()
+				.rotationY((float) Math.toRadians(-yaw))
+				.rotateX((float) Math.toRadians(pitch))
+				.rotateZ((float) Math.toRadians(roll));
 	}
 
 	// ------------------------------------------------------------------ 台車
 
-	private record BogieSpec(String part, float pivotX, float pivotY, float pivotZ, double contactZ) {
+	private record BogieSpec(String part, float pivotX, float pivotY, float pivotZ, double contactZ, boolean carry) {
+	}
+
+	private record ArticulatedSpec(String part, float hingeY, float hingeZ, float rearZ) {
+	}
+
+	private record WheelSpec(String part, float pivotY, float pivotZ, float radius) {
+	}
+
+	private record RodSpec(String part, String type, float axleY, float axleZ, float crankRadius, float wheelRadius,
+						   float phaseRad, float length, float crossheadY, float direction) {
 	}
 
 	/** サーバー側: パラメータから台車設定文字列を作って同期する。 */
@@ -1364,13 +1504,224 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 				sb.append(';');
 			}
 			sb.append(bogie.part()).append('|').append(bogie.pivotX()).append('|').append(bogie.pivotY())
-					.append('|').append(bogie.pivotZ()).append('|').append(bogie.pivotZ() * scale);
+					.append('|').append(bogie.pivotZ()).append('|').append(bogie.pivotZ() * scale)
+					.append('|').append(bogie.carry() ? 1 : 0);
 		}
 		String spec = sb.toString();
 		if (!spec.equals(this.dataTracker.get(BOGIE_SPEC))) {
 			this.dataTracker.set(BOGIE_SPEC, spec);
 		}
 		parseBogieSpec(spec);
+		syncAnimSpec(params);
+		syncSoundSpec(params);
+	}
+
+	// ------------------------------------------------------------------ 音
+
+	/**
+	 * 動作音の設定(クライアントの音の管理が使う)。名前が空の音は鳴らさない。
+	 *
+	 * @param motorEngine 主電動機の音がエンジン式(スロットルで高さが変わり、停車中もアイドリングする)か
+	 */
+	public record SoundSpec(String running, String joint, float jointSpacing, String brake, String motor, boolean motorEngine,
+							float motorPitchMin, float motorPitchMax, String chuff, int chuffsPerRev, String horn,
+							String couple, String air, float volume) {
+	}
+
+	/** サーバー側: rail.soundsと動力から音の設定を決めて同期する。省略した項目は動力に応じた既定の音になる。 */
+	private void syncSoundSpec(RailVehicleParams params) {
+		RailVehicleParams.Sounds snd = params.sounds().orElse(null);
+		boolean power = isPowerUnit(params);
+		boolean cab = hasDriverSeat();
+		String source = params.powerSource();
+		boolean steam = RailVehicleParams.STEAM.equals(source);
+		boolean electric = RailVehicleParams.ELECTRIC.equals(source);
+		String defMotor = !power || steam ? "" : electric ? "rva_motor_vvvf" : "rva_engine_diesel";
+		String defHorn = !cab ? "" : steam ? "rva_whistle_steam" : electric ? "rva_horn_electric" : "rva_horn_diesel";
+		String motorType = snd != null && snd.motorType().isPresent() ? snd.motorType().get() : (electric ? "electric" : "engine");
+		boolean engine = "engine".equals(motorType);
+		float pmin = snd != null && !Float.isNaN(snd.motorPitchMin()) ? snd.motorPitchMin() : (engine ? 0.8f : 0.5f);
+		float pmax = snd != null && !Float.isNaN(snd.motorPitchMax()) ? snd.motorPitchMax() : (engine ? 1.6f : 2.0f);
+		String[] f = {
+				pick(snd == null ? null : snd.running(), "rva_rolling"),
+				pick(snd == null ? null : snd.joint(), "rva_joint"),
+				Float.toString(snd == null ? 25.0f : snd.jointSpacing()),
+				pick(snd == null ? null : snd.brake(), "rva_brake"),
+				pick(snd == null ? null : snd.motor(), defMotor),
+				engine ? "1" : "0",
+				Float.toString(pmin),
+				Float.toString(pmax),
+				pick(snd == null ? null : snd.chuff(), steam && power ? "rva_chuff" : ""),
+				Integer.toString(snd == null ? 1 : snd.chuffsPerRev()),
+				pick(snd == null ? null : snd.horn(), defHorn),
+				pick(snd == null ? null : snd.couple(), "rva_couple"),
+				pick(snd == null ? null : snd.air(), power || cab ? "rva_air" : ""),
+				Float.toString(snd == null ? 1.0f : snd.volume())};
+		String spec = String.join("|", f);
+		if (!spec.equals(this.dataTracker.get(SOUND_SPEC))) {
+			this.dataTracker.set(SOUND_SPEC, spec);
+		}
+	}
+
+	private static String pick(Optional<String> value, String fallback) {
+		return value == null || value.isEmpty() ? fallback : value.get().replace("|", "").replace(";", "");
+	}
+
+	/** クライアント側: 同期された音の設定。まだ届いていなければnull。 */
+	public SoundSpec getSoundSpec() {
+		String spec = this.dataTracker.get(SOUND_SPEC);
+		if (!spec.equals(this.parsedSoundSpec)) {
+			this.parsedSoundSpec = spec;
+			this.soundSpec = null;
+			String[] f = spec.split("\\|", -1);
+			if (f.length == 14) {
+				try {
+					this.soundSpec = new SoundSpec(f[0], f[1], Float.parseFloat(f[2]), f[3], f[4], "1".equals(f[5]),
+							Float.parseFloat(f[6]), Float.parseFloat(f[7]), f[8], Integer.parseInt(f[9]), f[10], f[11], f[12],
+							Float.parseFloat(f[13]));
+				} catch (NumberFormatException ignored) {
+					// 壊れた設定は無視する
+				}
+			}
+		}
+		return this.soundSpec;
+	}
+
+	/** 車輪が回った量(周の長さ。ブロック、前向き正)。空転も含む。蒸気機関車のドラフト音に使う。 */
+	public double getWheelRolled() {
+		return this.rolled;
+	}
+
+	/** ドラフト音の基準にする動輪の半径(ブロック。scale込み)。rail.wheelsが無ければ0。 */
+	public double getDriveWheelRadius() {
+		if (this.wheelParts.isEmpty()) {
+			return 0.0;
+		}
+		return this.wheelParts.get(0).radius * (this.getScale() > 0f ? this.getScale() : 1f);
+	}
+
+	/**
+	 * クライアント側: 車両中心から線路に沿ってoffset(前向き正)だけ進んだ線路上の位置。
+	 * レールの継ぎ目の音を線路の位置に合わせて鳴らすのに使う。線路に載っていなければnull。
+	 */
+	public TrackPos clientTrackPosAt(double offset) {
+		TrackNetwork network = RailwayVehicleAddon.clientTrackNetwork.get();
+		if (network == null || this.clientPos == null || network.segment(this.clientPos.segmentId()) == null) {
+			return null;
+		}
+		return network.walk(this.clientPos, offset).pos();
+	}
+
+	/** 台車(車体を載せるもの)の位置(ブロック。車両中心から前向き正)。レールの継ぎ目の音を台車ごとに鳴らすのに使う。 */
+	public double[] getCarryBogieOffsets() {
+		double zc = centerZ();
+		return new double[]{this.frontZ - zc, this.rearZ - zc};
+	}
+
+	/** サーバー側: 一回きりの音(警笛・連結)を、この車両が見えているプレイヤーへ送る。 */
+	public void playRailSound(String kind) {
+		if (!(this.getEntityWorld() instanceof ServerWorld)) {
+			return;
+		}
+		com.example.railwayvehicleaddon.network.RailSoundPayload payload =
+				new com.example.railwayvehicleaddon.network.RailSoundPayload(this.getId(), kind);
+		java.util.Set<net.minecraft.server.network.ServerPlayerEntity> targets = new java.util.HashSet<>(
+				net.fabricmc.fabric.api.networking.v1.PlayerLookup.tracking(this));
+		for (Entity passenger : this.getPassengerList()) {
+			if (passenger instanceof net.minecraft.server.network.ServerPlayerEntity player) {
+				targets.add(player);
+			}
+		}
+		for (net.minecraft.server.network.ServerPlayerEntity player : targets) {
+			net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(player, payload);
+		}
+	}
+
+	/** 警笛キー(運転者のみ)。連打しても1秒に1回まで。 */
+	public void hornByKey(net.minecraft.server.network.ServerPlayerEntity player) {
+		if (drivingPlayer() != player || this.hornCooldown > 0) {
+			return;
+		}
+		this.hornCooldown = 20;
+		playRailSound("horn");
+	}
+
+	/** サーバー側: 関節部・車輪・ロッドの設定を文字列にして同期する。 */
+	private void syncAnimSpec(RailVehicleParams params) {
+		StringBuilder sb = new StringBuilder();
+		for (RailVehicleParams.Articulated a : params.articulated()) {
+			appendEntry(sb, "A", a.part(), a.hingeY(), a.hingeZ(), a.rearZ());
+		}
+		for (RailVehicleParams.Wheel w : params.wheels()) {
+			appendEntry(sb, "W", w.part(), w.pivotY(), w.pivotZ(), w.radius());
+		}
+		for (RailVehicleParams.Rod r : params.rods()) {
+			appendEntry(sb, "R", r.part() + "|" + r.type(), r.axleY(), r.axleZ(), r.crankRadius(), r.wheelRadius(),
+					r.phaseDeg(), r.length(), r.crossheadY(), r.direction());
+		}
+		if (!"throttle".equals(params.wheelSpin())) {
+			appendEntry(sb, "S", params.wheelSpin());
+		}
+		String spec = sb.toString();
+		if (!spec.equals(this.dataTracker.get(ANIM_SPEC))) {
+			this.dataTracker.set(ANIM_SPEC, spec);
+		}
+	}
+
+	private static void appendEntry(StringBuilder sb, String kind, String text, float... values) {
+		if (!sb.isEmpty()) {
+			sb.append(';');
+		}
+		sb.append(kind).append('|').append(text);
+		for (float v : values) {
+			sb.append('|').append(v);
+		}
+	}
+
+	private void parseAnimSpec(String spec) {
+		if (spec.equals(this.parsedAnimSpec)) {
+			return;
+		}
+		this.parsedAnimSpec = spec;
+		List<ArticulatedSpec> arts = new ArrayList<>();
+		List<WheelSpec> wheels = new ArrayList<>();
+		List<RodSpec> rods = new ArrayList<>();
+		boolean byThrottle = true;
+		if (!spec.isEmpty()) {
+			for (String entry : spec.split(";")) {
+				String[] f = entry.split("\\|", -1);
+				try {
+					switch (f[0]) {
+						case "A" -> {
+							if (f.length == 5) {
+								arts.add(new ArticulatedSpec(f[1], Float.parseFloat(f[2]), Float.parseFloat(f[3]), Float.parseFloat(f[4])));
+							}
+						}
+						case "W" -> {
+							if (f.length == 5) {
+								wheels.add(new WheelSpec(f[1], Float.parseFloat(f[2]), Float.parseFloat(f[3]), Float.parseFloat(f[4])));
+							}
+						}
+						case "R" -> {
+							if (f.length == 11) {
+								rods.add(new RodSpec(f[1], f[2], Float.parseFloat(f[3]), Float.parseFloat(f[4]), Float.parseFloat(f[5]),
+										Float.parseFloat(f[6]), (float) Math.toRadians(Float.parseFloat(f[7])), Float.parseFloat(f[8]),
+										Float.parseFloat(f[9]), Float.parseFloat(f[10])));
+							}
+						}
+						case "S" -> byThrottle = f.length < 2 || !"distance".equals(f[1]);
+						default -> {
+						}
+					}
+				} catch (NumberFormatException ignored) {
+					// 壊れた項目は無視する
+				}
+			}
+		}
+		this.articulatedParts = List.copyOf(arts);
+		this.wheelParts = List.copyOf(wheels);
+		this.rodParts = List.copyOf(rods);
+		this.spinByThrottle = byThrottle;
 	}
 
 	private void parseBogieSpec(String spec) {
@@ -1382,12 +1733,12 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		if (!spec.isEmpty()) {
 			for (String entry : spec.split(";")) {
 				String[] f = entry.split("\\|", -1);
-				if (f.length != 5) {
+				if (f.length != 5 && f.length != 6) {
 					continue;
 				}
 				try {
 					list.add(new BogieSpec(f[0], Float.parseFloat(f[1]), Float.parseFloat(f[2]),
-							Float.parseFloat(f[3]), Double.parseDouble(f[4])));
+							Float.parseFloat(f[3]), Double.parseDouble(f[4]), f.length < 6 || !"0".equals(f[5])));
 				} catch (NumberFormatException ignored) {
 					// 壊れた項目は無視する
 				}
@@ -1396,11 +1747,16 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		this.bogies = List.copyOf(list);
 		double max = Double.NEGATIVE_INFINITY;
 		double min = Double.POSITIVE_INFINITY;
+		boolean anyCarry = false;
 		for (BogieSpec b : this.bogies) {
+			if (!b.carry) {
+				continue;
+			}
+			anyCarry = true;
 			max = Math.max(max, b.contactZ);
 			min = Math.min(min, b.contactZ);
 		}
-		if (this.bogies.isEmpty()) {
+		if (!anyCarry) {
 			this.frontZ = 1.0;
 			this.rearZ = -1.0;
 		} else if (max - min < 0.5) {
@@ -1419,30 +1775,86 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		if (BOGIE_SPEC.equals(data) && this.getEntityWorld().isClient()) {
 			parseBogieSpec(this.dataTracker.get(BOGIE_SPEC));
 		}
+		if (ANIM_SPEC.equals(data) && this.getEntityWorld().isClient()) {
+			parseAnimSpec(this.dataTracker.get(ANIM_SPEC));
+		}
 	}
 
 	@Override
 	public Map<String, Matrix4f> tudursvehiclemod$getCustomPartTransforms(float tickDelta) {
-		if (this.bogies.isEmpty() || this.bogieYaw.length != this.bogies.size()) {
+		if (this.partPoses.isEmpty() && this.wheelParts.isEmpty() && this.rodParts.isEmpty()) {
 			return Map.of();
 		}
 		Map<String, Matrix4f> transforms = new HashMap<>();
-		for (int i = 0; i < this.bogies.size(); i++) {
-			BogieSpec bogie = this.bogies.get(i);
-			if (bogie.part.isEmpty()) {
+		// 線路に追随する部品(台車・関節部): 前tickと今tickの行列を補間する(1tickでの変化は小さいので成分ごとの補間で足りる)
+		for (Map.Entry<String, Matrix4f> e : this.partPoses.entrySet()) {
+			Matrix4f prev = this.prevPartPoses.get(e.getKey());
+			transforms.put(e.getKey(), prev == null ? new Matrix4f(e.getValue()) : new Matrix4f(prev).lerp(e.getValue(), tickDelta));
+		}
+		float scale = this.getScale() > 0f ? this.getScale() : 1f;
+		double distance = MathHelper.lerp(tickDelta, this.prevRolled, this.rolled) / scale;
+		for (WheelSpec w : this.wheelParts) {
+			if (w.radius <= 1.0e-4f) {
 				continue;
 			}
-			float yaw = MathHelper.lerp(tickDelta, this.prevBogieYaw[i], this.bogieYaw[i]);
-			float pitch = MathHelper.lerp(tickDelta, this.prevBogiePitch[i], this.bogiePitch[i]);
-			// 車体の回転と同じ規約(rotationY(-yaw)→rotateX(pitch))で、台車の回転中心まわりに回す
-			Matrix4f m = new Matrix4f()
-					.translate(bogie.pivotX, bogie.pivotY, bogie.pivotZ)
-					.rotateY((float) Math.toRadians(-yaw))
-					.rotateX((float) Math.toRadians(pitch))
-					.translate(-bogie.pivotX, -bogie.pivotY, -bogie.pivotZ);
-			transforms.put(bogie.part, m);
+			float angle = (float) ((distance / w.radius) % (Math.PI * 2.0));
+			transforms.put(w.part, new Matrix4f()
+					.translate(0f, w.pivotY, w.pivotZ)
+					.rotateX(angle)
+					.translate(0f, -w.pivotY, -w.pivotZ));
+		}
+		for (RodSpec r : this.rodParts) {
+			if (r.wheelRadius <= 1.0e-4f) {
+				continue;
+			}
+			float theta = (float) ((distance / r.wheelRadius) % (Math.PI * 2.0));
+			Matrix4f m = rodTransform(r, theta);
+			if (m != null) {
+				transforms.put(r.part, m);
+			}
 		}
 		return transforms;
+	}
+
+	/**
+	 * ロッドの変換。クランクピンは車軸から見て(y, z) = (rc·cos(θ+φ), rc·sin(θ+φ))にあり、θが車輪の回転角(前進で増える)。
+	 * モデルはθ=0の位置で作られている前提。
+	 */
+	private static Matrix4f rodTransform(RodSpec r, float theta) {
+		float pin0Y = r.axleY + r.crankRadius * (float) Math.cos(r.phaseRad);
+		float pin0Z = r.axleZ + r.crankRadius * (float) Math.sin(r.phaseRad);
+		float pinY = r.axleY + r.crankRadius * (float) Math.cos(theta + r.phaseRad);
+		float pinZ = r.axleZ + r.crankRadius * (float) Math.sin(theta + r.phaseRad);
+		switch (r.type) {
+			case "coupling" -> {
+				return new Matrix4f().translation(0f, pinY - pin0Y, pinZ - pin0Z);
+			}
+			case "main", "crosshead" -> {
+				float dir = r.direction >= 0f ? 1f : -1f;
+				float dy0 = pin0Y - r.crossheadY;
+				float dy = pinY - r.crossheadY;
+				float sq0 = r.length * r.length - dy0 * dy0;
+				float sq = r.length * r.length - dy * dy;
+				if (sq0 <= 0f || sq <= 0f) {
+					return null;
+				}
+				float head0Z = pin0Z + dir * (float) Math.sqrt(sq0);
+				float headZ = pinZ + dir * (float) Math.sqrt(sq);
+				if (r.type.equals("crosshead")) {
+					return new Matrix4f().translation(0f, 0f, headZ - head0Z);
+				}
+				// 主連棒: クランクピン側の端を中心に、ピン→クロスヘッドの向きの変化だけ回す
+				double a0 = Math.atan2(head0Z - pin0Z, r.crossheadY - pin0Y);
+				double a1 = Math.atan2(headZ - pinZ, r.crossheadY - pinY);
+				return new Matrix4f()
+						.translate(0f, pinY, pinZ)
+						.rotateX((float) (a1 - a0))
+						.translate(0f, -pin0Y, -pin0Z);
+			}
+			default -> {
+				return null;
+			}
+		}
 	}
 
 	// ------------------------------------------------------------------ 保存

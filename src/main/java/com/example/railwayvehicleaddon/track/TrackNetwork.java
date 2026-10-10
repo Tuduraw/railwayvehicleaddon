@@ -621,6 +621,14 @@ public final class TrackNetwork {
 	 * 乗り移り時にfacingが反転する。
 	 */
 	public Walk walk(TrackPos from, double distance) {
+		return walk(from, distance, null);
+	}
+
+	/**
+	 * walk()と同じだが、分岐器を分岐側から(開通していない側から)通り抜けたとき、
+	 * trailing(分岐器ノード, 通ってきた分岐側区間)を呼ぶ。車両が割り出した分岐器を進入側へ切り替えるのに使う。
+	 */
+	public Walk walk(TrackPos from, double distance, java.util.function.BiConsumer<Long, Long> trailing) {
 		TrackSegment segment = this.segments.get(from.segmentId());
 		if (segment == null) {
 			return new Walk(from.segmentId(), from.s(), from.facing(), true, Math.abs(distance));
@@ -644,6 +652,9 @@ public final class TrackNetwork {
 				return new Walk(segment.id(), s + paramDir * limit, facing, true, left - limit);
 			}
 			TrackPoint end = segment.sample(paramDir > 0 ? length : 0.0);
+			if (trailing != null) {
+				reportTrailing(node, segment.id(), trailing);
+			}
 			long nextId = nextSegmentAt(node, segment.id(), end.dirX() * paramDir, end.dirZ() * paramDir);
 			TrackSegment next = nextId >= 0 ? this.segments.get(nextId) : null;
 			if (next == null) {
@@ -662,6 +673,17 @@ public final class TrackNetwork {
 			segment = next;
 		}
 		return new Walk(segment.id(), s, facing, true, left);
+	}
+
+	/** 分岐側の区間fromSegmentから分岐器nodeへ入ったが、開通しているのが別の分岐側なら知らせる(連結ノードも見る)。 */
+	private void reportTrailing(long node, long fromSegment, java.util.function.BiConsumer<Long, Long> trailing) {
+		long linked = linkOf(node);
+		for (long at : linked >= 0 ? new long[]{node, linked} : new long[]{node}) {
+			List<Long> branches = switchBranches(at);
+			if (branches.contains(fromSegment) && activeBranch(at) != fromSegment) {
+				trailing.accept(at, fromSegment);
+			}
+		}
 	}
 
 	/** 線路位置の点。区間が無ければnull。 */

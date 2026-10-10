@@ -6,6 +6,8 @@ import com.example.railwayvehicleaddon.network.FeatureSyncPayload;
 import com.example.railwayvehicleaddon.entity.RailVehicleEntity;
 import com.example.railwayvehicleaddon.network.PlaceResultPayload;
 import com.example.railwayvehicleaddon.network.UncouplePayload;
+import com.example.railwayvehicleaddon.network.HornPayload;
+import com.example.railwayvehicleaddon.network.RailSoundPayload;
 import com.example.railwayvehicleaddon.network.TrackRemovePayload;
 import com.example.railwayvehicleaddon.network.TrackSyncPayload;
 import com.example.tudursvehiclemod.client.hud.HudVariableProvider;
@@ -36,6 +38,8 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 	private static KeyBinding forceKey;
 	/** 連結解放キー(乗車中に押すと連結を外す)。測量ツールを持っていなくても使える */
 	private static KeyBinding uncoupleKey;
+	/** 警笛・汽笛キー(運転中) */
+	private static KeyBinding hornKey;
 	/**
 	 * 敷設時の調整キー(架線の高さ↑↓・曲線半径のしきい値→←・リセットR)。既定のキーは本体MODの操作と重なるため、
 	 * キー入力の配信(KeyBindingの押下状態)には頼らず、割り当てたキーの物理的な状態を直接読む。測量ツールを持ち、
@@ -64,7 +68,10 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 				context.client().execute(() -> ClientTrackData.apply(payload)));
 		ClientPlayNetworking.registerGlobalReceiver(PlaceResultPayload.ID, (payload, context) ->
 				context.client().execute(() -> SurveySession.INSTANCE.onPlaceResult(payload.success())));
+		ClientPlayNetworking.registerGlobalReceiver(RailSoundPayload.ID, (payload, context) ->
+				context.client().execute(() -> RailSoundManager.playEvent(context.client(), payload.entityId(), payload.kind())));
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
+			RailSoundManager.stopAll();
 			ClientTrackData.clear();
 			SurveySession.INSTANCE.clear();
 		}));
@@ -89,6 +96,8 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 				"key.railwayvehicleaddon.survey_force", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_HOME, category));
 		uncoupleKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
 				"key.railwayvehicleaddon.uncouple", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_END, category));
+		hornKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+				"key.railwayvehicleaddon.horn", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_X, category));
 		placementKeys = new KeyBinding[]{
 				KeyBindingHelper.registerKeyBinding(new KeyBinding("key.railwayvehicleaddon.survey_wire_up", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_UP, category)),
 				KeyBindingHelper.registerKeyBinding(new KeyBinding("key.railwayvehicleaddon.survey_wire_down", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_DOWN, category)),
@@ -151,6 +160,12 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 				ClientPlayNetworking.send(new UncouplePayload());
 			}
 		}
+		while (hornKey.wasPressed()) {
+			if (client.player != null && client.player.getVehicle() instanceof RailVehicleEntity) {
+				ClientPlayNetworking.send(new HornPayload());
+			}
+		}
+		RailSoundManager.tick(client);
 		while (forceKey.wasPressed()) {
 			if (holding) {
 				SurveySession.INSTANCE.toggleForce();

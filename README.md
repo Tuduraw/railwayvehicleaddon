@@ -408,7 +408,7 @@ GUIでは、燃料スロットのほか、次の状況を確認できます。
 
 | 項目 | 既定値 | 説明 |
 |---|---|---|
-| `bogies` | 空 | 台車。`pivot_z` が最大のものを前台車、最小のものを後台車として線路に載せます(`pivot_z`×`scale`が線路上の位置)。`part` を指定するとそのOBJグループがカーブで回転します。省略時は前後±1ブロックで線路に載せます |
+| `bogies` | 空 | 台車。`pivot_z` が最大のものを前台車、最小のものを後台車として線路に載せます(`pivot_z`×`scale`が線路上の位置)。`part` を指定するとそのOBJグループがカーブで線路の向きに回り、回転中心が線路の真上へ来るよう横・上下にも動きます。`carry: false` の台車は車体の位置決めに使わず、線路に追随して表示されるだけになります(蒸気機関車の先台車・従台車、炭水車の台車など)。省略時は前後±1ブロックで線路に載せます |
 | `brake` | 0.015 | ブレーキ時の減速度(ブロック/tick²) |
 | `resistance` | 0.0003 | 走行抵抗による減速度(ブロック/tick²) |
 | `grade_gravity` | 0.04 | 勾配にかかる重力加速度。勾配を掛けた分が加減速になります |
@@ -420,6 +420,11 @@ GUIでは、燃料スロットのほか、次の状況を確認できます。
 | `coupler_rear` | 未指定(台車の位置を使う) | 連結器の位置(モデル座標のZ、後側)。扱いは`coupler_front`と同じ |
 | `powered` | 運転席があれば動力車 | 動力車か(引張力を持つか)。運転台の無い電動車(モハ等)は `true`、運転台はあるが動力の無い制御車(クハ等)は `false` |
 | `smoke` | なし | 排煙の発生源の配列。各要素は `x`/`y`/`z`(モデル座標)・`type`(`smoke` 黒煙 / `campfire` 立ちのぼる煙 / `steam` 白い蒸気)・`rate`(出力100%時の1tickあたりの粒子数)・`idle_rate`(停車・惰行中の粒子数)。運転者がいるか走行中のときだけ出す |
+| `articulated` | なし | 関節でつながった部分(炭水車など)。各要素は `part`・`hinge_y`/`hinge_z`(関節の位置。車体に固定)・`rear_z`(線路に載せる後端の点)。後端が線路の上に来るように関節まわりに振れる(表示のみ) |
+| `wheels` | なし | 走行に合わせて回る車輪。各要素は `part`・`pivot_y`/`pivot_z`(車軸の位置)・`radius`(半径)。走った距離÷半径だけ車軸まわりに回る |
+| `rods` | なし | 車輪に連動するロッド。各要素は `part`・`type`(`coupling` 連結棒 / `main` 主連棒 / `crosshead` クロスヘッド・ピストン棒)・`axle_y`/`axle_z`(クランクのある車軸)・`crank_radius`・`wheel_radius`・`phase_deg`(クランク角0のときのピンの向き。0=真上、90=前方)・`length`(主連棒の長さ)・`crosshead_y`・`direction`(シリンダーが前方なら1)。モデルはクランク角0の状態で作る |
+| `wheel_spin` | `throttle` | `wheels`・`rods` の回し方。`throttle` はスロットルが求める速さ(スロットル×`max_speed`)が実際の速度より速い間(発進・加速中)はその速さで回り、空転して見えます。惰行・減速中は走行どおりに回ります。`distance` は常に走った距離どおりに回ります |
+| `sounds` | 動力に応じた既定の音 | 動作音。`running`(走行音)・`joint`(レールの継ぎ目)・`joint_spacing`(継ぎ目の間隔。既定25、0で鳴らさない)・`brake`(停車間際のきしみ)・`motor`(主電動機・エンジン)・`motor_type`(`electric` 速度で高さが変わる / `engine` スロットルで回転数が変わりアイドリングあり)・`motor_pitch_min`/`motor_pitch_max`・`chuff`(蒸気機関車のドラフト音)・`chuffs_per_rev`(動輪1回転あたりの回数。既定1)・`horn`(警笛キーで鳴る)・`couple`(連結・解放)・`air`(停車時の排気)・`volume`(大きさと聞こえる距離)。値はOGGのファイル名(拡張子なし。`assets/<名前空間>/sounds/` に置く)。空文字でその音を消せる。省略した項目は内蔵の音(`rva_rolling`・`rva_joint`・`rva_brake`・`rva_motor_vvvf`/`rva_motor_dc`/`rva_engine_diesel`・`rva_chuff`・`rva_whistle_steam`/`rva_horn_electric`/`rva_horn_diesel`・`rva_couple`・`rva_air`)が動力に応じて選ばれる |
 
 最高速度は前提MODの `max_speed`(ブロック/tick)、加速の追従度は `acceleration`(既定0.05)、ハンドル(スロットル)の
 動く速さは `throttle_up_down` が使われます。テスト車両は `acceleration` 0.02、`throttle_up_down` 2.0 です。モデルは原点を

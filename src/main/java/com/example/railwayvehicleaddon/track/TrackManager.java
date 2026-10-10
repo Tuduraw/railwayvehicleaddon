@@ -256,6 +256,20 @@ public final class TrackManager {
 	}
 
 	/**
+	 * 車両が開通していない分岐側から分岐器を通り抜けた(割り出し)とき、分岐器を進入側へ切り替える。
+	 * 走行中に分岐器を切り替えるのは難しいため、後続の車両・台車が本来の開通方向へ逸れないよう進入側を優先する。
+	 */
+	public static void trailSwitch(ServerWorld world, long nodeId, long segmentId) {
+		TrackNetwork network = network(world);
+		if (network.activeBranch(nodeId) == segmentId) {
+			return;
+		}
+		network.setSwitchState(nodeId, segmentId);
+		markDirty(world);
+		broadcast(world, new TrackSyncPayload(false, RailwayConfig.get().values(), List.of(), List.of(), Map.of(nodeId, segmentId)));
+	}
+
+	/**
 	 * 分岐器を分岐側のindex番目(0始まり。範囲外は最後)へ開通させる(転てつ機)。
 	 * 分岐側の順序は、元の線路(分岐元が線路の途中の場合)または最初に作った分岐が0番目。
 	 */
