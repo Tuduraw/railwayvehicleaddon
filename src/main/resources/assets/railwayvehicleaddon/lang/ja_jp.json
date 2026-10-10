@@ -147,5 +147,10 @@
   "message.railwayvehicleaddon.survey.tag_radius": " R≧%s",
   "message.railwayvehicleaddon.survey.tag_wire": " 架線%sm",
   "message.railwayvehicleaddon.power.no_power_unit": "この編成には動力車がありません",
-  "message.railwayvehicleaddon.power.no_power_supply": "動力車に動力が届いていません(石炭・燃料・架線と変電所を確認してください)"
+  "message.railwayvehicleaddon.power.no_power_supply": "動力車に動力が届いていません(石炭・燃料・架線と変電所を確認してください)",
+  "item.railwayvehicleaddon.coupling_lever": "連結てこ",
+  "key.railwayvehicleaddon.uncouple": "連結を外す(乗車中)",
+  "message.railwayvehicleaddon.no_coupling_partner": "近くに連結できる車両がありません",
+  "message.railwayvehicleaddon.not_coupled": "この車両は連結されていません",
+  "message.railwayvehicleaddon.reverser_locked": "走行中は逆方向へ入れられません。停車してから切り替えてください"
 }

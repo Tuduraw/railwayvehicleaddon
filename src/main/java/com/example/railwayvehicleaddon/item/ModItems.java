@@ -19,6 +19,8 @@ public final class ModItems {
 	public static final RailVehicleTarget RAIL_VEHICLE_TARGET = new RailVehicleTarget();
 	public static final Item[] RAIL_VEHICLE_SPAWNERS = new Item[5];
 	public static Item SURVEY_TOOL;
+	/** 連結てこ: 車両を右クリックして、近い方の端の連結・連結解除を行う */
+	public static Item COUPLING_LEVER;
 
 	public static final RegistryKey<ItemGroup> GROUP =
 			RegistryKey.of(RegistryKeys.ITEM_GROUP, Identifier.of(RailwayVehicleAddon.MOD_ID, "railway"));
@@ -30,6 +32,9 @@ public final class ModItems {
 		RegistryKey<Item> surveyKey = RegistryKey.of(RegistryKeys.ITEM, Identifier.of(RailwayVehicleAddon.MOD_ID, "survey_tool"));
 		SURVEY_TOOL = Registry.register(Registries.ITEM, surveyKey,
 				new SurveyToolItem(new Item.Settings().registryKey(surveyKey).maxCount(1)));
+		RegistryKey<Item> leverKey = RegistryKey.of(RegistryKeys.ITEM, Identifier.of(RailwayVehicleAddon.MOD_ID, "coupling_lever"));
+		COUPLING_LEVER = Registry.register(Registries.ITEM, leverKey,
+				new Item(new Item.Settings().registryKey(leverKey).maxCount(1)));
 
 		for (int tier = 1; tier <= 5; tier++) {
 			RegistryKey<Item> key = RegistryKey.of(RegistryKeys.ITEM,
@@ -46,6 +51,7 @@ public final class ModItems {
 				.build());
 		ItemGroupEvents.modifyEntriesEvent(GROUP).register(entries -> {
 			entries.add(SURVEY_TOOL);
+			entries.add(COUPLING_LEVER);
 			for (Item item : RAIL_VEHICLE_SPAWNERS) {
 				entries.add(item);
 			}

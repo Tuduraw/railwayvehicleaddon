@@ -109,10 +109,19 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 
 	/** 自動で連結を試みる、端から相手の端までの距離 */
 	private static final double COUPLE_DISTANCE = 0.8;
+	/** 連結てこで連結するときに相手を探す、端どうしの距離 */
+	private static final double MANUAL_COUPLE_DISTANCE = 2.5;
+	/** 連結を外した相手と、自動連結が再び効くようになる端どうしの距離(外した直後に再連結しないため) */
+	private static final double REARM_DISTANCE = 2.0;
+	/** 連結相手を探す範囲(車両の中心から端までの最大距離。これより長い車両は端で相手を見つけられない) */
+	private static final double MAX_HALF_LENGTH = 40.0;
+	/** 停車中とみなす速さ(ブロック/tick)。これより遅いときだけ、ノッチ・スロットルを逆方向へ入れられる */
+	private static final double STOP_THRESHOLD = 0.005;
 	/** 連結した車両間の隙間(前後台車の張り出しに加えて確保する分) */
 	private static final double COUPLER_GAP = 0.4;
 	/** 連結相手を探す間隔(tick) */
-	private static final int COUPLE_SCAN_INTERVAL = 5;
+	/** 停車中の車両が連結相手を探す間隔(tick)。走行中は毎tick探す */
+	private static final int COUPLE_SCAN_INTERVAL = 10;
 	/** この編成の位置更新を先頭車がまとめて済ませたワールド時刻。自分の番が来たときの二重処理を防ぐ */
 	private long consistHandledTick = -1L;
 	private int coupleScanCooldown;
@@ -122,6 +131,10 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	private Optional<UUID> couplingB = Optional.empty();
 	private boolean couplingAReversed;
 	private boolean couplingBReversed;
+	/** 連結を外した相手(端ごと)。離れるまで自動連結しない。保存する */
+	private Optional<UUID> uncoupledA = Optional.empty();
+	private Optional<UUID> uncoupledB = Optional.empty();
+	private int reverserWarningCooldown;
 
 	// クライアント側
 	private TrackPos clientPos;
@@ -218,6 +231,9 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			return;
 		}
 		ServerWorld world = (ServerWorld) this.getEntityWorld();
+		if (this.reverserWarningCooldown > 0) {
+			this.reverserWarningCooldown--;
+		}
 		if (this.consistHandledTick == world.getTime()) {
 			// この編成の位置は、今tickすでに先頭車がまとめて更新済み
 			return;
@@ -244,7 +260,8 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			}
 		}
 
-		if (--this.coupleScanCooldown <= 0) {
+		// 走行中は毎tick、停車中は一定間隔で連結相手を探す(速いと接触の瞬間を見逃すため)
+		if (Math.abs(this.speed) > 1.0e-4 || --this.coupleScanCooldown <= 0) {
 			this.coupleScanCooldown = COUPLE_SCAN_INTERVAL;
 			tryAutoCouple(world, network);
 		}
@@ -332,13 +349,31 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		PlayerEntity driver = drivingPlayer();
 		float handleStep = 0.03f * def.throttleUpDown().orElse(1.0f);
 		if (driver != null) {
-			return params.usesNotches() ? updateNotch(params, handleStep)
+			// 走行中は進行方向と逆側へハンドルを入れられない(停車してからでないと逆転できない)
+			float min = this.speed > STOP_THRESHOLD ? 0f : -1.0f;
+			float max = this.speed < -STOP_THRESHOLD ? 0f : 1.0f;
+			float throttle = params.usesNotches() ? updateNotch(params, handleStep)
 					: updateThrottle(driver, handleStep, -1.0f, 1.0f);
+			if (throttle < min || throttle > max) {
+				throttle = MathHelper.clamp(throttle, min, max);
+				this.setThrottleDirect(throttle);
+				if (!params.usesNotches()) {
+					warnReverser();
+				}
+			}
+			return throttle;
 		}
 		// 無人の車両は停止保持(連結先の判断に使われないよう、常にノッチ切のまま)
 		this.setThrottleDirect(0f);
 		this.notch = 0;
 		return 0f;
+	}
+
+	private void warnReverser() {
+		if (drivingPlayer() instanceof net.minecraft.server.network.ServerPlayerEntity player && this.reverserWarningCooldown <= 0) {
+			this.reverserWarningCooldown = 40;
+			player.sendMessage(net.minecraft.text.Text.translatable("message.railwayvehicleaddon.reverser_locked"), true);
+		}
 	}
 
 	private boolean isOwnBraking() {
@@ -376,12 +411,22 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	private float updateNotch(RailVehicleParams params, float step) {
 		float input = this.getSyncedThrottleInput();
 		int direction = input > 0 ? 1 : input < 0 ? -1 : 0;
+		// 走行中は進行方向と逆側のノッチに入れられない(勾配で逆向きに動き出した場合も、ノッチを切に戻す)
+		int lower = this.speed > STOP_THRESHOLD ? 0 : -params.reverseNotches();
+		int upper = this.speed < -STOP_THRESHOLD ? 0 : params.powerNotches();
+		this.notch = MathHelper.clamp(this.notch, lower, upper);
 		if (this.tudursvehiclemod$isOutOfFuel() || this.tudursvehiclemod$isDestroyed()) {
 			this.notch = 0;
 		} else if (direction != 0) {
 			boolean pressed = Math.signum(this.lastNotchInput) != direction;
 			if (pressed || --this.notchRepeat <= 0) {
-				this.notch = MathHelper.clamp(this.notch + direction, -params.reverseNotches(), params.powerNotches());
+				int wanted = this.notch + direction;
+				this.notch = MathHelper.clamp(wanted, lower, upper);
+				boolean withinRange = wanted <= params.powerNotches() && wanted >= -params.reverseNotches();
+				if (wanted != this.notch && withinRange) {
+					// 走行中に逆側へ入れようとした
+					warnReverser();
+				}
 				this.notchRepeat = pressed ? NOTCH_REPEAT_FIRST : NOTCH_REPEAT;
 			}
 		}
@@ -488,22 +533,73 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		return super.tudursvehiclemod$isEffectiveFreeLook(viewer);
 	}
 
-	// ------------------------------------------------------------------ 連結の解除(測量ツール)
+	// ------------------------------------------------------------------ 連結てこ・連結解放キー
 
 	/**
-	 * 測量ツールを持って右クリックすると、プレイヤーに近い方の端を連結解除する。
-	 * 通常の右クリック(乗車)・スニーク+右クリック(前提MODの収納)とは衝突しないよう、
-	 * 道具を持っているときだけ割り込む。
+	 * 連結てこを持って車両を右クリックすると、プレイヤーに近い方の端で、つながっていれば連結を外し、
+	 * つながっていなければ近く(2.5ブロック以内)の車両と連結する。通常の右クリック(乗車)・
+	 * スニーク+右クリック(前提MODの収納)とは衝突しないよう、連結てこを持っているときだけ割り込む。
 	 */
 	@Override
 	public ActionResult interact(PlayerEntity player, Hand hand) {
-		if (player.getStackInHand(hand).isOf(com.example.railwayvehicleaddon.item.ModItems.SURVEY_TOOL)) {
-			if (!this.getEntityWorld().isClient() && this.getEntityWorld() instanceof ServerWorld serverWorld) {
-				uncoupleNearestEnd(player, TrackManager.network(serverWorld));
+		if (player.getStackInHand(hand).isOf(com.example.railwayvehicleaddon.item.ModItems.COUPLING_LEVER)) {
+			if (this.getEntityWorld() instanceof ServerWorld serverWorld) {
+				useCouplingLever(player, serverWorld, TrackManager.network(serverWorld));
 			}
 			return ActionResult.SUCCESS;
 		}
 		return super.interact(player, hand);
+	}
+
+	private void useCouplingLever(PlayerEntity player, ServerWorld world, TrackNetwork network) {
+		Vec3d a = endPosition(network, true);
+		Vec3d b = endPosition(network, false);
+		if (a == null || b == null) {
+			return;
+		}
+		boolean aEnd = player.getEntityPos().squaredDistanceTo(a) <= player.getEntityPos().squaredDistanceTo(b);
+		if (uncoupleEnd(aEnd)) {
+			player.sendMessage(net.minecraft.text.Text.translatable("message.railwayvehicleaddon.uncoupled"), true);
+			return;
+		}
+		if (coupleAt(world, network, aEnd, MANUAL_COUPLE_DISTANCE, true)) {
+			player.sendMessage(net.minecraft.text.Text.translatable("message.railwayvehicleaddon.coupled"), true);
+		} else {
+			player.sendMessage(net.minecraft.text.Text.translatable("message.railwayvehicleaddon.no_coupling_partner"), true);
+		}
+	}
+
+	/**
+	 * 連結解放キー(乗車中)。片側だけつながっていればその側を、両側つながっていればプレイヤーが
+	 * 向いている側を外す。
+	 */
+	public void uncoupleByKey(net.minecraft.server.network.ServerPlayerEntity player) {
+		if (!(this.getEntityWorld() instanceof ServerWorld serverWorld)) {
+			return;
+		}
+		boolean hasA = this.couplingA.isPresent();
+		boolean hasB = this.couplingB.isPresent();
+		if (!hasA && !hasB) {
+			player.sendMessage(net.minecraft.text.Text.translatable("message.railwayvehicleaddon.not_coupled"), true);
+			return;
+		}
+		boolean aEnd;
+		if (hasA != hasB) {
+			aEnd = hasA;
+		} else {
+			TrackNetwork network = TrackManager.network(serverWorld);
+			Vec3d a = endPosition(network, true);
+			Vec3d b = endPosition(network, false);
+			if (a == null || b == null) {
+				return;
+			}
+			Vec3d eye = player.getEyePos();
+			Vec3d look = player.getRotationVec(1.0f);
+			aEnd = look.dotProduct(a.subtract(eye).normalize()) >= look.dotProduct(b.subtract(eye).normalize());
+		}
+		if (uncoupleEnd(aEnd)) {
+			player.sendMessage(net.minecraft.text.Text.translatable("message.railwayvehicleaddon.uncoupled"), true);
+		}
 	}
 
 	/** 連結の有無による車体の性能や編成内での位置を表す。offsetは先頭車の中心からの符号付き距離(先頭車基準)。 */
@@ -551,38 +647,117 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	}
 
 	/**
-	 * 連結相手を探して自動で連結する。実際の連結器のように、互いの端が触れると自動的につながる
-	 * (気軽さを優先し、専用の操作は要求しない)。外すには測量ツールを持って右クリックする。
+	 * 連結相手を探して自動で連結する。実際の自動連結器のように、互いの端が触れると自動的につながる。
+	 * 外すには連結てこで右クリックするか、乗車中に連結解放キーを押す。
 	 */
 	private void tryAutoCouple(ServerWorld world, TrackNetwork network) {
 		if (this.trackPos == null) {
 			return;
 		}
 		for (boolean aEnd : new boolean[]{true, false}) {
-			if ((aEnd ? this.couplingA : this.couplingB).isPresent()) {
+			if ((aEnd ? this.couplingA : this.couplingB).isEmpty()) {
+				// 走行中は1tickで進む分だけ判定を広げ、速くても接触の瞬間を見逃さないようにする
+				coupleAt(world, network, aEnd, COUPLE_DISTANCE + Math.abs(this.speed), false);
+			}
+		}
+	}
+
+	/**
+	 * この車の端(aEnd)と、近くの車両の空いている端を連結する。連結できればtrue。
+	 * 相手を探す範囲は、相手の車体の長さを考えて端の位置から広く取る(車両の当たり判定の箱は車体の中心に
+	 * 小さくあるだけなので、端の近くの箱を探しても見つからない)。互いの端が向き合っていること
+	 * (車体どうしが重なっていない・交差する線路の上ではないこと)も確かめる。
+	 *
+	 * @param manual 連結てこによる操作。連結を外した直後の相手とも連結する
+	 */
+	private boolean coupleAt(ServerWorld world, TrackNetwork network, boolean aEnd, double maxDistance, boolean manual) {
+		if ((aEnd ? this.couplingA : this.couplingB).isPresent()) {
+			return false;
+		}
+		Vec3d myEnd = endPosition(network, aEnd);
+		Vec3d myCenter = centerPosition(network);
+		if (myEnd == null || myCenter == null) {
+			return false;
+		}
+		Vec3d myOut = myEnd.subtract(myCenter);
+		if (myOut.lengthSquared() < 1.0e-6) {
+			return false;
+		}
+		myOut = myOut.normalize();
+		Optional<UUID> blocked = aEnd ? this.uncoupledA : this.uncoupledB;
+		Box area = new Box(myEnd, myEnd).expand(MAX_HALF_LENGTH + maxDistance, 6.0, MAX_HALF_LENGTH + maxDistance);
+		RailVehicleEntity best = null;
+		boolean bestEnd = false;
+		double bestDist = maxDistance * maxDistance;
+		for (RailVehicleEntity other : world.getEntitiesByClass(RailVehicleEntity.class, area, e -> e != this)) {
+			if (other.trackPos == null || other.tudursvehiclemod$isDestroyed()) {
 				continue;
 			}
-			Vec3d myEnd = endPosition(network, aEnd);
-			if (myEnd == null) {
+			Vec3d otherCenter = other.centerPosition(network);
+			if (otherCenter == null || otherCenter.subtract(myEnd).dotProduct(myOut) <= 0.0) {
 				continue;
 			}
-			Box area = new Box(myEnd.x - 1.0, myEnd.y - 1.0, myEnd.z - 1.0, myEnd.x + 1.0, myEnd.y + 1.0, myEnd.z + 1.0);
-			for (RailVehicleEntity other : world.getEntitiesByClass(RailVehicleEntity.class, area, e -> e != this)) {
-				if (other.trackPos == null) {
+			for (boolean otherEnd : new boolean[]{true, false}) {
+				if ((otherEnd ? other.couplingA : other.couplingB).isPresent()) {
 					continue;
 				}
-				for (boolean otherEnd : new boolean[]{true, false}) {
-					if ((otherEnd ? other.couplingA : other.couplingB).isPresent()) {
-						continue;
-					}
-					Vec3d otherPos = other.endPosition(network, otherEnd);
-					if (otherPos != null && myEnd.squaredDistanceTo(otherPos) <= COUPLE_DISTANCE * COUPLE_DISTANCE) {
-						coupleWith(other, aEnd, otherEnd, network);
-						return;
-					}
+				Vec3d otherPos = other.endPosition(network, otherEnd);
+				if (otherPos == null) {
+					continue;
+				}
+				Vec3d otherOut = otherPos.subtract(otherCenter);
+				if (otherOut.lengthSquared() < 1.0e-6 || otherOut.normalize().dotProduct(myOut) > -0.7
+						|| myCenter.subtract(otherPos).dotProduct(otherOut) <= 0.0) {
+					continue;
+				}
+				double dist = myEnd.squaredDistanceTo(otherPos);
+				if (dist > bestDist) {
+					continue;
+				}
+				if (!manual && blocked.map(other.getUuid()::equals).orElse(false)) {
+					// 外した直後の相手。十分に離れるまでは自動連結しない
+					continue;
+				}
+				best = other;
+				bestEnd = otherEnd;
+				bestDist = dist;
+			}
+		}
+		// 外した相手から十分に離れたら、自動連結を再び有効にする
+		if (blocked.isPresent()) {
+			if (!(world.getEntity(blocked.get()) instanceof RailVehicleEntity former)
+					|| former.nearestEndDistance(network, myEnd) > REARM_DISTANCE) {
+				if (aEnd) {
+					this.uncoupledA = Optional.empty();
+				} else {
+					this.uncoupledB = Optional.empty();
 				}
 			}
 		}
+		if (best == null) {
+			return false;
+		}
+		coupleWith(best, aEnd, bestEnd, network);
+		return true;
+	}
+
+	private Vec3d centerPosition(TrackNetwork network) {
+		if (this.trackPos == null) {
+			return null;
+		}
+		TrackPoint p = network.pointAt(this.trackPos);
+		return p == null ? null : new Vec3d(p.x(), p.y(), p.z());
+	}
+
+	private double nearestEndDistance(TrackNetwork network, Vec3d point) {
+		double best = Double.MAX_VALUE;
+		for (boolean end : new boolean[]{true, false}) {
+			Vec3d e = endPosition(network, end);
+			if (e != null) {
+				best = Math.min(best, Math.sqrt(e.squaredDistanceTo(point)));
+			}
+		}
+		return best;
 	}
 
 	private void coupleWith(RailVehicleEntity other, boolean selfAEnd, boolean otherAEnd, TrackNetwork network) {
@@ -593,41 +768,26 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		if (selfAEnd) {
 			this.couplingA = Optional.of(other.getUuid());
 			this.couplingAReversed = reversed;
+			this.uncoupledA = Optional.empty();
 		} else {
 			this.couplingB = Optional.of(other.getUuid());
 			this.couplingBReversed = reversed;
+			this.uncoupledB = Optional.empty();
 		}
 		if (otherAEnd) {
 			other.couplingA = Optional.of(this.getUuid());
 			other.couplingAReversed = reversed;
+			other.uncoupledA = Optional.empty();
 		} else {
 			other.couplingB = Optional.of(this.getUuid());
 			other.couplingBReversed = reversed;
+			other.uncoupledB = Optional.empty();
 		}
 		if (this.getControllingPassenger() instanceof net.minecraft.server.network.ServerPlayerEntity player) {
 			player.sendMessage(net.minecraft.text.Text.translatable("message.railwayvehicleaddon.coupled"), true);
 		}
 		if (other.getControllingPassenger() instanceof net.minecraft.server.network.ServerPlayerEntity player) {
 			player.sendMessage(net.minecraft.text.Text.translatable("message.railwayvehicleaddon.coupled"), true);
-		}
-	}
-
-	/** プレイヤーの位置から近い方の端を連結解除する。測量ツールでの右クリックから呼ばれる。 */
-	public void uncoupleNearestEnd(PlayerEntity player, TrackNetwork network) {
-		Vec3d a = endPosition(network, true);
-		Vec3d b = endPosition(network, false);
-		boolean aEnd;
-		if (a != null && b != null) {
-			aEnd = player.getEntityPos().squaredDistanceTo(a) <= player.getEntityPos().squaredDistanceTo(b);
-		} else if (a != null) {
-			aEnd = true;
-		} else if (b != null) {
-			aEnd = false;
-		} else {
-			return;
-		}
-		if (uncoupleEnd(aEnd) && player instanceof net.minecraft.server.network.ServerPlayerEntity serverPlayer) {
-			serverPlayer.sendMessage(net.minecraft.text.Text.translatable("message.railwayvehicleaddon.uncoupled"), true);
 		}
 	}
 
@@ -638,15 +798,20 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		}
 		if (aEnd) {
 			this.couplingA = Optional.empty();
+			this.uncoupledA = neighborId;
 		} else {
 			this.couplingB = Optional.empty();
+			this.uncoupledB = neighborId;
 		}
 		if (this.getEntityWorld().getEntity(neighborId.get()) instanceof RailVehicleEntity other) {
-			if (other.couplingA.equals(Optional.of(this.getUuid()))) {
+			Optional<UUID> self = Optional.of(this.getUuid());
+			if (other.couplingA.equals(self)) {
 				other.couplingA = Optional.empty();
+				other.uncoupledA = self;
 			}
-			if (other.couplingB.equals(Optional.of(this.getUuid()))) {
+			if (other.couplingB.equals(self)) {
 				other.couplingB = Optional.empty();
+				other.uncoupledB = self;
 			}
 		}
 		return true;
@@ -759,9 +924,10 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 				weightedTargetNum += handle * powerFactor * carMaxSpeed * accelMass;
 			}
 
+			// 勾配は先頭車の進行方向で測る(walkの向きは先頭車の向きのまま)。車両の向き(sign)は掛けない
 			TrackNetwork.Walk carWalk = network.walk(this.trackPos, m.offset());
 			TrackPoint carPoint = network.pointAt(carWalk.pos());
-			double carGrade = carPoint != null ? carPoint.grade() * carWalk.pos().facing() * m.sign() : 0.0;
+			double carGrade = carPoint != null ? carPoint.grade() * carWalk.pos().facing() : 0.0;
 			weightedGradeMass += carParams.gradeGravity() * carGrade * carParams.mass();
 		}
 		if (handle != 0f) {
@@ -809,12 +975,29 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			leaderMoved = network.walk(this.trackPos, 0.0);
 		}
 		TrackPos newLeaderPos = leaderMoved.pos();
+		// 編成の先頭(進行方向の端の台車)が車止めに当たるなら止める(単独車と同じく台車の位置で判定)
+		if (v != 0.0) {
+			double extent = v > 0 ? -Double.MAX_VALUE : Double.MAX_VALUE;
+			for (ConsistMember m : members) {
+				RailVehicleEntity car = m.entity();
+				double zc = car.centerZ();
+				for (double local : new double[]{car.frontZ - zc, car.rearZ - zc}) {
+					double e = m.offset() + m.sign() * local;
+					extent = v > 0 ? Math.max(extent, e) : Math.min(extent, e);
+				}
+			}
+			if (network.walk(newLeaderPos, extent).blocked()) {
+				v = 0.0;
+				newLeaderPos = this.trackPos;
+			}
+		}
 
 		for (ConsistMember m : members) {
 			RailVehicleEntity car = m.entity();
 			RailVehicleParams carParams = RailVehicleParamsLoader.get(car.getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
-			TrackNetwork.Walk carWalk = network.walk(newLeaderPos, m.offset());
-			TrackPos carPos = carWalk.pos();
+			// walkで得られる向きは先頭車の向き。逆向きに連結された車両は向きを反転して置く(反転しないと180度回ってしまう)
+			TrackPos walked = network.walk(newLeaderPos, m.offset()).pos();
+			TrackPos carPos = m.sign() > 0 ? walked : new TrackPos(walked.segmentId(), walked.s(), -walked.facing());
 			double carSpeed = v * m.sign();
 			car.trackPos = carPos;
 			car.speed = carSpeed;
@@ -828,6 +1011,13 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			car.syncSmokeSpec(carParams);
 			car.applyPlacement(network, carPos);
 			car.consistHandledTick = tick;
+		}
+		// 編成の各車は今tickの自分の処理を飛ばすので、連結相手の探索は先頭車がまとめて行う
+		// (後部で押し込んだ車両にも連結できるように。探索は空いている端だけ)
+		if (v != 0.0) {
+			for (ConsistMember m : members) {
+				m.entity().tryAutoCouple(world, network);
+			}
 		}
 	}
 
@@ -1272,6 +1462,8 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		this.couplingB.ifPresent(id -> view.putString("CouplingB", id.toString()));
 		view.putBoolean("CouplingAReversed", this.couplingAReversed);
 		view.putBoolean("CouplingBReversed", this.couplingBReversed);
+		this.uncoupledA.ifPresent(id -> view.putString("UncoupledA", id.toString()));
+		this.uncoupledB.ifPresent(id -> view.putString("UncoupledB", id.toString()));
 	}
 
 	@Override
@@ -1289,6 +1481,8 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		this.couplingB = parseUuid(view.getString("CouplingB", ""));
 		this.couplingAReversed = view.getBoolean("CouplingAReversed", false);
 		this.couplingBReversed = view.getBoolean("CouplingBReversed", false);
+		this.uncoupledA = parseUuid(view.getString("UncoupledA", ""));
+		this.uncoupledB = parseUuid(view.getString("UncoupledB", ""));
 	}
 
 	private static Optional<UUID> parseUuid(String value) {

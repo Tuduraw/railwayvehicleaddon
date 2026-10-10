@@ -6,6 +6,7 @@ import com.example.railwayvehicleaddon.block.ModBlocks;
 import com.example.railwayvehicleaddon.screen.ModScreenHandlers;
 import com.example.railwayvehicleaddon.item.ModItems;
 import com.example.railwayvehicleaddon.network.ElectrifyPayload;
+import com.example.railwayvehicleaddon.network.UncouplePayload;
 import com.example.railwayvehicleaddon.network.LinkDevicePayload;
 import com.example.railwayvehicleaddon.survey.SurveyModes;
 import com.example.railwayvehicleaddon.network.FeatureActionPayload;
@@ -68,6 +69,7 @@ public class RailwayVehicleAddon implements ModInitializer {
 		PayloadTypeRegistry.playC2S().register(FeatureActionPayload.ID, FeatureActionPayload.CODEC);
 		PayloadTypeRegistry.playC2S().register(LinkDevicePayload.ID, LinkDevicePayload.CODEC);
 		PayloadTypeRegistry.playC2S().register(ElectrifyPayload.ID, ElectrifyPayload.CODEC);
+		PayloadTypeRegistry.playC2S().register(UncouplePayload.ID, UncouplePayload.CODEC);
 		PayloadTypeRegistry.playS2C().register(FeatureSyncPayload.ID, FeatureSyncPayload.CODEC);
 		PayloadTypeRegistry.playS2C().register(PlaceResultPayload.ID, PlaceResultPayload.CODEC);
 		PayloadTypeRegistry.playS2C().register(TrackSyncPayload.ID, TrackSyncPayload.CODEC);
@@ -87,6 +89,13 @@ public class RailwayVehicleAddon implements ModInitializer {
 
 		ServerPlayNetworking.registerGlobalReceiver(ElectrifyPayload.ID, (payload, context) ->
 				context.server().execute(() -> TrackManager.electrify(context.player(), payload.segmentIds(), payload.electrification(), payload.wireHeight())));
+
+		ServerPlayNetworking.registerGlobalReceiver(UncouplePayload.ID, (payload, context) ->
+				context.server().execute(() -> {
+					if (context.player().getVehicle() instanceof RailVehicleEntity vehicle) {
+						vehicle.uncoupleByKey(context.player());
+					}
+				}));
 
 		// 転車台・遷車台の動作、変電所による給電の計算
 		ServerTickEvents.END_WORLD_TICK.register(TrackManager::tickFeatures);

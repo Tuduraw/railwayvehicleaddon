@@ -3,7 +3,9 @@ package com.example.railwayvehicleaddon.client;
 import com.example.railwayvehicleaddon.RailwayVehicleAddon;
 import com.example.railwayvehicleaddon.item.SurveyToolItem;
 import com.example.railwayvehicleaddon.network.FeatureSyncPayload;
+import com.example.railwayvehicleaddon.entity.RailVehicleEntity;
 import com.example.railwayvehicleaddon.network.PlaceResultPayload;
+import com.example.railwayvehicleaddon.network.UncouplePayload;
 import com.example.railwayvehicleaddon.network.TrackRemovePayload;
 import com.example.railwayvehicleaddon.network.TrackSyncPayload;
 import com.example.tudursvehiclemod.client.hud.HudVariableProvider;
@@ -32,6 +34,8 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 	private static KeyBinding paramDownKey;
 	private static KeyBinding ballastKey;
 	private static KeyBinding forceKey;
+	/** 連結解放キー(乗車中に押すと連結を外す)。測量ツールを持っていなくても使える */
+	private static KeyBinding uncoupleKey;
 	/**
 	 * 敷設時の調整キー(架線の高さ↑↓・曲線半径のしきい値→←・リセットR)。既定のキーは本体MODの操作と重なるため、
 	 * キー入力の配信(KeyBindingの押下状態)には頼らず、割り当てたキーの物理的な状態を直接読む。測量ツールを持ち、
@@ -83,6 +87,8 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 				"key.railwayvehicleaddon.survey_ballast", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_I, category));
 		forceKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
 				"key.railwayvehicleaddon.survey_force", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_HOME, category));
+		uncoupleKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+				"key.railwayvehicleaddon.uncouple", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_END, category));
 		placementKeys = new KeyBinding[]{
 				KeyBindingHelper.registerKeyBinding(new KeyBinding("key.railwayvehicleaddon.survey_wire_up", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_UP, category)),
 				KeyBindingHelper.registerKeyBinding(new KeyBinding("key.railwayvehicleaddon.survey_wire_down", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_DOWN, category)),
@@ -140,6 +146,11 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 			}
 		}
 		pollPlacementKeys(client, holding);
+		while (uncoupleKey.wasPressed()) {
+			if (client.player != null && client.player.getVehicle() instanceof RailVehicleEntity) {
+				ClientPlayNetworking.send(new UncouplePayload());
+			}
+		}
 		while (forceKey.wasPressed()) {
 			if (holding) {
 				SurveySession.INSTANCE.toggleForce();

@@ -147,5 +147,10 @@
   "message.railwayvehicleaddon.survey.tag_radius": " R≥%s",
   "message.railwayvehicleaddon.survey.tag_wire": " wire %sm",
   "message.railwayvehicleaddon.power.no_power_unit": "This train has no powered car",
-  "message.railwayvehicleaddon.power.no_power_supply": "No power is reaching the powered cars (check coal, fuel, overhead wire and substation)"
+  "message.railwayvehicleaddon.power.no_power_supply": "No power is reaching the powered cars (check coal, fuel, overhead wire and substation)",
+  "item.railwayvehicleaddon.coupling_lever": "Coupling Lever",
+  "key.railwayvehicleaddon.uncouple": "Uncouple (while riding)",
+  "message.railwayvehicleaddon.no_coupling_partner": "No vehicle nearby to couple with",
+  "message.railwayvehicleaddon.not_coupled": "This vehicle is not coupled",
+  "message.railwayvehicleaddon.reverser_locked": "Cannot reverse while moving. Stop the train first"
 }
