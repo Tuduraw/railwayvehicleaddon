@@ -176,20 +176,27 @@ public record RailVehicleParams(List<Bogie> bogies, float brake, float resistanc
 	}
 
 	/**
-	 * 関節でつながった部分(蒸気機関車の炭水車など)。前端の関節(hinge)は車体に固定されたまま、
-	 * 後端(rear_z)が線路の上に来るように関節まわりに振れる。表示だけで、物理的な位置には影響しない。
+	 * 関節でつながった部分(蒸気機関車の炭水車など)。表示だけで、物理的な位置には影響しない。
+	 * <ul>
+	 *   <li>front_z を指定した場合(推奨): 前後2点(front_z・rear_z。通常は炭水車の前後の台車の中心)をそれぞれ線路に載せた、
+	 *       独立した車体として置く。実車と同じく、曲線では機関車の後端と炭水車の前端がどちらも曲線の外側へ同じくらい張り出す</li>
+	 *   <li>front_z を省略した場合: 前端の関節(hinge)を車体に固定したまま、後端(rear_z)が線路の上に来るように関節まわりに振る。
+	 *       車体の張り出しが大きい車両では、急曲線で関節ごと線路の外側へずれる</li>
+	 * </ul>
 	 *
 	 * @param part   OBJグループ名
-	 * @param hingeY 関節の高さ(モデル座標)
-	 * @param hingeZ 関節の位置(モデル座標のZ)
-	 * @param rearZ  線路に載せる後端側の点(モデル座標のZ。通常は炭水車の後台車の中心)
+	 * @param hingeY 関節(または載せる点)の高さ(モデル座標)
+	 * @param hingeZ 関節の位置(モデル座標のZ。front_z省略時に使う)
+	 * @param rearZ  線路に載せる後側の点(モデル座標のZ)
+	 * @param frontZ 線路に載せる前側の点(モデル座標のZ)。NaN(省略)なら関節で振る方式
 	 */
-	public record Articulated(String part, float hingeY, float hingeZ, float rearZ) {
+	public record Articulated(String part, float hingeY, float hingeZ, float rearZ, float frontZ) {
 		public static final Codec<Articulated> CODEC = RecordCodecBuilder.create(instance -> instance.group(
 				Codec.STRING.fieldOf("part").forGetter(Articulated::part),
 				Codec.FLOAT.optionalFieldOf("hinge_y", 1.0f).forGetter(Articulated::hingeY),
-				Codec.FLOAT.fieldOf("hinge_z").forGetter(Articulated::hingeZ),
-				Codec.FLOAT.fieldOf("rear_z").forGetter(Articulated::rearZ)
+				Codec.FLOAT.optionalFieldOf("hinge_z", 0.0f).forGetter(Articulated::hingeZ),
+				Codec.FLOAT.fieldOf("rear_z").forGetter(Articulated::rearZ),
+				Codec.FLOAT.optionalFieldOf("front_z", Float.NaN).forGetter(Articulated::frontZ)
 		).apply(instance, Articulated::new));
 	}
 

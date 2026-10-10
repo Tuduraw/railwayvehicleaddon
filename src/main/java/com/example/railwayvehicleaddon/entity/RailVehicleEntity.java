@@ -124,8 +124,11 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	private static final double MAX_HALF_LENGTH = 40.0;
 	/** 停車中とみなす速さ(ブロック/tick)。これより遅いときだけ、ノッチ・スロットルを逆方向へ入れられる */
 	private static final double STOP_THRESHOLD = 0.005;
-	/** 連結した車両間の隙間(前後台車の張り出しに加えて確保する分) */
-	private static final double COUPLER_GAP = 0.4;
+	/**
+	 * 連結した車両間の隙間(連結器の位置に加えて空ける分)。連結器の位置(coupler_front/rear)は連結面そのものなので、
+	 * 0にして連結面どうしを突き合わせる(以前は0.4空けていたため、模型のような隙間ができていた)
+	 */
+	private static final double COUPLER_GAP = 0.0;
 	/** 連結相手を探す間隔(tick) */
 	/** 停車中の車両が連結相手を探す間隔(tick)。走行中は毎tick探す */
 	private static final int COUPLE_SCAN_INTERVAL = 10;
@@ -1309,6 +1312,38 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 					.translate(-bogie.pivotX, -bogie.pivotY, -bogie.pivotZ));
 		}
 		for (ArticulatedSpec art : this.articulatedParts) {
+			if (!Float.isNaN(art.frontZ)) {
+				// 前後2点をそれぞれ線路に載せた独立の車体として置く
+				double fOff = art.frontZ * scale - zc;
+				double rOff = art.rearZ * scale - zc;
+				TrackNetwork.Walk fw = network.walk(center, fOff);
+				TrackNetwork.Walk rw = network.walk(center, rOff);
+				Vec3d fc = contactPoint(network, fw, fOff);
+				Vec3d rc = contactPoint(network, rw, rOff);
+				if (fc == null || rc == null) {
+					continue;
+				}
+				Vec3d front = fc.add(0.0, RAIL_TOP + art.hingeY * scale, 0.0);
+				Vec3d rear = rc.add(0.0, RAIL_TOP + art.hingeY * scale, 0.0);
+				Vec3d axis = front.subtract(rear);
+				double horizontal = Math.hypot(axis.x, axis.z);
+				float yaw = (float) Math.toDegrees(Math.atan2(-axis.x, axis.z));
+				float pitch = (float) -Math.toDegrees(Math.atan2(axis.y, Math.max(1.0e-6, horizontal)));
+				TrackPoint pf = network.pointAt(fw.pos());
+				TrackPoint pr = network.pointAt(rw.pos());
+				float roll = pf == null || pr == null ? 0f
+						: (float) Math.toDegrees((pf.cantRad() * fw.facing() + pr.cantRad() * rw.facing()) * 0.5);
+				Quaternionf rel = new Quaternionf(bodyInv).mul(orientation(yaw, pitch, roll));
+				org.joml.Vector3f target = new org.joml.Vector3f(
+						(float) (front.x - entity.x), (float) (front.y - entity.y), (float) (front.z - entity.z));
+				bodyInv.transform(target);
+				target.div(scale);
+				poses.put(art.part, new Matrix4f()
+						.translate(target)
+						.rotate(rel)
+						.translate(0f, -art.hingeY, -art.frontZ));
+				continue;
+			}
 			org.joml.Vector3f hingeLocal = new org.joml.Vector3f(0f, art.hingeY * scale, art.hingeZ * scale);
 			bodyRot.transform(hingeLocal);
 			Vec3d hinge = entity.add(hingeLocal.x, hingeLocal.y, hingeLocal.z);
@@ -1383,7 +1418,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	private record BogieSpec(String part, float pivotX, float pivotY, float pivotZ, double contactZ, boolean carry) {
 	}
 
-	private record ArticulatedSpec(String part, float hingeY, float hingeZ, float rearZ) {
+	private record ArticulatedSpec(String part, float hingeY, float hingeZ, float rearZ, float frontZ) {
 	}
 
 	private record WheelSpec(String part, float pivotY, float pivotZ, float radius) {
@@ -1650,7 +1685,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	private void syncAnimSpec(RailVehicleParams params) {
 		StringBuilder sb = new StringBuilder();
 		for (RailVehicleParams.Articulated a : params.articulated()) {
-			appendEntry(sb, "A", a.part(), a.hingeY(), a.hingeZ(), a.rearZ());
+			appendEntry(sb, "A", a.part(), a.hingeY(), a.hingeZ(), a.rearZ(), a.frontZ());
 		}
 		for (RailVehicleParams.Wheel w : params.wheels()) {
 			appendEntry(sb, "W", w.part(), w.pivotY(), w.pivotZ(), w.radius());
@@ -1693,8 +1728,9 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 				try {
 					switch (f[0]) {
 						case "A" -> {
-							if (f.length == 5) {
-								arts.add(new ArticulatedSpec(f[1], Float.parseFloat(f[2]), Float.parseFloat(f[3]), Float.parseFloat(f[4])));
+							if (f.length == 5 || f.length == 6) {
+								arts.add(new ArticulatedSpec(f[1], Float.parseFloat(f[2]), Float.parseFloat(f[3]), Float.parseFloat(f[4]),
+										f.length == 6 ? Float.parseFloat(f[5]) : Float.NaN));
 							}
 						}
 						case "W" -> {
