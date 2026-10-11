@@ -339,6 +339,11 @@
 
 ## 車両
 
+- 乗車(update33): 前提MODの当たり判定は中心付近の小箱なので、RailBoarding(クライアント、START_CLIENT_TICK)が素手の使用キー押下時に
+  視線と車体全体の箱(幅×高さ×ANIM_SPECの"B"で同期した前後端)の交点を求め、BoardPayloadで送る。サーバーは
+  boardNear()で運転台のそば(3ブロック以内)なら運転席、それ以外は最寄りの空き客席にmountToSeatする。
+  前提MODの右クリック乗車より先に届くので、そちらは乗車済みとしてPASSになる。
+
 - 分岐器の割り出し(update26): 車両の配置(applyPlacement)で台車位置へ線路をたどるとき、開通していない分岐側から
   分岐器を通り抜けたら(TrackNetwork.walkのtrailingコールバック)、サーバーでその分岐器を進入側へ切り替えて同期する
   (TrackManager.trailSwitch)。先頭の台車が通った時点で切り替わるので、後ろの台車・後続車も進入側をたどる。

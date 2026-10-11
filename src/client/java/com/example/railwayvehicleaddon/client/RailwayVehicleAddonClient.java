@@ -106,6 +106,8 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 				KeyBindingHelper.registerKeyBinding(new KeyBinding("key.railwayvehicleaddon.survey_placement_reset", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_R, category))};
 
 		ClientTickEvents.END_CLIENT_TICK.register(RailwayVehicleAddonClient::onClientTick);
+		// 乗車は入力処理(前提MODの右クリック乗車)より先に判定する
+		ClientTickEvents.START_CLIENT_TICK.register(RailBoarding::tick);
 		WorldRenderEvents.BEFORE_TRANSLUCENT.register(TrackRenderer::render);
 		WorldRenderEvents.BEFORE_TRANSLUCENT.register(FeatureRenderer::render);
 		WorldRenderEvents.BEFORE_TRANSLUCENT.register(DeviceOverlayRenderer::render);

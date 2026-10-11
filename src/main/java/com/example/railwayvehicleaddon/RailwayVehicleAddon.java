@@ -8,6 +8,7 @@ import com.example.railwayvehicleaddon.item.ModItems;
 import com.example.railwayvehicleaddon.network.ElectrifyPayload;
 import com.example.railwayvehicleaddon.network.UncouplePayload;
 import com.example.railwayvehicleaddon.network.HornPayload;
+import com.example.railwayvehicleaddon.network.BoardPayload;
 import com.example.railwayvehicleaddon.network.RailSoundPayload;
 import com.example.railwayvehicleaddon.network.LinkDevicePayload;
 import com.example.railwayvehicleaddon.survey.SurveyModes;
@@ -73,6 +74,7 @@ public class RailwayVehicleAddon implements ModInitializer {
 		PayloadTypeRegistry.playC2S().register(ElectrifyPayload.ID, ElectrifyPayload.CODEC);
 		PayloadTypeRegistry.playC2S().register(UncouplePayload.ID, UncouplePayload.CODEC);
 		PayloadTypeRegistry.playC2S().register(HornPayload.ID, HornPayload.CODEC);
+		PayloadTypeRegistry.playC2S().register(BoardPayload.ID, BoardPayload.CODEC);
 		PayloadTypeRegistry.playS2C().register(RailSoundPayload.ID, RailSoundPayload.CODEC);
 		PayloadTypeRegistry.playS2C().register(FeatureSyncPayload.ID, FeatureSyncPayload.CODEC);
 		PayloadTypeRegistry.playS2C().register(PlaceResultPayload.ID, PlaceResultPayload.CODEC);
@@ -105,6 +107,13 @@ public class RailwayVehicleAddon implements ModInitializer {
 				context.server().execute(() -> {
 					if (context.player().getVehicle() instanceof RailVehicleEntity vehicle) {
 						vehicle.hornByKey(context.player());
+					}
+				}));
+
+		ServerPlayNetworking.registerGlobalReceiver(BoardPayload.ID, (payload, context) ->
+				context.server().execute(() -> {
+					if (context.player().getEntityWorld().getEntityById(payload.entityId()) instanceof RailVehicleEntity vehicle) {
+						vehicle.boardNear(context.player(), new net.minecraft.util.math.Vec3d(payload.hx(), payload.hy(), payload.hz()));
 					}
 				}));
 

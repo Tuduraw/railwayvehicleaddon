@@ -181,6 +181,9 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	/** 車輪の回転の速さ(周速、ブロック/tick)。空転を表すためスロットルに引っ張られる */
 	private double spinSpeed;
 	private boolean spinByThrottle = true;
+	/** 車体の前後端(モデル座標のZ、scale前)。乗車の判定に使う */
+	private float bodyFront = Float.NaN;
+	private float bodyRear = Float.NaN;
 	private boolean placedOnce;
 
 	public RailVehicleEntity(EntityType<?> type, World world) {
@@ -1672,6 +1675,50 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		}
 	}
 
+	/** クライアント側: 車体の前後端(ブロック。scale込み、車両中心ではなくモデル原点から前向き正)。{後端, 前端} */
+	public double[] getBodyExtent() {
+		float sc = this.getScale() > 0f ? this.getScale() : 1f;
+		if (Float.isNaN(this.bodyFront) || Float.isNaN(this.bodyRear)) {
+			return new double[]{this.rearZ - 1.5, this.frontZ + 1.5};
+		}
+		return new double[]{this.bodyRear * sc, this.bodyFront * sc};
+	}
+
+	/**
+	 * サーバー側: 車体の hit(ワールド座標)を右クリックして乗る。運転席が空いていて、そのそばを押したなら運転席、
+	 * それ以外は押した位置に最も近い空いた客席に座る。乗れたらtrue。
+	 */
+	public boolean boardNear(net.minecraft.server.network.ServerPlayerEntity player, Vec3d hit) {
+		if (player.hasVehicle() || player.squaredDistanceTo(hit) > 8.0 * 8.0) {
+			return false;
+		}
+		java.util.List<com.example.tudursvehiclemod.asset.SeatDefinition> defs = this.getDefinition().seats();
+		if (defs.isEmpty()) {
+			return false;
+		}
+		boolean cab = hasDriverSeat();
+		if (cab && this.tudursvehiclemod$getSeatOccupant(0) == null
+				&& this.tudursvehiclemod$getSeatWorldPos(0).squaredDistanceTo(hit) < 3.0 * 3.0) {
+			return this.tudursvehiclemod$mountToSeat(player, 0);
+		}
+		int best = -1;
+		double bestDist = Double.MAX_VALUE;
+		for (int i = cab ? 1 : 0; i < defs.size(); i++) {
+			if (this.tudursvehiclemod$getSeatOccupant(i) != null) {
+				continue;
+			}
+			double d = this.tudursvehiclemod$getSeatWorldPos(i).squaredDistanceTo(hit);
+			if (d < bestDist) {
+				bestDist = d;
+				best = i;
+			}
+		}
+		if (best < 0 && cab && this.tudursvehiclemod$getSeatOccupant(0) == null) {
+			best = 0;
+		}
+		return best >= 0 && this.tudursvehiclemod$mountToSeat(player, best);
+	}
+
 	/** 警笛キー(運転者のみ)。連打しても1秒に1回まで。 */
 	public void hornByKey(net.minecraft.server.network.ServerPlayerEntity player) {
 		if (drivingPlayer() != player || this.hornCooldown > 0) {
@@ -1697,6 +1744,11 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		if (!"throttle".equals(params.wheelSpin())) {
 			appendEntry(sb, "S", params.wheelSpin());
 		}
+		// 車体の前後端(乗車の判定に使う)。連結器の位置が無ければ台車の位置から
+		float sc = this.getScale() > 0f ? this.getScale() : 1f;
+		float front = Float.isNaN(params.couplerFront()) ? (float) (this.frontZ / sc + 1.5) : params.couplerFront();
+		float rear = Float.isNaN(params.couplerRear()) ? (float) (this.rearZ / sc - 1.5) : params.couplerRear();
+		appendEntry(sb, "B", "body", front, rear);
 		String spec = sb.toString();
 		if (!spec.equals(this.dataTracker.get(ANIM_SPEC))) {
 			this.dataTracker.set(ANIM_SPEC, spec);
@@ -1746,6 +1798,12 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 							}
 						}
 						case "S" -> byThrottle = f.length < 2 || !"distance".equals(f[1]);
+						case "B" -> {
+							if (f.length == 4) {
+								this.bodyFront = Float.parseFloat(f[2]);
+								this.bodyRear = Float.parseFloat(f[3]);
+							}
+						}
 						default -> {
 						}
 					}
