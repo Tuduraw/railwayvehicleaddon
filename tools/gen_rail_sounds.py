@@ -54,12 +54,17 @@ roll = lowpass(lowpass(n, 180), 260) * 3.0 + bandpass(n, 400, 1400) * 0.25
 roll *= 1 + 0.15 * np.sin(2 * np.pi * 2.0 * t)
 save("rva_rolling", norm(loopify(roll), 0.7))
 
-# レールの継ぎ目(ガタン)。1回分
+# レールの継ぎ目(ガタン)。1回分。車輪が継ぎ目を踏む重く低い「ドン」: 硬い物が当たる高い音(カチッ・金属の響き)は入れず、
+# 蒸気機関車のドラフト音に近い成分(少し下がる低い胴鳴りと、低域に寄せたこもったノイズ)で作る
 t = t_of(0.35)
-thump = np.sin(2 * np.pi * 70 * t) * np.exp(-t * 22) + 0.5 * np.sin(2 * np.pi * 140 * t) * np.exp(-t * 30)
-click = bandpass(rng.standard_normal(len(t)), 800, 4000) * np.exp(-t * 90) * 0.6
-ring = sum(np.sin(2 * np.pi * f * t) * np.exp(-t * d) for f, d in ((1180, 40), (1730, 55), (2650, 70))) * 0.12
-save("rva_joint", norm(thump + click + ring, 0.9))
+jn = rng.standard_normal(len(t))                      # 以前と同じく共通の乱数を1回分使う(後の音の乱数の並びを変えない)
+jattack = np.minimum(1, t / 0.006)
+jbody = np.sin(2 * np.pi * (52 + 18 * np.exp(-t * 25)) * t) * np.exp(-t * 13)          # 低い胴鳴り(打った瞬間だけ少し高い)
+jbody += 0.3 * np.sin(2 * np.pi * 104 * t) * np.exp(-t * 18)
+jmuff = lowpass(lowpass(jn, 260), 360) * 4.0 * np.exp(-t * 15)                          # こもった衝撃
+jthud = bandpass(jn, 150, 500) * 0.25 * np.exp(-t * 28)                                  # わずかな中低域の当たり
+joint_ = (jbody + jmuff + jthud) * jattack
+save("rva_joint", norm(joint_ - np.mean(joint_), 0.9))
 
 # ブレーキのきしみ(キー音)。ループ。大きく鋭い山を圧縮して(ソフトクリップ)目立つ部分だけを抑える
 t = t_of(2.25)

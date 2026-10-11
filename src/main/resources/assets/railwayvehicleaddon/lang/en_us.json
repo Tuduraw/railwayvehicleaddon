@@ -147,6 +147,7 @@
   "message.railwayvehicleaddon.survey.tag_radius": " R≥%s",
   "message.railwayvehicleaddon.survey.tag_wire": " wire %sm",
   "message.railwayvehicleaddon.power.no_power_unit": "This train has no powered car",
+  "message.railwayvehicleaddon.off_track": "This vehicle is not on a track and cannot move (place it right next to a track to put it on)",
   "message.railwayvehicleaddon.power.no_power_supply": "No power is reaching the powered cars (check coal, fuel, overhead wire and substation)",
   "item.railwayvehicleaddon.coupling_lever": "Coupling Lever",
   "key.railwayvehicleaddon.uncouple": "Uncouple (while riding)",

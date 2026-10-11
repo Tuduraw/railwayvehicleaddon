@@ -61,8 +61,12 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 
 	/** 線路基面からレール上面までの高さ(TrackRendererの描画寸法と一致させる) */
 	public static final double RAIL_TOP = 0.25;
-	/** 線路に載っていないときに近くの線路を探す距離 */
-	private static final double ATTACH_RADIUS = 6.0;
+	/** 線路の外にある車両を自動で線路に載せる、線路までの距離(ブロック)。線路のすぐそばだけ。離れていれば線路の外に置いたままにする */
+	private static final double ATTACH_RADIUS = 1.5;
+	/** 無人の車両のスロットルが0へ戻る速さ(1tickあたり。前提MODの車両の UNMANNED_THROTTLE_DECAY と同じ) */
+	private static final float UNMANNED_THROTTLE_DECAY = 0.01f;
+	/** クレーンなどから降ろされた直後、線路への自動の載せ替えを待つ時間(tick) */
+	private static final int RELEASE_ATTACH_DELAY = 10;
 	private static final int ATTACH_RETRY_TICKS = 20;
 	/** クライアント位置の補正で、1tickに詰める誤差の割合 */
 	private static final double CLIENT_CORRECTION = 0.3;
@@ -274,6 +278,12 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		syncStatus(params);
 		syncSmokeSpec(params);
 
+		if (this.hasVehicle() && !(this.getVehicle() instanceof RailVehicleEntity)) {
+			// クレーンのフックなど、他のエンティティに載って(吊られて)いる: 線路から外し、連結も外す。
+			// 位置は載っている相手が決める(ここでは動かさない)。降ろされたら近くに線路があれば載る
+			liftedOffTrack();
+			return;
+		}
 		if (this.trackPos != null && network.segment(this.trackPos.segmentId()) == null) {
 			// 区間が分割された(線路の途中に分岐器・渡り線を入れた)なら新しい区間へ載せ替え、
 			// 撤去されたなら線路から外れる
@@ -285,6 +295,11 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 				tryAttach(network);
 			}
 			if (this.trackPos == null) {
+				// 線路の外: 置いておく(保管・展示・トレーラーでの運搬など)ことはできるが、走らせられるのは線路の上だけ
+				idleOffTrack();
+				if (drivingPlayer() != null && this.getSyncedThrottleInput() != 0f) {
+					warnDriver("message.railwayvehicleaddon.off_track");
+				}
 				derailedMovement(def);
 				return;
 			}
@@ -393,10 +408,64 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			}
 			return throttle;
 		}
-		// 無人の車両は停止保持(連結先の判断に使われないよう、常にノッチ切のまま)
-		this.setThrottleDirect(0f);
+		// 無人の車両: 前提MODの車両と同じく、スロットルを緩やかに0へ戻す(ブレーキは掛けない)。
+		// ノッチは切にする(次に乗ったとき、前のノッチの位置へハンドルが勝手に戻らないように)
+		return decayUnmannedThrottle();
+	}
+
+	/** 無人のときのスロットルを0へ近づけ、ノッチを切にする。新しいスロットルを返す。 */
+	private float decayUnmannedThrottle() {
+		float current = this.getThrottle();
+		float next = Math.abs(current) <= UNMANNED_THROTTLE_DECAY ? 0f : current - Math.copySign(UNMANNED_THROTTLE_DECAY, current);
+		this.setThrottleDirect(next);
 		this.notch = 0;
-		return 0f;
+		return next;
+	}
+
+	/**
+	 * 線路から離れている間(吊り上げ・線路の外に置いたとき): 線路の勾配・カントで付いた車体の傾き(ピッチ・ロール)と
+	 * 台車の向きを、数tickかけて水平・まっすぐに戻す。サーバーとクライアントの両方で呼ぶ。
+	 */
+	private void levelOffTrack() {
+		float pitch = this.getPitch();
+		this.lastPitch = pitch;
+		this.setPitch(Math.abs(pitch) < 0.05f ? 0f : pitch * 0.8f);
+		this.prevRoll = this.roll;
+		this.roll = Math.abs(this.roll) < 0.05f ? 0f : this.roll * 0.8f;
+		if (!this.partPoses.isEmpty() && this.getPitch() == 0f && this.roll == 0f) {
+			this.prevPartPoses = Map.of();
+			this.partPoses = Map.of();
+		}
+	}
+
+	/** 線路の外にいる間: 動けないので、ノッチ・スロットルは0へ戻す(乗っていても力行できない)。 */
+	private void idleOffTrack() {
+		levelOffTrack();
+		this.notch = 0;
+		float current = this.getThrottle();
+		if (current != 0f) {
+			this.setThrottleDirect(Math.abs(current) <= UNMANNED_THROTTLE_DECAY ? 0f : current - Math.copySign(UNMANNED_THROTTLE_DECAY, current));
+		}
+	}
+
+	/**
+	 * クレーンなどで吊り上げられた(他のエンティティに載った)とき: 連結を両側とも外し、線路から外す。
+	 * 降ろされてからしばらくは線路へ載せ替えない(吊られたまま線路の近くを通っても引き戻されないように、
+	 * 降ろした位置に落ち着いてから最寄りの線路へ載せる)。
+	 */
+	private void liftedOffTrack() {
+		uncoupleEnd(true);
+		uncoupleEnd(false);
+		this.uncoupledA = Optional.empty();
+		this.uncoupledB = Optional.empty();
+		this.trackPos = null;
+		this.speed = 0.0;
+		this.cruiseSpeed = 0f;
+		this.attachCooldown = RELEASE_ATTACH_DELAY;
+		idleOffTrack();
+		this.dataTracker.set(TRACK_SEGMENT, -1L);
+		this.dataTracker.set(RAIL_SPEED, 0f);
+		this.setVelocity(Vec3d.ZERO);
 	}
 
 	private void warnReverser() {
@@ -407,7 +476,8 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	}
 
 	private boolean isOwnBraking() {
-		return drivingPlayer() == null || this.getSyncedBrakeInput() || this.tudursvehiclemod$isDestroyed();
+		// 無人でもブレーキは掛けない(前提MODの車両と同じく、スロットルが緩やかに0へ戻るだけ)
+		return this.getSyncedBrakeInput() || this.tudursvehiclemod$isDestroyed();
 	}
 
 	/** 動力車か。rail.powered を指定していなければ、運転席がある車両を動力車とみなす(従来どおり)。 */
@@ -869,8 +939,9 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 				if (neighborId.isEmpty() || !visited.add(neighborId.get())) {
 					continue;
 				}
-				if (!(world.getEntity(neighborId.get()) instanceof RailVehicleEntity neighbor)) {
-					continue;
+				if (!(world.getEntity(neighborId.get()) instanceof RailVehicleEntity neighbor)
+						|| (neighbor.hasVehicle() && !(neighbor.getVehicle() instanceof RailVehicleEntity))) {
+					continue;           // 吊り上げられている車両は編成に含めない(その車両の処理で連結が外れる)
 				}
 				boolean reversed = aEnd ? cur.entity().couplingAReversed : cur.entity().couplingBReversed;
 				boolean neighborIsAEnd = neighbor.endConnectsTo(true, cur.entity().getUuid());
@@ -923,7 +994,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		// 他の運転台にいる人のノッチ操作は使わない(ブレーキだけは、どの運転台からでも編成全体に効く)
 		RailVehicleParams leaderParams = RailVehicleParamsLoader.get(this.getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
 		float handle = this.updateOwnThrottleAndNotch(this.getDefinition(), leaderParams);
-		boolean braking = this.drivingPlayer() == null || this.isOwnBraking();
+		boolean braking = this.isOwnBraking();
 		int powerUnits = 0;
 		int poweredUnits = 0;
 		for (ConsistMember m : members) {
@@ -935,6 +1006,9 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			if (car != this) {
 				if (car.drivingPlayer() != null && car.isOwnBraking()) {
 					braking = true;
+				}
+				if (car.drivingPlayer() == null) {
+					car.notch = 0;          // 運転していない車両のノッチは切(後で乗ったときに前の位置へ戻らないように)
 				}
 				// 各車のハンドル表示・燃料消費も先頭車のハンドルに合わせる(向きが逆の車両は符号を反転)
 				car.setThrottleDirect(powerUnit ? handle * m.sign() : 0f);
@@ -1085,6 +1159,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		if (network == null || segment < 0L || network.segment(segment) == null) {
 			this.clientPos = null;
 			this.hasPlacedState = false;
+			levelOffTrack();
 			return;
 		}
 		float s = this.dataTracker.get(TRACK_S);

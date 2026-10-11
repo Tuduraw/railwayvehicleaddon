@@ -38,7 +38,7 @@ import java.util.List;
  * @param resistance     惰行時の走行抵抗による減速度(ブロック/tick²)
  * @param gradeGravity   勾配で車両にかかる重力加速度(ブロック/tick²)。勾配を掛けた分が加減速になる
  * @param powerNotches   前進側のノッチ数。前進・後進とも0ならノッチ式を使わず、前提MODと同じスロットル式になる
- * @param reverseNotches 後進側のノッチ数
+ * @param reverseNotches 後進側のノッチ数。後進の各ノッチの出力は前進と同じ刻み(1ノッチ = 1/power_notches)
  * @param mass           重さ(編成の加速に使う)。単車では加速に影響しない
  * @param powerSource    動力: "fuel"(前提MODの燃料)、"steam"(石炭・木炭と水)、"electric"(架線から給電)
  * @param couplerFront   連結器の位置(モデル座標のZ、前側)。未指定(NaN)なら台車の位置をそのまま使う
@@ -145,13 +145,18 @@ public record RailVehicleParams(List<Bogie> bogies, float brake, float resistanc
 		return this.powerNotches > 0 || this.reverseNotches > 0;
 	}
 
-	/** ノッチ位置(正=前進、負=後進)に対応するスロットルの目標値。ノッチ数で等分する。 */
+	/**
+	 * ノッチ位置(正=前進、負=後進)に対応するスロットルの目標値。前進側のノッチ数で等分する。
+	 * 後進も同じ刻みにする(後進1ノッチ=前進1ノッチと同じ出力)。後進側の最大は reverse_notches / power_notches。
+	 * 前進側のノッチが無い車両だけ、後進側のノッチ数で等分する。
+	 */
 	public float notchTarget(int notch) {
 		if (notch > 0 && this.powerNotches > 0) {
 			return (float) notch / this.powerNotches;
 		}
 		if (notch < 0 && this.reverseNotches > 0) {
-			return (float) notch / this.reverseNotches;
+			int divisor = this.powerNotches > 0 ? this.powerNotches : this.reverseNotches;
+			return Math.max(-1f, (float) notch / divisor);
 		}
 		return 0f;
 	}

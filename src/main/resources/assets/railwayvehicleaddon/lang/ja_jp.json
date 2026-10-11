@@ -147,6 +147,7 @@
   "message.railwayvehicleaddon.survey.tag_radius": " R≧%s",
   "message.railwayvehicleaddon.survey.tag_wire": " 架線%sm",
   "message.railwayvehicleaddon.power.no_power_unit": "この編成には動力車がありません",
+  "message.railwayvehicleaddon.off_track": "線路の上にないため動かせません(線路のすぐそばに置くと線路に載ります)",
   "message.railwayvehicleaddon.power.no_power_supply": "動力車に動力が届いていません(石炭・燃料・架線と変電所を確認してください)",
   "item.railwayvehicleaddon.coupling_lever": "連結てこ",
   "key.railwayvehicleaddon.uncouple": "連結を外す(乗車中)",

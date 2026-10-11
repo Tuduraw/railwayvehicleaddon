@@ -91,7 +91,7 @@ public final class RailSoundManager {
 			currentPos = vehicle.getEntityPos();
 			State state = STATES.computeIfAbsent(vehicle.getId(), id -> new State());
 			present.add(vehicle.getId());
-			update(vehicle, spec, state, loopGain);
+			update(vehicle, spec, state, loopGain, client.player != null && client.player.getVehicle() == vehicle);
 		}
 		STATES.entrySet().removeIf(e -> {
 			if (!present.contains(e.getKey())) {
@@ -106,7 +106,8 @@ public final class RailSoundManager {
 		cleanupOneShots();
 	}
 
-	private static void update(RailVehicleEntity vehicle, RailVehicleEntity.SoundSpec spec, State state, float gain) {
+	/** @param ridden いま自分(このクライアントのプレイヤー)が乗っている車両か。レールの継ぎ目の音はこの車両の分だけ鳴らす */
+	private static void update(RailVehicleEntity vehicle, RailVehicleEntity.SoundSpec spec, State state, float gain, boolean ridden) {
 		double v = vehicle.getRailSpeed();
 		double speed = Math.abs(v);
 		float maxSpeed = Math.max(0.05f, vehicle.getDefinition().maxSpeed());
@@ -135,9 +136,9 @@ public final class RailSoundManager {
 			setLoop(state, "motor", spec.motor(), state.motorLevel * 0.7f * gain, state.motorPitch);
 		}
 
-		// ブレーキのきしみ: 停車間際に減速しているとき
+		// ブレーキのきしみ: ブレーキ入力があり、停車間際に減速しているときだけ(惰行・ノッチ切での減速では鳴らさない)
 		boolean decelerating = speed < state.lastSpeed - 1.0e-4;
-		boolean braking = decelerating && speed > 0.01 && speed < 0.3 && (vehicle.getSyncedBrakeInput() || throttle < 0.01f);
+		boolean braking = decelerating && speed > 0.01 && speed < 0.3 && vehicle.getSyncedBrakeInput();
 		// 停車直前ほど大きくなるが、上の方は頭打ちにする(小さい部分はほぼそのまま)
 		float brakeTarget = braking ? (float) (0.32 * Math.tanh(1.7 * (1.0 - speed / 0.3))) : 0f;
 		float brakeNow = state.gains.getOrDefault("brake_level", 0f);
@@ -158,7 +159,11 @@ public final class RailSoundManager {
 		// レールの継ぎ目: 線路上にjoint_spacingごと(各区間の始点から)に継ぎ目があるものとし、車軸がそこを通ったら鳴らす。
 		// 継ぎ目は線路に固定されているので、編成の各車両・各車軸が同じ継ぎ目を順に通って「タタン…タタン」となる。
 		// 区間のつなぎ目も継ぎ目として扱う(ただし直前の継ぎ目から間隔の半分以上進んでいるときだけ)。
-		if (spec.jointSpacing() > 0.5f && !spec.joint().isEmpty() && speed > 0.002) {
+		// 継ぎ目の音は、自分が乗っている車両で鳴ったものだけを聞かせる(他の車両・沿線からは鳴らさない)
+		if (!ridden) {
+			// 乗っていない間は車軸の位置を覚えない(乗った直前の古い位置との差で、乗った瞬間に鳴らないように)
+			java.util.Arrays.fill(state.axleSegment, -1L);
+		} else if (spec.jointSpacing() > 0.5f && !spec.joint().isEmpty() && speed > 0.002) {
 			double[] bogies = vehicle.getCarryBogieOffsets();
 			int n = bogies.length * 2;
 			if (state.axleSegment.length != n) {
