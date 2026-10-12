@@ -1,0 +1,73 @@
+{
+  "entity_type": "railwayvehicleaddon:rail_vehicle",
+  "model": "japanpassenger:models/obj/jnr_de10.obj",
+  "texture": "japanpassenger:textures/vehicle/jnr_de10.png",
+  "display_name": "DE10形ディーゼル機関車(1966年)",
+  "hud": "railcar_notch_5",
+  "scale": 1.0,
+  "width": 2.9,
+  "height": 3.95,
+  "max_speed": 1.181,
+  "acceleration": 0.014,
+  "throttle_up_down": 2.0,
+  "max_health": 400.0,
+  "max_fuel": 2000.0,
+  "fuel_consumption": 0.25,
+  "seats": [
+    {
+      "name": "driver",
+      "offset_x": 0.55,
+      "offset_y": 2.16,
+      "offset_z": -2.05,
+      "driver": true
+    },
+    {
+      "name": "seat1",
+      "offset_x": -0.55,
+      "offset_y": 2.16,
+      "offset_z": -2.35
+    }
+  ],
+  "spawn_item": {
+    "display_name": "DE10形ディーゼル機関車(1966年)",
+    "tier": 2
+  },
+  "rail": {
+    "bogies": [
+      {
+        "part": "$bogie_front",
+        "pivot_x": 0.0,
+        "pivot_y": 0.525,
+        "pivot_z": 3.6
+      },
+      {
+        "part": "$bogie_rear",
+        "pivot_x": 0.0,
+        "pivot_y": 0.525,
+        "pivot_z": -5.0
+      }
+    ],
+    "brake": 0.015,
+    "resistance": 0.0003,
+    "grade_gravity": 0.04,
+    "mass": 2.8,
+    "coupler_front": 7.13,
+    "coupler_rear": -7.13,
+    "power_source": "fuel",
+    "power_notches": 5,
+    "reverse_notches": 1,
+    "smoke": [
+      {
+        "x": 0.0,
+        "y": 3.15,
+        "z": 3.0,
+        "type": "smoke",
+        "rate": 0.6,
+        "idle_rate": 0.08
+      }
+    ],
+    "sounds": {
+      "volume": 1.2
+    }
+  }
+}

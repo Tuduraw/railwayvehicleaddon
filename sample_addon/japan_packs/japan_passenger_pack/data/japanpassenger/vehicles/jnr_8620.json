@@ -1,0 +1,188 @@
+{
+  "entity_type": "railwayvehicleaddon:rail_vehicle",
+  "model": "japanpassenger:models/obj/jnr_8620.obj",
+  "texture": "japanpassenger:textures/vehicle/jnr_8620.png",
+  "display_name": "8620形蒸気機関車(1914年)",
+  "hud": "railcar_throttle",
+  "scale": 1.0,
+  "width": 2.9,
+  "height": 3.95,
+  "max_speed": 1.319,
+  "acceleration": 0.012,
+  "throttle_up_down": 2.0,
+  "max_health": 500.0,
+  "max_fuel": 1000.0,
+  "fuel_consumption": 0.3,
+  "inventory_size": 9,
+  "seats": [
+    {
+      "name": "driver",
+      "offset_x": 0.88,
+      "offset_y": 1.36,
+      "offset_z": 0.87,
+      "driver": true
+    },
+    {
+      "name": "seat1",
+      "offset_x": -0.88,
+      "offset_y": 1.36,
+      "offset_z": 0.87
+    }
+  ],
+  "spawn_item": {
+    "display_name": "8620形蒸気機関車(1914年)",
+    "tier": 2
+  },
+  "rail": {
+    "bogies": [
+      {
+        "pivot_x": 0.0,
+        "pivot_y": 0.8,
+        "pivot_z": 4.9
+      },
+      {
+        "pivot_x": 0.0,
+        "pivot_y": 0.8,
+        "pivot_z": 1.3
+      },
+      {
+        "part": "$truck0",
+        "pivot_x": 0.0,
+        "pivot_y": 0.43,
+        "pivot_z": 6.9,
+        "carry": false
+      },
+      {
+        "part": "$tbogie_f",
+        "pivot_x": 0.0,
+        "pivot_y": 0.43,
+        "pivot_z": -3.4,
+        "carry": false
+      },
+      {
+        "part": "$tbogie_r",
+        "pivot_x": 0.0,
+        "pivot_y": 0.43,
+        "pivot_z": -6.6,
+        "carry": false
+      }
+    ],
+    "brake": 0.015,
+    "resistance": 0.0003,
+    "grade_gravity": 0.04,
+    "mass": 4.0,
+    "coupler_front": 8.6,
+    "coupler_rear": -8.4,
+    "power_source": "steam",
+    "smoke": [
+      {
+        "x": 0.0,
+        "y": 3.81,
+        "z": 7.15,
+        "type": "campfire",
+        "rate": 2.5,
+        "idle_rate": 0.25
+      }
+    ],
+    "sounds": {
+      "volume": 1.3
+    },
+    "articulated": [
+      {
+        "part": "$tender",
+        "hinge_y": 1.3,
+        "hinge_z": -1.8,
+        "rear_z": -6.6,
+        "front_z": -3.4
+      }
+    ],
+    "wheels": [
+      {
+        "part": "$driver0",
+        "pivot_y": 0.8,
+        "pivot_z": 4.9,
+        "radius": 0.8
+      },
+      {
+        "part": "$driver1",
+        "pivot_y": 0.8,
+        "pivot_z": 3.1,
+        "radius": 0.8
+      },
+      {
+        "part": "$driver2",
+        "pivot_y": 0.8,
+        "pivot_z": 1.3,
+        "radius": 0.8
+      }
+    ],
+    "rods": [
+      {
+        "part": "$rod_l",
+        "type": "coupling",
+        "axle_y": 0.8,
+        "axle_z": 4.9,
+        "crank_radius": 0.32,
+        "wheel_radius": 0.8,
+        "phase_deg": 0.0
+      },
+      {
+        "part": "$mrod_l",
+        "type": "main",
+        "axle_y": 0.8,
+        "axle_z": 3.1,
+        "crank_radius": 0.32,
+        "wheel_radius": 0.8,
+        "phase_deg": 0.0,
+        "length": 2.3911,
+        "crosshead_y": 1.35,
+        "direction": 1.0
+      },
+      {
+        "part": "$xhead_l",
+        "type": "crosshead",
+        "axle_y": 0.8,
+        "axle_z": 3.1,
+        "crank_radius": 0.32,
+        "wheel_radius": 0.8,
+        "phase_deg": 0.0,
+        "length": 2.3911,
+        "crosshead_y": 1.35,
+        "direction": 1.0
+      },
+      {
+        "part": "$rod_r",
+        "type": "coupling",
+        "axle_y": 0.8,
+        "axle_z": 4.9,
+        "crank_radius": 0.32,
+        "wheel_radius": 0.8,
+        "phase_deg": 90.0
+      },
+      {
+        "part": "$mrod_r",
+        "type": "main",
+        "axle_y": 0.8,
+        "axle_z": 3.1,
+        "crank_radius": 0.32,
+        "wheel_radius": 0.8,
+        "phase_deg": 90.0,
+        "length": 2.3911,
+        "crosshead_y": 1.35,
+        "direction": 1.0
+      },
+      {
+        "part": "$xhead_r",
+        "type": "crosshead",
+        "axle_y": 0.8,
+        "axle_z": 3.1,
+        "crank_radius": 0.32,
+        "wheel_radius": 0.8,
+        "phase_deg": 90.0,
+        "length": 2.3911,
+        "crosshead_y": 1.35,
+        "direction": 1.0
+      }
+    ]
+  }
+}

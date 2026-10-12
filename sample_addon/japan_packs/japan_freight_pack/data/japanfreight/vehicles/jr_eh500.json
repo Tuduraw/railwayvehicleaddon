@@ -1,0 +1,63 @@
+{
+  "entity_type": "railwayvehicleaddon:rail_vehicle",
+  "model": "japanfreight:models/obj/jr_eh500.obj",
+  "texture": "japanfreight:textures/vehicle/jr_eh500.png",
+  "display_name": "EH500形電気機関車(1997年・半車体。2両を背中合わせに連結して使う)",
+  "hud": "railcar_notch_5",
+  "scale": 1.0,
+  "width": 2.85,
+  "height": 3.95,
+  "max_speed": 1.528,
+  "acceleration": 0.01,
+  "throttle_up_down": 2.0,
+  "max_health": 450.0,
+  "fuel_consumption": -1.0,
+  "seats": [
+    {
+      "name": "driver",
+      "offset_x": 0.7,
+      "offset_y": 1.51,
+      "offset_z": 5.3,
+      "driver": true
+    },
+    {
+      "name": "seat1",
+      "offset_x": -0.7,
+      "offset_y": 1.6,
+      "offset_z": 4.7
+    }
+  ],
+  "spawn_item": {
+    "display_name": "EH500形電気機関車(1997年・半車体。2両を背中合わせに連結して使う)",
+    "tier": 2
+  },
+  "rail": {
+    "bogies": [
+      {
+        "part": "$bogie_front",
+        "pivot_x": 0.0,
+        "pivot_y": 0.625,
+        "pivot_z": 3.6
+      },
+      {
+        "part": "$bogie_rear",
+        "pivot_x": 0.0,
+        "pivot_y": 0.625,
+        "pivot_z": -3.6
+      }
+    ],
+    "brake": 0.015,
+    "resistance": 0.0003,
+    "grade_gravity": 0.04,
+    "mass": 2.5,
+    "coupler_front": 6.5,
+    "coupler_rear": -6.5,
+    "power_source": "electric",
+    "power_notches": 5,
+    "reverse_notches": 1,
+    "sounds": {
+      "volume": 1.0,
+      "motor": "rva_motor_vvvf"
+    }
+  }
+}

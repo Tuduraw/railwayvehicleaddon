@@ -1,0 +1,194 @@
+{
+  "entity_type": "railwayvehicleaddon:rail_vehicle",
+  "model": "japanfreight:models/obj/jnr_9600.obj",
+  "texture": "japanfreight:textures/vehicle/jnr_9600.png",
+  "display_name": "9600形蒸気機関車(1913年)",
+  "hud": "railcar_throttle",
+  "scale": 1.0,
+  "width": 2.9,
+  "height": 4.05,
+  "max_speed": 0.903,
+  "acceleration": 0.012,
+  "throttle_up_down": 2.0,
+  "max_health": 500.0,
+  "max_fuel": 1000.0,
+  "fuel_consumption": 0.3,
+  "inventory_size": 9,
+  "seats": [
+    {
+      "name": "driver",
+      "offset_x": 0.88,
+      "offset_y": 1.41,
+      "offset_z": 0.57,
+      "driver": true
+    },
+    {
+      "name": "seat1",
+      "offset_x": -0.88,
+      "offset_y": 1.41,
+      "offset_z": 0.57
+    }
+  ],
+  "spawn_item": {
+    "display_name": "9600形蒸気機関車(1913年)",
+    "tier": 2
+  },
+  "rail": {
+    "bogies": [
+      {
+        "pivot_x": 0.0,
+        "pivot_y": 0.625,
+        "pivot_z": 5.4
+      },
+      {
+        "pivot_x": 0.0,
+        "pivot_y": 0.625,
+        "pivot_z": 1.2
+      },
+      {
+        "part": "$truck0",
+        "pivot_x": 0.0,
+        "pivot_y": 0.43,
+        "pivot_z": 7.0,
+        "carry": false
+      },
+      {
+        "part": "$tbogie_f",
+        "pivot_x": 0.0,
+        "pivot_y": 0.43,
+        "pivot_z": -4.0,
+        "carry": false
+      },
+      {
+        "part": "$tbogie_r",
+        "pivot_x": 0.0,
+        "pivot_y": 0.43,
+        "pivot_z": -6.6,
+        "carry": false
+      }
+    ],
+    "brake": 0.015,
+    "resistance": 0.0003,
+    "grade_gravity": 0.04,
+    "mass": 4.0,
+    "coupler_front": 8.5,
+    "coupler_rear": -8.4,
+    "power_source": "steam",
+    "smoke": [
+      {
+        "x": 0.0,
+        "y": 4.08,
+        "z": 7.05,
+        "type": "campfire",
+        "rate": 2.5,
+        "idle_rate": 0.25
+      }
+    ],
+    "sounds": {
+      "volume": 1.3
+    },
+    "articulated": [
+      {
+        "part": "$tender",
+        "hinge_y": 1.3,
+        "hinge_z": -2.4,
+        "rear_z": -6.6,
+        "front_z": -4.0
+      }
+    ],
+    "wheels": [
+      {
+        "part": "$driver0",
+        "pivot_y": 0.625,
+        "pivot_z": 5.4,
+        "radius": 0.625
+      },
+      {
+        "part": "$driver1",
+        "pivot_y": 0.625,
+        "pivot_z": 4.0,
+        "radius": 0.625
+      },
+      {
+        "part": "$driver2",
+        "pivot_y": 0.625,
+        "pivot_z": 2.6,
+        "radius": 0.625
+      },
+      {
+        "part": "$driver3",
+        "pivot_y": 0.625,
+        "pivot_z": 1.2,
+        "radius": 0.625
+      }
+    ],
+    "rods": [
+      {
+        "part": "$rod_l",
+        "type": "coupling",
+        "axle_y": 0.625,
+        "axle_z": 5.4,
+        "crank_radius": 0.25,
+        "wheel_radius": 0.625,
+        "phase_deg": 0.0
+      },
+      {
+        "part": "$mrod_l",
+        "type": "main",
+        "axle_y": 0.625,
+        "axle_z": 2.6,
+        "crank_radius": 0.25,
+        "wheel_radius": 0.625,
+        "phase_deg": 0.0,
+        "length": 2.898,
+        "crosshead_y": 1.4,
+        "direction": 1.0
+      },
+      {
+        "part": "$xhead_l",
+        "type": "crosshead",
+        "axle_y": 0.625,
+        "axle_z": 2.6,
+        "crank_radius": 0.25,
+        "wheel_radius": 0.625,
+        "phase_deg": 0.0,
+        "length": 2.898,
+        "crosshead_y": 1.4,
+        "direction": 1.0
+      },
+      {
+        "part": "$rod_r",
+        "type": "coupling",
+        "axle_y": 0.625,
+        "axle_z": 5.4,
+        "crank_radius": 0.25,
+        "wheel_radius": 0.625,
+        "phase_deg": 90.0
+      },
+      {
+        "part": "$mrod_r",
+        "type": "main",
+        "axle_y": 0.625,
+        "axle_z": 2.6,
+        "crank_radius": 0.25,
+        "wheel_radius": 0.625,
+        "phase_deg": 90.0,
+        "length": 2.898,
+        "crosshead_y": 1.4,
+        "direction": 1.0
+      },
+      {
+        "part": "$xhead_r",
+        "type": "crosshead",
+        "axle_y": 0.625,
+        "axle_z": 2.6,
+        "crank_radius": 0.25,
+        "wheel_radius": 0.625,
+        "phase_deg": 90.0,
+        "length": 2.898,
+        "crosshead_y": 1.4,
+        "direction": 1.0
+      }
+    ]
+  }
+}

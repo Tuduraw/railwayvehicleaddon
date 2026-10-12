@@ -1,0 +1,126 @@
+{
+  "entity_type": "railwayvehicleaddon:rail_vehicle",
+  "model": "japanpassenger:models/obj/jnr_ohane25.obj",
+  "texture": "japanpassenger:textures/vehicle/jnr_ohane25.png",
+  "display_name": "オハネ25形客車(24系25形・B寝台)",
+  "hud": "blank",
+  "scale": 1.0,
+  "width": 2.95,
+  "height": 4.0,
+  "max_speed": 1.528,
+  "acceleration": 0.02,
+  "throttle_up_down": 2.0,
+  "max_health": 300.0,
+  "fuel_consumption": -1.0,
+  "seats": [
+    {
+      "name": "seat1",
+      "offset_x": 0.3,
+      "offset_y": 1.06,
+      "offset_z": -7.15,
+      "dismount_x": 2.28,
+      "dismount_z": -9.6
+    },
+    {
+      "name": "seat2",
+      "offset_x": 0.3,
+      "offset_y": 1.06,
+      "offset_z": -5.45,
+      "dismount_x": 2.28,
+      "dismount_z": -9.6
+    },
+    {
+      "name": "seat3",
+      "offset_x": 0.3,
+      "offset_y": 1.06,
+      "offset_z": -3.75,
+      "dismount_x": 2.28,
+      "dismount_z": -9.6
+    },
+    {
+      "name": "seat4",
+      "offset_x": 0.3,
+      "offset_y": 1.06,
+      "offset_z": -2.05,
+      "dismount_x": 2.28,
+      "dismount_z": -9.6
+    },
+    {
+      "name": "seat5",
+      "offset_x": 0.3,
+      "offset_y": 1.06,
+      "offset_z": -0.35,
+      "dismount_x": 2.28,
+      "dismount_z": -9.6
+    },
+    {
+      "name": "seat6",
+      "offset_x": 0.3,
+      "offset_y": 1.06,
+      "offset_z": 1.35,
+      "dismount_x": 2.28,
+      "dismount_z": 9.6
+    },
+    {
+      "name": "seat7",
+      "offset_x": 0.3,
+      "offset_y": 1.06,
+      "offset_z": 3.05,
+      "dismount_x": 2.28,
+      "dismount_z": 9.6
+    },
+    {
+      "name": "seat8",
+      "offset_x": 0.3,
+      "offset_y": 1.06,
+      "offset_z": 4.75,
+      "dismount_x": 2.28,
+      "dismount_z": 9.6
+    },
+    {
+      "name": "seat9",
+      "offset_x": 0.3,
+      "offset_y": 1.06,
+      "offset_z": 6.45,
+      "dismount_x": 2.28,
+      "dismount_z": 9.6
+    },
+    {
+      "name": "seat10",
+      "offset_x": 0.3,
+      "offset_y": 1.06,
+      "offset_z": 8.15,
+      "dismount_x": 2.28,
+      "dismount_z": 9.6
+    }
+  ],
+  "spawn_item": {
+    "display_name": "オハネ25形客車(24系25形・B寝台)",
+    "tier": 2
+  },
+  "rail": {
+    "bogies": [
+      {
+        "part": "$bogie_front",
+        "pivot_x": 0.0,
+        "pivot_y": 0.43,
+        "pivot_z": 7.15
+      },
+      {
+        "part": "$bogie_rear",
+        "pivot_x": 0.0,
+        "pivot_y": 0.43,
+        "pivot_z": -7.15
+      }
+    ],
+    "brake": 0.015,
+    "resistance": 0.0003,
+    "grade_gravity": 0.04,
+    "mass": 1.3,
+    "coupler_front": 10.6,
+    "coupler_rear": -10.6,
+    "sounds": {
+      "volume": 1.0
+    }
+  }
+}

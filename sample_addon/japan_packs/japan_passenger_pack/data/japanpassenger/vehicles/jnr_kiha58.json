@@ -1,0 +1,227 @@
+{
+  "entity_type": "railwayvehicleaddon:rail_vehicle",
+  "model": "japanpassenger:models/obj/jnr_kiha58.obj",
+  "texture": "japanpassenger:textures/vehicle/jnr_kiha58.png",
+  "display_name": "キハ58形気動車(1961年・急行色)",
+  "hud": "railcar_notch_5",
+  "scale": 1.0,
+  "width": 2.9,
+  "height": 3.95,
+  "max_speed": 1.319,
+  "acceleration": 0.03,
+  "throttle_up_down": 2.0,
+  "max_health": 300.0,
+  "max_fuel": 2000.0,
+  "fuel_consumption": 0.25,
+  "seats": [
+    {
+      "name": "driver",
+      "offset_x": 0.7,
+      "offset_y": 1.11,
+      "offset_z": 9.65,
+      "driver": true
+    },
+    {
+      "name": "seat1",
+      "offset_x": 0.61,
+      "offset_y": 1.11,
+      "offset_z": -7.18,
+      "dismount_x": 2.25,
+      "dismount_z": -9.6
+    },
+    {
+      "name": "seat2",
+      "offset_x": -0.61,
+      "offset_y": 1.11,
+      "offset_z": -7.18,
+      "dismount_x": -2.25,
+      "dismount_z": -9.6
+    },
+    {
+      "name": "seat3",
+      "offset_x": 0.61,
+      "offset_y": 1.11,
+      "offset_z": -5.63,
+      "dismount_x": 2.25,
+      "dismount_z": -9.6
+    },
+    {
+      "name": "seat4",
+      "offset_x": -0.61,
+      "offset_y": 1.11,
+      "offset_z": -5.63,
+      "dismount_x": -2.25,
+      "dismount_z": -9.6
+    },
+    {
+      "name": "seat5",
+      "offset_x": 0.61,
+      "offset_y": 1.11,
+      "offset_z": -4.08,
+      "dismount_x": 2.25,
+      "dismount_z": -9.6
+    },
+    {
+      "name": "seat6",
+      "offset_x": -0.61,
+      "offset_y": 1.11,
+      "offset_z": -4.08,
+      "dismount_x": -2.25,
+      "dismount_z": -9.6
+    },
+    {
+      "name": "seat7",
+      "offset_x": 0.61,
+      "offset_y": 1.11,
+      "offset_z": -2.53,
+      "dismount_x": 2.25,
+      "dismount_z": -9.6
+    },
+    {
+      "name": "seat8",
+      "offset_x": -0.61,
+      "offset_y": 1.11,
+      "offset_z": -2.53,
+      "dismount_x": -2.25,
+      "dismount_z": -9.6
+    },
+    {
+      "name": "seat9",
+      "offset_x": 0.61,
+      "offset_y": 1.11,
+      "offset_z": -0.98,
+      "dismount_x": 2.25,
+      "dismount_z": -9.6
+    },
+    {
+      "name": "seat10",
+      "offset_x": -0.61,
+      "offset_y": 1.11,
+      "offset_z": -0.98,
+      "dismount_x": -2.25,
+      "dismount_z": -9.6
+    },
+    {
+      "name": "seat11",
+      "offset_x": 0.61,
+      "offset_y": 1.11,
+      "offset_z": 0.57,
+      "dismount_x": 2.25,
+      "dismount_z": 9.6
+    },
+    {
+      "name": "seat12",
+      "offset_x": -0.61,
+      "offset_y": 1.11,
+      "offset_z": 0.57,
+      "dismount_x": -2.25,
+      "dismount_z": 9.6
+    },
+    {
+      "name": "seat13",
+      "offset_x": 0.61,
+      "offset_y": 1.11,
+      "offset_z": 2.12,
+      "dismount_x": 2.25,
+      "dismount_z": 9.6
+    },
+    {
+      "name": "seat14",
+      "offset_x": -0.61,
+      "offset_y": 1.11,
+      "offset_z": 2.12,
+      "dismount_x": -2.25,
+      "dismount_z": 9.6
+    },
+    {
+      "name": "seat15",
+      "offset_x": 0.61,
+      "offset_y": 1.11,
+      "offset_z": 3.67,
+      "dismount_x": 2.25,
+      "dismount_z": 9.6
+    },
+    {
+      "name": "seat16",
+      "offset_x": -0.61,
+      "offset_y": 1.11,
+      "offset_z": 3.67,
+      "dismount_x": -2.25,
+      "dismount_z": 9.6
+    },
+    {
+      "name": "seat17",
+      "offset_x": 0.61,
+      "offset_y": 1.11,
+      "offset_z": 5.22,
+      "dismount_x": 2.25,
+      "dismount_z": 9.6
+    },
+    {
+      "name": "seat18",
+      "offset_x": -0.61,
+      "offset_y": 1.11,
+      "offset_z": 5.22,
+      "dismount_x": -2.25,
+      "dismount_z": 9.6
+    },
+    {
+      "name": "seat19",
+      "offset_x": 0.61,
+      "offset_y": 1.11,
+      "offset_z": 6.77,
+      "dismount_x": 2.25,
+      "dismount_z": 9.6
+    },
+    {
+      "name": "seat20",
+      "offset_x": -0.61,
+      "offset_y": 1.11,
+      "offset_z": 6.77,
+      "dismount_x": -2.25,
+      "dismount_z": 9.6
+    }
+  ],
+  "spawn_item": {
+    "display_name": "キハ58形気動車(1961年・急行色)",
+    "tier": 2
+  },
+  "rail": {
+    "bogies": [
+      {
+        "part": "$bogie_front",
+        "pivot_x": 0.0,
+        "pivot_y": 0.43,
+        "pivot_z": 7.15
+      },
+      {
+        "part": "$bogie_rear",
+        "pivot_x": 0.0,
+        "pivot_y": 0.43,
+        "pivot_z": -7.15
+      }
+    ],
+    "brake": 0.015,
+    "resistance": 0.0003,
+    "grade_gravity": 0.04,
+    "mass": 1.0,
+    "coupler_front": 10.85,
+    "coupler_rear": -10.85,
+    "power_source": "fuel",
+    "power_notches": 5,
+    "reverse_notches": 1,
+    "smoke": [
+      {
+        "x": 0.6,
+        "y": 4.1,
+        "z": 3.0,
+        "type": "smoke",
+        "rate": 0.35,
+        "idle_rate": 0.05
+      }
+    ],
+    "sounds": {
+      "volume": 1.2
+    }
+  }
+}

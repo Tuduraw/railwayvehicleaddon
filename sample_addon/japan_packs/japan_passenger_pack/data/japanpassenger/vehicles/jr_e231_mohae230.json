@@ -1,0 +1,177 @@
+{
+  "entity_type": "railwayvehicleaddon:rail_vehicle",
+  "model": "japanpassenger:models/obj/jr_e231_mohae230.obj",
+  "texture": "japanpassenger:textures/vehicle/jr_e231_mohae230.png",
+  "display_name": "E231系 モハE230形(電動車)",
+  "hud": "blank",
+  "scale": 1.0,
+  "width": 2.95,
+  "height": 3.9,
+  "max_speed": 1.667,
+  "acceleration": 0.03,
+  "throttle_up_down": 2.0,
+  "max_health": 300.0,
+  "fuel_consumption": -1.0,
+  "seats": [
+    {
+      "name": "seat1",
+      "offset_x": 0.58,
+      "offset_y": 1.11,
+      "offset_z": -8.75,
+      "dismount_x": 2.28,
+      "dismount_z": -7.3
+    },
+    {
+      "name": "seat2",
+      "offset_x": -0.58,
+      "offset_y": 1.11,
+      "offset_z": -8.75,
+      "dismount_x": -2.28,
+      "dismount_z": -7.3
+    },
+    {
+      "name": "seat3",
+      "offset_x": 0.58,
+      "offset_y": 1.11,
+      "offset_z": -5.9,
+      "dismount_x": 2.28,
+      "dismount_z": -7.3
+    },
+    {
+      "name": "seat4",
+      "offset_x": 0.58,
+      "offset_y": 1.11,
+      "offset_z": -3.85,
+      "dismount_x": 2.28,
+      "dismount_z": -2.45
+    },
+    {
+      "name": "seat5",
+      "offset_x": -0.58,
+      "offset_y": 1.11,
+      "offset_z": -5.9,
+      "dismount_x": -2.28,
+      "dismount_z": -7.3
+    },
+    {
+      "name": "seat6",
+      "offset_x": -0.58,
+      "offset_y": 1.11,
+      "offset_z": -3.85,
+      "dismount_x": -2.28,
+      "dismount_z": -2.45
+    },
+    {
+      "name": "seat7",
+      "offset_x": 0.58,
+      "offset_y": 1.11,
+      "offset_z": -1.05,
+      "dismount_x": 2.28,
+      "dismount_z": -2.45
+    },
+    {
+      "name": "seat8",
+      "offset_x": 0.58,
+      "offset_y": 1.11,
+      "offset_z": 1.05,
+      "dismount_x": 2.28,
+      "dismount_z": 2.45
+    },
+    {
+      "name": "seat9",
+      "offset_x": -0.58,
+      "offset_y": 1.11,
+      "offset_z": -1.05,
+      "dismount_x": -2.28,
+      "dismount_z": -2.45
+    },
+    {
+      "name": "seat10",
+      "offset_x": -0.58,
+      "offset_y": 1.11,
+      "offset_z": 1.05,
+      "dismount_x": -2.28,
+      "dismount_z": 2.45
+    },
+    {
+      "name": "seat11",
+      "offset_x": 0.58,
+      "offset_y": 1.11,
+      "offset_z": 3.85,
+      "dismount_x": 2.28,
+      "dismount_z": 2.45
+    },
+    {
+      "name": "seat12",
+      "offset_x": 0.58,
+      "offset_y": 1.11,
+      "offset_z": 5.9,
+      "dismount_x": 2.28,
+      "dismount_z": 7.3
+    },
+    {
+      "name": "seat13",
+      "offset_x": -0.58,
+      "offset_y": 1.11,
+      "offset_z": 3.85,
+      "dismount_x": -2.28,
+      "dismount_z": 2.45
+    },
+    {
+      "name": "seat14",
+      "offset_x": -0.58,
+      "offset_y": 1.11,
+      "offset_z": 5.9,
+      "dismount_x": -2.28,
+      "dismount_z": 7.3
+    },
+    {
+      "name": "seat15",
+      "offset_x": 0.58,
+      "offset_y": 1.11,
+      "offset_z": 8.75,
+      "dismount_x": 2.28,
+      "dismount_z": 7.3
+    },
+    {
+      "name": "seat16",
+      "offset_x": -0.58,
+      "offset_y": 1.11,
+      "offset_z": 8.75,
+      "dismount_x": -2.28,
+      "dismount_z": 7.3
+    }
+  ],
+  "spawn_item": {
+    "display_name": "E231系 モハE230形(電動車)",
+    "tier": 2
+  },
+  "rail": {
+    "bogies": [
+      {
+        "part": "$bogie_front",
+        "pivot_x": 0.0,
+        "pivot_y": 0.43,
+        "pivot_z": 6.9
+      },
+      {
+        "part": "$bogie_rear",
+        "pivot_x": 0.0,
+        "pivot_y": 0.43,
+        "pivot_z": -6.9
+      }
+    ],
+    "brake": 0.015,
+    "resistance": 0.0003,
+    "grade_gravity": 0.04,
+    "mass": 1.0,
+    "coupler_front": 10.2,
+    "coupler_rear": -10.2,
+    "powered": true,
+    "power_source": "electric",
+    "sounds": {
+      "volume": 1.0,
+      "motor": "rva_motor_vvvf"
+    }
+  }
+}

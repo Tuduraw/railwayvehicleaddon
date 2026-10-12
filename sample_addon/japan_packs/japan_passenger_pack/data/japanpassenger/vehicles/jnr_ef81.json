@@ -1,0 +1,72 @@
+{
+  "entity_type": "railwayvehicleaddon:rail_vehicle",
+  "model": "japanpassenger:models/obj/jnr_ef81.obj",
+  "texture": "japanpassenger:textures/vehicle/jnr_ef81.png",
+  "display_name": "EF81形電気機関車(1968年)",
+  "hud": "railcar_notch_5",
+  "scale": 1.0,
+  "width": 2.8,
+  "height": 3.95,
+  "max_speed": 1.528,
+  "acceleration": 0.012,
+  "throttle_up_down": 2.0,
+  "max_health": 450.0,
+  "fuel_consumption": -1.0,
+  "seats": [
+    {
+      "name": "driver",
+      "offset_x": 0.7,
+      "offset_y": 1.86,
+      "offset_z": 8.3,
+      "driver": true
+    },
+    {
+      "name": "seat1",
+      "offset_x": -0.7,
+      "offset_y": 1.6,
+      "offset_z": 7.7
+    }
+  ],
+  "spawn_item": {
+    "display_name": "EF81形電気機関車(1968年)",
+    "tier": 2
+  },
+  "rail": {
+    "bogies": [
+      {
+        "part": "$bogie_front",
+        "pivot_x": 0.0,
+        "pivot_y": 0.625,
+        "pivot_z": 5.8
+      },
+      {
+        "part": "$bogie_rear",
+        "pivot_x": 0.0,
+        "pivot_y": 0.625,
+        "pivot_z": -5.8
+      },
+      {
+        "part": "$bogie_aux0",
+        "pivot_x": 0.0,
+        "pivot_y": 0.625,
+        "pivot_z": 0.0,
+        "carry": false
+      }
+    ],
+    "brake": 0.015,
+    "resistance": 0.0003,
+    "grade_gravity": 0.04,
+    "mass": 3.5,
+    "coupler_front": 9.54,
+    "coupler_rear": -9.54,
+    "power_source": "electric",
+    "power_notches": 5,
+    "reverse_notches": 1,
+    "sounds": {
+      "volume": 1.0,
+      "motor": "rva_motor_dc",
+      "motor_pitch_min": 0.6,
+      "motor_pitch_max": 1.8
+    }
+  }
+}

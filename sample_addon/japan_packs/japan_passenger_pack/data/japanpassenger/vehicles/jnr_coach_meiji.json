@@ -1,0 +1,92 @@
+{
+  "entity_type": "railwayvehicleaddon:rail_vehicle",
+  "model": "japanpassenger:models/obj/jnr_coach_meiji.obj",
+  "texture": "japanpassenger:textures/vehicle/jnr_coach_meiji.png",
+  "display_name": "二軸客車(明治期)",
+  "hud": "blank",
+  "scale": 1.0,
+  "width": 2.2,
+  "height": 3.3,
+  "max_speed": 0.625,
+  "acceleration": 0.02,
+  "throttle_up_down": 2.0,
+  "max_health": 300.0,
+  "fuel_consumption": -1.0,
+  "seats": [
+    {
+      "name": "seat1",
+      "offset_x": 0.52,
+      "offset_y": 1.11,
+      "offset_z": -1.48,
+      "dismount_x": 1.9,
+      "dismount_z": -0.75
+    },
+    {
+      "name": "seat2",
+      "offset_x": -0.52,
+      "offset_y": 1.11,
+      "offset_z": -1.48,
+      "dismount_x": -1.9,
+      "dismount_z": -0.75
+    },
+    {
+      "name": "seat3",
+      "offset_x": 0.52,
+      "offset_y": 1.11,
+      "offset_z": 0.02,
+      "dismount_x": 1.9,
+      "dismount_z": 0.75
+    },
+    {
+      "name": "seat4",
+      "offset_x": -0.52,
+      "offset_y": 1.11,
+      "offset_z": 0.02,
+      "dismount_x": -1.9,
+      "dismount_z": 0.75
+    },
+    {
+      "name": "seat5",
+      "offset_x": 0.52,
+      "offset_y": 1.11,
+      "offset_z": 1.52,
+      "dismount_x": 1.9,
+      "dismount_z": 2.25
+    },
+    {
+      "name": "seat6",
+      "offset_x": -0.52,
+      "offset_y": 1.11,
+      "offset_z": 1.52,
+      "dismount_x": -1.9,
+      "dismount_z": 2.25
+    }
+  ],
+  "spawn_item": {
+    "display_name": "二軸客車(明治期)",
+    "tier": 1
+  },
+  "rail": {
+    "bogies": [
+      {
+        "pivot_x": 0.0,
+        "pivot_y": 0.43,
+        "pivot_z": 1.6
+      },
+      {
+        "pivot_x": 0.0,
+        "pivot_y": 0.43,
+        "pivot_z": -1.6
+      }
+    ],
+    "brake": 0.015,
+    "resistance": 0.0003,
+    "grade_gravity": 0.04,
+    "mass": 0.6,
+    "coupler_front": 3.5,
+    "coupler_rear": -3.5,
+    "sounds": {
+      "volume": 1.0
+    }
+  }
+}

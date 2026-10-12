@@ -1,0 +1,52 @@
+{
+  "entity_type": "railwayvehicleaddon:rail_vehicle",
+  "model": "japanfreight:models/obj/jnr_taki43000.obj",
+  "texture": "japanfreight:textures/vehicle/jnr_taki43000.png",
+  "display_name": "タキ43000形タンク車(1967年)",
+  "hud": "blank",
+  "scale": 1.0,
+  "width": 2.6,
+  "height": 3.75,
+  "max_speed": 1.319,
+  "acceleration": 0.02,
+  "throttle_up_down": 2.0,
+  "max_health": 300.0,
+  "fuel_consumption": -1.0,
+  "seats": [
+    {
+      "name": "seat1",
+      "offset_x": 0.6,
+      "offset_y": 1.15,
+      "offset_z": 0.0
+    }
+  ],
+  "spawn_item": {
+    "display_name": "タキ43000形タンク車(1967年)",
+    "tier": 2
+  },
+  "rail": {
+    "bogies": [
+      {
+        "part": "$bogie_front",
+        "pivot_x": 0.0,
+        "pivot_y": 0.43,
+        "pivot_z": 5.0
+      },
+      {
+        "part": "$bogie_rear",
+        "pivot_x": 0.0,
+        "pivot_y": 0.43,
+        "pivot_z": -5.0
+      }
+    ],
+    "brake": 0.015,
+    "resistance": 0.0003,
+    "grade_gravity": 0.04,
+    "mass": 2.0,
+    "coupler_front": 7.15,
+    "coupler_rear": -7.15,
+    "sounds": {
+      "volume": 1.0
+    }
+  }
+}

@@ -1,0 +1,251 @@
+{
+  "entity_type": "railwayvehicleaddon:rail_vehicle",
+  "model": "japanpassenger:models/obj/jr_e5_e514.obj",
+  "texture": "japanpassenger:textures/vehicle/jr_e5_e514.png",
+  "display_name": "E5系新幹線 E514形(先頭車・グランクラス。編成の反対側の端に逆向きに連結)",
+  "hud": "railcar_notch_5",
+  "scale": 1.0,
+  "width": 3.35,
+  "height": 3.65,
+  "max_speed": 4.444,
+  "acceleration": 0.02,
+  "throttle_up_down": 2.0,
+  "max_health": 300.0,
+  "fuel_consumption": -1.0,
+  "seats": [
+    {
+      "name": "driver",
+      "offset_x": 0.7,
+      "offset_y": 1.91,
+      "offset_z": 2.95,
+      "driver": true
+    },
+    {
+      "name": "seat1",
+      "offset_x": 0.7,
+      "offset_y": 1.26,
+      "offset_z": -9.98,
+      "dismount_x": 2.48,
+      "dismount_z": -11.8
+    },
+    {
+      "name": "seat2",
+      "offset_x": -0.7,
+      "offset_y": 1.26,
+      "offset_z": -9.98,
+      "dismount_x": -2.48,
+      "dismount_z": -11.8
+    },
+    {
+      "name": "seat3",
+      "offset_x": 0.7,
+      "offset_y": 1.26,
+      "offset_z": -8.98,
+      "dismount_x": 2.48,
+      "dismount_z": -11.8
+    },
+    {
+      "name": "seat4",
+      "offset_x": -0.7,
+      "offset_y": 1.26,
+      "offset_z": -8.98,
+      "dismount_x": -2.48,
+      "dismount_z": -11.8
+    },
+    {
+      "name": "seat5",
+      "offset_x": 0.7,
+      "offset_y": 1.26,
+      "offset_z": -7.98,
+      "dismount_x": 2.48,
+      "dismount_z": -11.8
+    },
+    {
+      "name": "seat6",
+      "offset_x": -0.7,
+      "offset_y": 1.26,
+      "offset_z": -7.98,
+      "dismount_x": -2.48,
+      "dismount_z": -11.8
+    },
+    {
+      "name": "seat7",
+      "offset_x": 0.7,
+      "offset_y": 1.26,
+      "offset_z": -6.98,
+      "dismount_x": 2.48,
+      "dismount_z": -11.8
+    },
+    {
+      "name": "seat8",
+      "offset_x": -0.7,
+      "offset_y": 1.26,
+      "offset_z": -6.98,
+      "dismount_x": -2.48,
+      "dismount_z": -11.8
+    },
+    {
+      "name": "seat9",
+      "offset_x": 0.7,
+      "offset_y": 1.26,
+      "offset_z": -5.98,
+      "dismount_x": 2.48,
+      "dismount_z": -11.8
+    },
+    {
+      "name": "seat10",
+      "offset_x": -0.7,
+      "offset_y": 1.26,
+      "offset_z": -5.98,
+      "dismount_x": -2.48,
+      "dismount_z": -11.8
+    },
+    {
+      "name": "seat11",
+      "offset_x": 0.7,
+      "offset_y": 1.26,
+      "offset_z": -4.98,
+      "dismount_x": 2.48,
+      "dismount_z": -11.8
+    },
+    {
+      "name": "seat12",
+      "offset_x": -0.7,
+      "offset_y": 1.26,
+      "offset_z": -4.98,
+      "dismount_x": -2.48,
+      "dismount_z": -11.8
+    },
+    {
+      "name": "seat13",
+      "offset_x": 0.7,
+      "offset_y": 1.26,
+      "offset_z": -3.98,
+      "dismount_x": 2.48,
+      "dismount_z": -11.8
+    },
+    {
+      "name": "seat14",
+      "offset_x": -0.7,
+      "offset_y": 1.26,
+      "offset_z": -3.98,
+      "dismount_x": -2.48,
+      "dismount_z": -11.8
+    },
+    {
+      "name": "seat15",
+      "offset_x": 0.7,
+      "offset_y": 1.26,
+      "offset_z": -2.98,
+      "dismount_x": 2.48,
+      "dismount_z": -11.8
+    },
+    {
+      "name": "seat16",
+      "offset_x": -0.7,
+      "offset_y": 1.26,
+      "offset_z": -2.98,
+      "dismount_x": -2.48,
+      "dismount_z": -11.8
+    },
+    {
+      "name": "seat17",
+      "offset_x": 0.7,
+      "offset_y": 1.26,
+      "offset_z": -1.98,
+      "dismount_x": 2.48,
+      "dismount_z": -11.8
+    },
+    {
+      "name": "seat18",
+      "offset_x": -0.7,
+      "offset_y": 1.26,
+      "offset_z": -1.98,
+      "dismount_x": -2.48,
+      "dismount_z": -11.8
+    },
+    {
+      "name": "seat19",
+      "offset_x": 0.7,
+      "offset_y": 1.26,
+      "offset_z": -0.98,
+      "dismount_x": 2.48,
+      "dismount_z": -11.8
+    },
+    {
+      "name": "seat20",
+      "offset_x": -0.7,
+      "offset_y": 1.26,
+      "offset_z": -0.98,
+      "dismount_x": -2.48,
+      "dismount_z": -11.8
+    },
+    {
+      "name": "seat21",
+      "offset_x": 0.7,
+      "offset_y": 1.26,
+      "offset_z": 0.02,
+      "dismount_x": 2.48,
+      "dismount_z": 11.8
+    },
+    {
+      "name": "seat22",
+      "offset_x": -0.7,
+      "offset_y": 1.26,
+      "offset_z": 0.02,
+      "dismount_x": -2.48,
+      "dismount_z": 11.8
+    },
+    {
+      "name": "seat23",
+      "offset_x": 0.7,
+      "offset_y": 1.26,
+      "offset_z": 1.02,
+      "dismount_x": 2.48,
+      "dismount_z": 11.8
+    },
+    {
+      "name": "seat24",
+      "offset_x": -0.7,
+      "offset_y": 1.26,
+      "offset_z": 1.02,
+      "dismount_x": -2.48,
+      "dismount_z": 11.8
+    }
+  ],
+  "spawn_item": {
+    "display_name": "E5系新幹線 E514形(先頭車・グランクラス。編成の反対側の端に逆向きに連結)",
+    "tier": 2
+  },
+  "rail": {
+    "bogies": [
+      {
+        "part": "$bogie_front",
+        "pivot_x": 0.0,
+        "pivot_y": 0.43,
+        "pivot_z": 8.75
+      },
+      {
+        "part": "$bogie_rear",
+        "pivot_x": 0.0,
+        "pivot_y": 0.43,
+        "pivot_z": -8.75
+      }
+    ],
+    "brake": 0.015,
+    "resistance": 0.0003,
+    "grade_gravity": 0.04,
+    "mass": 1.2,
+    "coupler_front": 13.45,
+    "coupler_rear": -13.45,
+    "powered": false,
+    "power_source": "electric",
+    "power_notches": 5,
+    "reverse_notches": 1,
+    "sounds": {
+      "volume": 1.0,
+      "motor": "",
+      "joint_spacing": 200.0
+    }
+  }
+}

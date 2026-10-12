@@ -1,0 +1,195 @@
+{
+  "entity_type": "railwayvehicleaddon:rail_vehicle",
+  "model": "japanpassenger:models/obj/jnr_485_moha485.obj",
+  "texture": "japanpassenger:textures/vehicle/jnr_485_moha485.png",
+  "display_name": "485系 モハ485形(電動車・パンタグラフ付き)",
+  "hud": "blank",
+  "scale": 1.0,
+  "width": 2.9,
+  "height": 3.55,
+  "max_speed": 1.667,
+  "acceleration": 0.03,
+  "throttle_up_down": 2.0,
+  "max_health": 300.0,
+  "fuel_consumption": -1.0,
+  "seats": [
+    {
+      "name": "seat1",
+      "offset_x": 0.62,
+      "offset_y": 1.11,
+      "offset_z": -8.23,
+      "dismount_x": 2.25,
+      "dismount_z": -10.1
+    },
+    {
+      "name": "seat2",
+      "offset_x": -0.62,
+      "offset_y": 1.11,
+      "offset_z": -8.23,
+      "dismount_x": -2.25,
+      "dismount_z": -10.1
+    },
+    {
+      "name": "seat3",
+      "offset_x": 0.62,
+      "offset_y": 1.11,
+      "offset_z": -6.23,
+      "dismount_x": 2.25,
+      "dismount_z": -10.1
+    },
+    {
+      "name": "seat4",
+      "offset_x": -0.62,
+      "offset_y": 1.11,
+      "offset_z": -6.23,
+      "dismount_x": -2.25,
+      "dismount_z": -10.1
+    },
+    {
+      "name": "seat5",
+      "offset_x": 0.62,
+      "offset_y": 1.11,
+      "offset_z": -4.23,
+      "dismount_x": 2.25,
+      "dismount_z": -10.1
+    },
+    {
+      "name": "seat6",
+      "offset_x": -0.62,
+      "offset_y": 1.11,
+      "offset_z": -4.23,
+      "dismount_x": -2.25,
+      "dismount_z": -10.1
+    },
+    {
+      "name": "seat7",
+      "offset_x": 0.62,
+      "offset_y": 1.11,
+      "offset_z": -2.23,
+      "dismount_x": 2.25,
+      "dismount_z": -10.1
+    },
+    {
+      "name": "seat8",
+      "offset_x": -0.62,
+      "offset_y": 1.11,
+      "offset_z": -2.23,
+      "dismount_x": -2.25,
+      "dismount_z": -10.1
+    },
+    {
+      "name": "seat9",
+      "offset_x": 0.62,
+      "offset_y": 1.11,
+      "offset_z": -0.23,
+      "dismount_x": 2.25,
+      "dismount_z": -10.1
+    },
+    {
+      "name": "seat10",
+      "offset_x": -0.62,
+      "offset_y": 1.11,
+      "offset_z": -0.23,
+      "dismount_x": -2.25,
+      "dismount_z": -10.1
+    },
+    {
+      "name": "seat11",
+      "offset_x": 0.62,
+      "offset_y": 1.11,
+      "offset_z": 1.77,
+      "dismount_x": 2.25,
+      "dismount_z": -10.1
+    },
+    {
+      "name": "seat12",
+      "offset_x": -0.62,
+      "offset_y": 1.11,
+      "offset_z": 1.77,
+      "dismount_x": -2.25,
+      "dismount_z": -10.1
+    },
+    {
+      "name": "seat13",
+      "offset_x": 0.62,
+      "offset_y": 1.11,
+      "offset_z": 3.77,
+      "dismount_x": 2.25,
+      "dismount_z": -10.1
+    },
+    {
+      "name": "seat14",
+      "offset_x": -0.62,
+      "offset_y": 1.11,
+      "offset_z": 3.77,
+      "dismount_x": -2.25,
+      "dismount_z": -10.1
+    },
+    {
+      "name": "seat15",
+      "offset_x": 0.62,
+      "offset_y": 1.11,
+      "offset_z": 5.77,
+      "dismount_x": 2.25,
+      "dismount_z": -10.1
+    },
+    {
+      "name": "seat16",
+      "offset_x": -0.62,
+      "offset_y": 1.11,
+      "offset_z": 5.77,
+      "dismount_x": -2.25,
+      "dismount_z": -10.1
+    },
+    {
+      "name": "seat17",
+      "offset_x": 0.62,
+      "offset_y": 1.11,
+      "offset_z": 7.77,
+      "dismount_x": 2.25,
+      "dismount_z": -10.1
+    },
+    {
+      "name": "seat18",
+      "offset_x": -0.62,
+      "offset_y": 1.11,
+      "offset_z": 7.77,
+      "dismount_x": -2.25,
+      "dismount_z": -10.1
+    }
+  ],
+  "spawn_item": {
+    "display_name": "485系 モハ485形(電動車・パンタグラフ付き)",
+    "tier": 2
+  },
+  "rail": {
+    "bogies": [
+      {
+        "part": "$bogie_front",
+        "pivot_x": 0.0,
+        "pivot_y": 0.43,
+        "pivot_z": 7.4
+      },
+      {
+        "part": "$bogie_rear",
+        "pivot_x": 0.0,
+        "pivot_y": 0.43,
+        "pivot_z": -7.4
+      }
+    ],
+    "brake": 0.015,
+    "resistance": 0.0003,
+    "grade_gravity": 0.04,
+    "mass": 1.0,
+    "coupler_front": 10.7,
+    "coupler_rear": -10.7,
+    "powered": true,
+    "power_source": "electric",
+    "sounds": {
+      "volume": 1.0,
+      "motor": "rva_motor_dc",
+      "motor_pitch_min": 0.6,
+      "motor_pitch_max": 1.8
+    }
+  }
+}
