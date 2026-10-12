@@ -5,8 +5,6 @@
 [Tudur's Vehicle Mod](https://github.com/Tuduraw/tudursvehiclemod)(以下、前提MOD)に
 鉄道車両と、曲線・勾配を自動生成する独自の線路システムを追加するアドオンMODです。
 
-現在は **フェーズ1〜2の途中**(線路の敷設・撤去・描画、分岐器・渡り線・転車台・遷車台・車止め、単車の走行)の段階です。
-
 - Minecraft 1.21.11 / Fabric Loader 0.18.2 以上 / Fabric API 0.139.4+1.21.11
 - 前提MOD: tudursvehiclemod 1.0.3 以上
 
@@ -391,6 +389,8 @@ GUIでは、燃料スロットのほか、次の状況を確認できます。
 | `railwayvehicleaddon:sample_railway_gun` | なし(動力無し) | − | 列車砲(武装のテスト用。機関車に連結して運ぶ) |
 
 ### 車両JSONの `rail` オブジェクト
+
+拡張パック(車両を追加するパック)の作り方・確認項目は `PACK_GUIDE.md` にまとめています。
 
 前提MODの車両JSONに `rail` オブジェクトを追加すると、鉄道車両固有の設定になります
 (前提MODの読み込みは未知のキーを無視するため、同じファイルに書けます)。
