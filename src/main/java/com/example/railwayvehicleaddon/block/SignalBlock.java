@@ -6,6 +6,12 @@ import net.minecraft.block.BlockState;
 import net.minecraft.block.BlockWithEntity;
 import net.minecraft.block.ShapeContext;
 import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.block.entity.BlockEntityTicker;
+import net.minecraft.block.entity.BlockEntityType;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.ItemStack;
+import net.minecraft.text.Text;
 import net.minecraft.item.ItemPlacementContext;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.state.StateManager;
@@ -29,6 +35,10 @@ import net.minecraft.world.block.WireOrientation;
  * 在線検知器の出力(強さ15)をそのままつなげば、在線中は停止現示になる。灯火は上から緑・黄・赤で、
  * 点灯中の灯火は周囲の明るさに関係なく光って見えるよう、クライアントの描画(DeviceOverlayRenderer)で重ねて描く。
  * 支柱を兼ねた形なので、下にフェンスなどを積めば背の高い信号機になる。
+ *
+ * <p>設置すると近くの線路の位置へ連結し、灯火の正面へ向かって進む列車に現示を伝える(ATS)。
+ * 停止現示では信号機の手前で止まるよう、注意現示では信号機までに注意の速度へ落とすよう、
+ * 速度を超えた列車にブレーキを掛ける。
  */
 public class SignalBlock extends BlockWithEntity {
 	public static final MapCodec<SignalBlock> CODEC = createCodec(SignalBlock::new);
@@ -60,6 +70,25 @@ public class SignalBlock extends BlockWithEntity {
 	@Override
 	public BlockEntity createBlockEntity(BlockPos pos, BlockState state) {
 		return new SignalDeviceBlockEntity(pos, state);
+	}
+
+	@Override
+	public <T extends BlockEntity> BlockEntityTicker<T> getTicker(World world, BlockState state, BlockEntityType<T> type) {
+		return world.isClient() ? null : validateTicker(type, ModBlocks.SIGNAL_DEVICE_ENTITY, SignalDeviceBlockEntity::tick);
+	}
+
+	@Override
+	public void onPlaced(World world, BlockPos pos, BlockState state, LivingEntity placer, ItemStack itemStack) {
+		super.onPlaced(world, pos, state, placer, itemStack);
+		if (world instanceof ServerWorld serverWorld && world.getBlockEntity(pos) instanceof SignalDeviceBlockEntity entity) {
+			entity.relink(serverWorld);
+			if (placer instanceof PlayerEntity player) {
+				player.sendMessage(Text.translatable("message.railwayvehicleaddon.signal.placed", entity.link().describe(serverWorld)), false);
+				if (entity.link().ambiguous(serverWorld, state.get(FACING))) {
+					player.sendMessage(Text.translatable("message.railwayvehicleaddon.wayside.ambiguous"), false);
+				}
+			}
+		}
 	}
 
 	@Override

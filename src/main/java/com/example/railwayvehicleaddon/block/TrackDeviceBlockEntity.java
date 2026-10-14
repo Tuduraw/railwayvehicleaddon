@@ -25,6 +25,8 @@ public class TrackDeviceBlockEntity extends BlockEntity implements TrackLinkable
 	private long targetId = -1L;
 	private int lastPower;
 	private int detectTimer;
+	/** 分岐器の装置: 連結した分岐器が鎖錠中か(コンパレーター出力。保存しない) */
+	private boolean switchLocked;
 
 	public TrackDeviceBlockEntity(BlockPos pos, BlockState state) {
 		super(ModBlocks.DEVICE_ENTITY, pos, state);
@@ -65,15 +67,34 @@ public class TrackDeviceBlockEntity extends BlockEntity implements TrackLinkable
 		}
 	}
 
-	/** 在線検知器: 一定間隔で連結区間の在線を調べ、出力(POWERED)を更新する。 */
+	public boolean switchLocked() {
+		return this.switchLocked;
+	}
+
+	/**
+	 * 在線検知器: 一定間隔で連結区間の在線を調べ、出力(POWERED)を更新する。
+	 * 分岐器の装置: 一定間隔で分岐器の鎖錠を調べ、変わったらコンパレーターへ知らせる。
+	 */
 	public static void tick(World world, BlockPos pos, BlockState state, TrackDeviceBlockEntity entity) {
-		if (!(world instanceof ServerWorld serverWorld) || !entity.kind().output()) {
+		if (!(world instanceof ServerWorld serverWorld)) {
 			return;
 		}
 		if (++entity.detectTimer < DETECT_INTERVAL) {
 			return;
 		}
 		entity.detectTimer = 0;
+		if (entity.kind().target() == DeviceKind.TargetType.SWITCH) {
+			boolean locked = entity.targetId >= 0 && TrackManager.network(serverWorld).isSwitch(entity.targetId)
+					&& TrackManager.isSwitchLocked(serverWorld, entity.targetId);
+			if (locked != entity.switchLocked) {
+				entity.switchLocked = locked;
+				world.updateComparators(pos, state.getBlock());
+			}
+			return;
+		}
+		if (!entity.kind().output()) {
+			return;
+		}
 		boolean occupied = entity.targetId >= 0 && TrackManager.isOccupied(serverWorld, entity.targetId);
 		if (state.get(TrackDeviceBlock.POWERED) != occupied) {
 			// NOTIFY_ALLで周囲のブロック(レッドストーンダスト等)にも出力の変化を伝える

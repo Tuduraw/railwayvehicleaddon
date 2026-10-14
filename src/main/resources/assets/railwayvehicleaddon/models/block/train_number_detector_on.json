@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/orientable",
+  "textures": {
+    "front": "railwayvehicleaddon:block/train_number_detector_front_on",
+    "side": "railwayvehicleaddon:block/train_number_detector",
+    "top": "railwayvehicleaddon:block/train_number_detector_top"
+  }
+}

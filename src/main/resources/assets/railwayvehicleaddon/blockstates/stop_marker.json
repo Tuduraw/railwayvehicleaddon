@@ -1,0 +1,20 @@
+{
+  "variants": {
+    "facing=north": {
+      "model": "railwayvehicleaddon:block/stop_marker",
+      "y": 0
+    },
+    "facing=east": {
+      "model": "railwayvehicleaddon:block/stop_marker",
+      "y": 90
+    },
+    "facing=south": {
+      "model": "railwayvehicleaddon:block/stop_marker",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "railwayvehicleaddon:block/stop_marker",
+      "y": 270
+    }
+  }
+}

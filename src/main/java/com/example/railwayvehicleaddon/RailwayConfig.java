@@ -61,6 +61,15 @@ public final class RailwayConfig {
 	 * "none" / "player_placed"(設置物のみ) / "all"
 	 */
 	public String drop_removed_blocks = "player_placed";
+	/**
+	 * ATS(信号機の現示に対する速度の照査)を使う。運転台のある車両を含む編成が、線路に連結した信号機の
+	 * 停止現示の手前で止まれない・注意現示の速度を超える速さのときに、ブレーキを掛けて力行を切る。
+	 */
+	public boolean ats_enabled = true;
+	/** ATSで、注意現示の信号機を通過するときの上限の速度(km/h) */
+	public float ats_caution_speed_kmh = 45.0f;
+	/** 進路の自動設定で、前方の分岐器を切り替える(予約する)距離(ブロック。ブレーキ距離+32の方が長ければそちら) */
+	public float route_request_distance = 160.0f;
 
 	private static RailwayConfig instance = new RailwayConfig();
 

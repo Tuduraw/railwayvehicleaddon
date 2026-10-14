@@ -53,9 +53,12 @@ public final class TrackRenderer {
 	private static final double BALLAST_MAX_DEPTH = 3.0;
 	private static final double BALLAST_BRIDGE_DEPTH = 0.3;
 	private static final double RAIL_STEP = 0.5;
-	/** 架線柱の間隔と、線路中心からの距離(建築限界の片側幅1.5の内側、車体幅の外側) */
+	/** 架線柱の間隔と、線路の端(枕木の端)から架線柱までの距離(1ブロック) */
 	private static final double MAST_SPACING = 12.0;
-	private static final double MAST_OFFSET = 1.42;
+	private static final double MAST_CLEARANCE = 1.0;
+	/** 分岐器のビーム(門形の梁)を置く位置を探す範囲と、分岐器の近くで架線柱を立てない余裕 */
+	private static final double PORTAL_SEARCH = 40.0;
+	private static final double PORTAL_MARGIN = 1.5;
 	/** 近くのメッシュを作り直す間隔(tick)と範囲。地面の変化を反映するため */
 	private static final long REBUILD_INTERVAL = 200L;
 	private static final long INCOMPLETE_REBUILD_INTERVAL = 20L;
@@ -257,30 +260,214 @@ public final class TrackRenderer {
 	private static final double THIRD_RAIL_HALF_WIDTH = 0.09;
 	private static final double THIRD_RAIL_SUPPORT_SPACING = 3.0;
 
+	/** 線路中心から架線柱までの横の距離。線路の端(枕木の端)から1ブロック外で、建築限界より外。 */
+	private static double mastLateral(double gauge) {
+		double clearance = ClientTrackData.config().clearanceHalfWidth();
+		return Math.max(gauge / 2.0 + SLEEPER_OVERHANG + MAST_CLEARANCE, clearance + 0.2);
+	}
+
+	private static double wireHeightOf(TrackSegment segment) {
+		return segment.wireHeight() > 0f ? segment.wireHeight() : ClientTrackData.config().catenaryHeight();
+	}
+
+	/** 分岐器nodeIdから分岐側の区間を距離dだけ進んだ点。 */
+	private static TrackPoint branchPoint(TrackNetwork network, TrackSegment branch, long nodeId, double d) {
+		double length = branch.length();
+		double s = Math.min(d, length);
+		return network.sample(branch, branch.nodeA() == nodeId ? s : length - s);
+	}
+
+	/**
+	 * 分岐器のビームの位置(分岐器からの距離)。分岐側の線路どうしの間隔が軌間の1.5倍(トロリ線が
+	 * 別々に見分けられる程度)に開く所。分岐器でない・分岐側が架線式でなければ-1。
+	 */
+	private static double portalDistance(TrackNetwork network, long nodeId, double gauge) {
+		List<TrackSegment> branches = overheadBranches(network, nodeId);
+		if (branches.size() < 2) {
+			return -1.0;
+		}
+		double limit = PORTAL_SEARCH;
+		for (TrackSegment b : branches) {
+			limit = Math.min(limit, b.length());
+		}
+		for (double d = 1.0; d <= limit; d += 0.5) {
+			double max = 0.0;
+			for (int i = 0; i < branches.size(); i++) {
+				TrackPoint p = branchPoint(network, branches.get(i), nodeId, d);
+				for (int j = i + 1; j < branches.size(); j++) {
+					TrackPoint q = branchPoint(network, branches.get(j), nodeId, d);
+					max = Math.max(max, Math.hypot(p.x() - q.x(), p.z() - q.z()));
+				}
+			}
+			if (max >= gauge * 1.5) {
+				return d;
+			}
+		}
+		return limit;
+	}
+
+	private static List<TrackSegment> overheadBranches(TrackNetwork network, long nodeId) {
+		List<TrackSegment> list = new ArrayList<>();
+		for (long id : network.switchBranches(nodeId)) {
+			TrackSegment b = network.segment(id);
+			if (b != null && b.electrificationType() == ElectrificationType.OVERHEAD) {
+				list.add(b);
+			}
+		}
+		return list;
+	}
+
+	/** 架線柱を立てる位置が他の線路(建築限界)にかかるか。 */
+	private static boolean blocksOtherTrack(TrackNetwork network, TrackSegment own, Vec3d base) {
+		double keep = ClientTrackData.config().clearanceHalfWidth();
+		TrackNetwork.Nearest n = network.nearestPoint(base.x, base.y, base.z, keep);
+		return n != null && n.segmentId() != own.id();
+	}
+
 	/**
 	 * 架線(電化区間・架線式): 線路中心の真上にトロリ線を張り、区間に沿って一定間隔で片側に架線柱と
-	 * 腕金(カンチレバー)を立てる。架線柱は建築限界の内側(車両に当たらない位置)に置く。
+	 * 腕金(カンチレバー)を立てる。架線柱は線路の端から1ブロック外に置き、他の線路にかかるときは
+	 * 反対側へ、両側ともかかるときは立てない。分岐器の近く(分岐側の区間のビームまで)には架線柱を
+	 * 立てず、分岐側の一番外の線路どうしの外に柱を立てて梁でつなぎ、梁から各線路のトロリ線を吊る。
 	 */
-	private static void buildOverhead(MeshBuilder builder, TrackNetwork network, TrackSegment segment, TrackPoint[] samples, int steps, double wire) {
+	private static void buildOverhead(MeshBuilder builder, TrackNetwork network, TrackSegment segment, TrackPoint[] samples, int steps, double wire, double gauge) {
 		for (int i = 1; i <= steps; i++) {
 			TrackPoint a = samples[i - 1];
 			TrackPoint b = samples[i];
 			wire(builder, new Vec3d(a.x(), a.y() + wire, a.z()), new Vec3d(b.x(), b.y() + wire, b.z()), 0.02);
 		}
 		double length = segment.length();
-		int masts = Math.max(1, (int) Math.ceil(length / MAST_SPACING));
-		for (int k = 0; k < masts; k++) {
-			double s = (k + 0.5) * length / masts;
-			TrackPoint p = network.sample(segment, s);
-			Vec3d center = new Vec3d(p.x(), p.y(), p.z());
-			Vec3d base = center.add(p.lateralX() * MAST_OFFSET, 0.0, p.lateralZ() * MAST_OFFSET);
-			column(builder, base, p.dirX(), p.dirZ(), 0.07, p.y(), p.y() + wire + 0.28, RAIL_UV);
-			// 腕金: 架線柱の上部から線路中心の上へ
-			Vec3d armStart = new Vec3d(base.x, p.y() + wire + 0.25, base.z);
-			Vec3d armEnd = new Vec3d(center.x, p.y() + wire + 0.25, center.z);
-			wire(builder, armStart, armEnd, 0.035);
-			// ハンガー: 腕金からトロリ線へ
-			wire(builder, armEnd, new Vec3d(center.x, p.y() + wire, center.z), 0.015);
+		double lateral = mastLateral(gauge);
+		// 分岐器の近くは架線柱を立てない(分岐側の区間はビームまで、基準側は分岐器のすぐ近く)
+		double skipA = turnoutSkip(network, segment, segment.nodeA(), gauge);
+		double skipB = turnoutSkip(network, segment, segment.nodeB(), gauge);
+		double from = skipA;
+		double to = length - skipB;
+		if (to - from > 1.0) {
+			int masts = Math.max(1, (int) Math.ceil((to - from) / MAST_SPACING));
+			for (int k = 0; k < masts; k++) {
+				double s = from + (k + 0.5) * (to - from) / masts;
+				TrackPoint p = network.sample(segment, s);
+				Vec3d center = new Vec3d(p.x(), p.y(), p.z());
+				Vec3d base = null;
+				for (double side : new double[]{1.0, -1.0}) {
+					Vec3d candidate = center.add(p.lateralX() * lateral * side, 0.0, p.lateralZ() * lateral * side);
+					if (!blocksOtherTrack(network, segment, candidate)) {
+						base = candidate;
+						break;
+					}
+				}
+				if (base == null) {
+					continue;
+				}
+				column(builder, base, p.dirX(), p.dirZ(), 0.07, p.y(), p.y() + wire + 0.28, RAIL_UV);
+				// 腕金: 架線柱の上部から線路中心の上へ
+				Vec3d armStart = new Vec3d(base.x, p.y() + wire + 0.25, base.z);
+				Vec3d armEnd = new Vec3d(center.x, p.y() + wire + 0.25, center.z);
+				wire(builder, armStart, armEnd, 0.035);
+				// ハンガー: 腕金からトロリ線へ
+				wire(builder, armEnd, new Vec3d(center.x, p.y() + wire, center.z), 0.015);
+			}
+		}
+		for (long node : new long[]{segment.nodeA(), segment.nodeB()}) {
+			buildPortal(builder, network, segment, node, gauge, lateral);
+		}
+	}
+
+	/** 区間の端nodeIdが分岐器のとき、その端から架線柱を立てない距離。 */
+	private static double turnoutSkip(TrackNetwork network, TrackSegment segment, long nodeId, double gauge) {
+		List<Long> branches = network.switchBranches(nodeId);
+		if (branches.isEmpty()) {
+			return 0.0;
+		}
+		if (!branches.contains(segment.id())) {
+			// 基準側: 分岐器の真上(分岐側の線路と重なる所)を避ける
+			return MAST_SPACING * 0.25;
+		}
+		double d = portalDistance(network, nodeId, gauge);
+		return d < 0.0 ? MAST_SPACING * 0.25 : d + PORTAL_MARGIN;
+	}
+
+	/**
+	 * 分岐器nodeIdのビーム。分岐側の架線式の区間のうちIDが最小の区間のメッシュにだけ描く
+	 * (分岐器につながる区間は、どれかが変わると全部作り直される)。
+	 */
+	private static void buildPortal(MeshBuilder builder, TrackNetwork network, TrackSegment segment, long nodeId, double gauge, double lateral) {
+		List<TrackSegment> branches = overheadBranches(network, nodeId);
+		if (branches.size() < 2) {
+			return;
+		}
+		long owner = Long.MAX_VALUE;
+		for (TrackSegment b : branches) {
+			owner = Math.min(owner, b.id());
+		}
+		if (owner != segment.id()) {
+			return;
+		}
+		double d = portalDistance(network, nodeId, gauge);
+		// 分岐側の向き(各区間の外向きの平均)と、それに直交する横方向
+		double rx = 0.0;
+		double rz = 0.0;
+		for (TrackSegment b : branches) {
+			double[] out = network.outwardDirectionOf(b.id(), nodeId);
+			if (out != null) {
+				rx += out[0];
+				rz += out[1];
+			}
+		}
+		double rl = Math.hypot(rx, rz);
+		if (rl < 1.0e-6) {
+			return;
+		}
+		rx /= rl;
+		rz /= rl;
+		double lx = -rz;
+		double lz = rx;
+		TrackNodeRef origin = TrackNodeRef.of(network, branches.get(0), nodeId);
+		TrackPoint[] points = new TrackPoint[branches.size()];
+		double minLat = Double.MAX_VALUE;
+		double maxLat = -Double.MAX_VALUE;
+		double along = 0.0;
+		double y = 0.0;
+		double wire = 0.0;
+		for (int i = 0; i < branches.size(); i++) {
+			TrackPoint p = branchPoint(network, branches.get(i), nodeId, d);
+			points[i] = p;
+			double ox = p.x() - origin.x();
+			double oz = p.z() - origin.z();
+			double lat = ox * lx + oz * lz;
+			minLat = Math.min(minLat, lat);
+			maxLat = Math.max(maxLat, lat);
+			along += ox * rx + oz * rz;
+			y += p.y();
+			wire = Math.max(wire, wireHeightOf(branches.get(i)));
+		}
+		along /= branches.size();
+		y /= branches.size();
+		double cx = origin.x() + rx * along;
+		double cz = origin.z() + rz * along;
+		double beamY = y + wire + 0.28;
+		Vec3d left = new Vec3d(cx + lx * (maxLat + lateral), y, cz + lz * (maxLat + lateral));
+		Vec3d right = new Vec3d(cx + lx * (minLat - lateral), y, cz + lz * (minLat - lateral));
+		column(builder, left, rx, rz, 0.08, y, beamY + 0.05, RAIL_UV);
+		column(builder, right, rx, rz, 0.08, y, beamY + 0.05, RAIL_UV);
+		// 梁(上下2本の弦材)
+		wire(builder, new Vec3d(left.x, beamY, left.z), new Vec3d(right.x, beamY, right.z), 0.05);
+		wire(builder, new Vec3d(left.x, beamY - 0.2, left.z), new Vec3d(right.x, beamY - 0.2, right.z), 0.03);
+		// 各線路のトロリ線を梁から吊る
+		for (int i = 0; i < points.length; i++) {
+			TrackPoint p = points[i];
+			double lat = (p.x() - origin.x()) * lx + (p.z() - origin.z()) * lz;
+			Vec3d top = new Vec3d(cx + lx * lat, beamY - 0.2, cz + lz * lat);
+			wire(builder, top, new Vec3d(p.x(), p.y() + wireHeightOf(branches.get(i)), p.z()), 0.015);
+		}
+	}
+
+	/** 分岐器の位置(分岐側の区間の端の点)。 */
+	private record TrackNodeRef(double x, double z) {
+		static TrackNodeRef of(TrackNetwork network, TrackSegment branch, long nodeId) {
+			TrackPoint p = branchPoint(network, branch, nodeId, 0.0);
+			return new TrackNodeRef(p.x(), p.z());
 		}
 	}
 
@@ -373,8 +560,7 @@ public final class TrackRenderer {
 		}
 
 		switch (segment.electrificationType()) {
-			case OVERHEAD -> buildOverhead(builder, network, segment, samples, steps,
-					segment.wireHeight() > 0f ? segment.wireHeight() : ClientTrackData.config().catenaryHeight());
+			case OVERHEAD -> buildOverhead(builder, network, segment, samples, steps, wireHeightOf(segment), gauge);
 			case THIRD_RAIL -> buildThirdRail(builder, network, segment, samples, steps, gauge);
 			case NONE, HIDDEN -> {
 				// 非電化、または「非表示」(給電の対象だが何も描かない)

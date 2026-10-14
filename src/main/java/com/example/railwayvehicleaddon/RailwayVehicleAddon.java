@@ -120,6 +120,7 @@ public class RailwayVehicleAddon implements ModInitializer {
 		// 転車台・遷車台の動作、変電所による給電の計算
 		ServerTickEvents.END_WORLD_TICK.register(TrackManager::tickFeatures);
 		ServerTickEvents.END_WORLD_TICK.register(TrackManager::tickElectricalSupply);
+		ServerTickEvents.END_WORLD_TICK.register(TrackManager::tickPendingSwitches);
 
 		// 線路データはディメンション単位なので、プレイヤーのいるディメンションが変わるたびに全量を送り直す
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> TrackManager.sendFullSync(handler.player));

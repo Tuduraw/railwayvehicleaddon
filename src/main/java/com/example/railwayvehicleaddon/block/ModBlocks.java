@@ -31,6 +31,9 @@ public final class ModBlocks {
 	public static Block WATER_TOWER;
 	public static BlockEntityType<WaterTowerBlockEntity> WATER_TOWER_ENTITY;
 	public static Block SUBSTATION;
+	public static Block STOP_MARKER;
+	public static Block TRAIN_NUMBER_DETECTOR;
+	public static BlockEntityType<WaysideBlockEntity> WAYSIDE_ENTITY;
 	public static BlockEntityType<SubstationBlockEntity> SUBSTATION_ENTITY;
 	/** クリエイティブタブに並べる順 */
 	public static final List<Item> ITEMS = new ArrayList<>();
@@ -53,6 +56,11 @@ public final class ModBlocks {
 		SIGNAL_DEVICE_ENTITY = Registry.register(Registries.BLOCK_ENTITY_TYPE,
 				Identifier.of(RailwayVehicleAddon.MOD_ID, "signal_device"),
 				FabricBlockEntityTypeBuilder.create(SignalDeviceBlockEntity::new, SIGNAL, CROSSING_GATE).build());
+		STOP_MARKER = register("stop_marker", StopMarkerBlock::new, true);
+		TRAIN_NUMBER_DETECTOR = register("train_number_detector", TrainNumberDetectorBlock::new);
+		WAYSIDE_ENTITY = Registry.register(Registries.BLOCK_ENTITY_TYPE,
+				Identifier.of(RailwayVehicleAddon.MOD_ID, "wayside"),
+				FabricBlockEntityTypeBuilder.create(WaysideBlockEntity::new, STOP_MARKER, TRAIN_NUMBER_DETECTOR).build());
 		WATER_TOWER = register("water_tower", WaterTowerBlock::new);
 		WATER_TOWER_ENTITY = Registry.register(Registries.BLOCK_ENTITY_TYPE,
 				Identifier.of(RailwayVehicleAddon.MOD_ID, "water_tower"),

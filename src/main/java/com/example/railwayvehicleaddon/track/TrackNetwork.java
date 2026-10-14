@@ -675,6 +675,102 @@ public final class TrackNetwork {
 		return new Walk(segment.id(), s, facing, true, left);
 	}
 
+	/**
+	 * 線路を前方へたどるときの通知先。{@link #traverse} 参照。
+	 */
+	public interface PathVisitor {
+		/**
+		 * 区間segmentの上を、sFromからsTo(区間の向きparamDir)へ進んだ。distanceは出発点からsFromまでの距離。
+		 * falseを返すとたどるのをやめる。
+		 */
+		boolean span(TrackSegment segment, double sFrom, double sTo, int paramDir, double distance);
+
+		/**
+		 * 区間fromSegmentの端のノードnodeIdに着いた(次の区間を決める直前。ここで分岐器を切り替えれば、
+		 * 切り替え後の開通方向へ進む)。arrivalX/Zは進行方向の水平の向き。
+		 */
+		default void node(long nodeId, long fromSegment, double arrivalX, double arrivalZ, double distance) {
+		}
+	}
+
+	/**
+	 * 区間segmentIdの距離sから、区間の向きparamDir(+1でA→B)へ、分岐器の現在の開通方向に沿って
+	 * 最大maxDistanceだけ線路をたどる。車止め(余裕を残した位置)や線路の終わりで止まる。
+	 * 車両の位置は変えない(先読み・在線範囲の計算用)。
+	 */
+	public void traverse(long segmentId, double s, int paramDir, double maxDistance, PathVisitor visitor) {
+		TrackSegment segment = this.segments.get(segmentId);
+		if (segment == null || maxDistance <= 0.0) {
+			return;
+		}
+		double distance = 0.0;
+		double pos = Math.max(0.0, Math.min(segment.length(), s));
+		int dir = paramDir >= 0 ? 1 : -1;
+		for (int hop = 0; hop < 256; hop++) {
+			double length = segment.length();
+			double end = dir > 0 ? length : 0.0;
+			double room = Math.abs(end - pos);
+			long node = dir > 0 ? segment.nodeB() : segment.nodeA();
+			double margin = this.endMargins.getOrDefault(node, 0.0);
+			double limit = margin > 0.0 ? Math.max(0.0, room - margin) : room;
+			double take = Math.min(limit, maxDistance - distance);
+			if (!visitor.span(segment, pos, pos + dir * take, dir, distance)) {
+				return;
+			}
+			distance += take;
+			if (distance >= maxDistance - 1.0e-9 || margin > 0.0) {
+				return;
+			}
+			TrackPoint endPoint = segment.sample(end);
+			double ax = endPoint.dirX() * dir;
+			double az = endPoint.dirZ() * dir;
+			visitor.node(node, segment.id(), ax, az, distance);
+			long nextId = nextSegmentAt(node, segment.id(), ax, az);
+			TrackSegment next = nextId >= 0 ? this.segments.get(nextId) : null;
+			if (next == null) {
+				return;
+			}
+			long entry = next.nodeA() == node || next.nodeB() == node ? node : linkOf(node);
+			if (next.nodeA() == entry) {
+				pos = 0.0;
+				dir = 1;
+			} else {
+				pos = next.length();
+				dir = -1;
+			}
+			segment = next;
+		}
+	}
+
+	/**
+	 * ノードnodeIdに区間fromSegmentから進行方向arrivalX/Zで着いたとき、進める区間の候補すべて
+	 * (分岐器の開通方向に関係なく)。要素は{区間ID, 入る側の区間の向き(+1でA→B)}。
+	 */
+	public List<long[]> forwardCandidates(long nodeId, long fromSegment, double arrivalX, double arrivalZ) {
+		List<long[]> result = new ArrayList<>(2);
+		long linked = linkOf(nodeId);
+		for (int pass = 0; pass < 2; pass++) {
+			long at = pass == 0 ? nodeId : linked;
+			if (at < 0) {
+				continue;
+			}
+			for (long candidate : segmentsAt(at)) {
+				if (candidate == fromSegment) {
+					continue;
+				}
+				double[] out = outwardDirectionOf(candidate, at);
+				if (out == null || out[0] * arrivalX + out[1] * arrivalZ <= 0.0) {
+					continue;
+				}
+				TrackSegment next = this.segments.get(candidate);
+				if (next != null) {
+					result.add(new long[]{candidate, next.nodeA() == at ? 1L : -1L});
+				}
+			}
+		}
+		return result;
+	}
+
 	/** 分岐側の区間fromSegmentから分岐器nodeへ入ったが、開通しているのが別の分岐側なら知らせる(連結ノードも見る)。 */
 	private void reportTrailing(long node, long fromSegment, java.util.function.BiConsumer<Long, Long> trailing) {
 		long linked = linkOf(node);

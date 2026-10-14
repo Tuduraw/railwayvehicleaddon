@@ -240,12 +240,28 @@ public final class TrackManager {
 		if (node == null || player.getEyePos().squaredDistanceTo(node.x(), node.y(), node.z()) > REMOVE_REACH * REMOVE_REACH) {
 			return;
 		}
+		if (network(world).isSwitch(nodeId) && isSwitchLocked(world, nodeId)) {
+			player.sendMessage(Text.translatable("message.railwayvehicleaddon.switch_locked"), true);
+			return;
+		}
 		cycleSwitch(world, nodeId);
 	}
 
-	/** 分岐器を次の分岐側へ切り替える(測量ツール・転てつてこ)。 */
+	/**
+	 * 分岐器が鎖錠中か(分岐区間に車両の編成がいる、または進路の自動設定で列車が予約している)。
+	 * 鎖錠中は、測量ツール・転てつてこでは切り替えられず、転てつ機の入力は保留される。
+	 */
+	public static boolean isSwitchLocked(ServerWorld world, long nodeId) {
+		return com.example.railwayvehicleaddon.operation.Interlock.locked(world, network(world), nodeId, null);
+	}
+
+	/** 分岐器を次の分岐側へ切り替える(測量ツール・転てつてこ)。鎖錠中は切り替えずfalse。 */
 	public static boolean cycleSwitch(ServerWorld world, long nodeId) {
 		TrackNetwork network = network(world);
+		if (network.isSwitch(nodeId) && isSwitchLocked(world, nodeId)) {
+			return false;
+		}
+		com.example.railwayvehicleaddon.operation.OperationState.get(world).pendingSwitches().remove(nodeId);
 		long active = network.cycleSwitch(nodeId);
 		if (active < 0) {
 			return false;
@@ -258,20 +274,24 @@ public final class TrackManager {
 	/**
 	 * 車両が開通していない分岐側から分岐器を通り抜けた(割り出し)とき、分岐器を進入側へ切り替える。
 	 * 走行中に分岐器を切り替えるのは難しいため、後続の車両・台車が本来の開通方向へ逸れないよう進入側を優先する。
+	 * 分岐区間に、通っている車両の編成(vehicle を含む編成)のほかの編成がいるときは切り替えない
+	 * (他の編成の車両を動かさないため。信号機で防ぐ前提で、ここでは救済しない)。
 	 */
-	public static void trailSwitch(ServerWorld world, long nodeId, long segmentId) {
+	public static void trailSwitch(ServerWorld world, long nodeId, long segmentId, java.util.UUID vehicle) {
 		TrackNetwork network = network(world);
 		if (network.activeBranch(nodeId) == segmentId) {
 			return;
 		}
-		network.setSwitchState(nodeId, segmentId);
-		markDirty(world);
-		broadcast(world, new TrackSyncPayload(false, RailwayConfig.get().values(), List.of(), List.of(), Map.of(nodeId, segmentId)));
+		if (vehicle != null && com.example.railwayvehicleaddon.operation.Interlock.occupied(world, network, nodeId, java.util.Set.of(vehicle))) {
+			return;
+		}
+		applySwitch(world, network, nodeId, segmentId);
 	}
 
 	/**
 	 * 分岐器を分岐側のindex番目(0始まり。範囲外は最後)へ開通させる(転てつ機)。
 	 * 分岐側の順序は、元の線路(分岐元が線路の途中の場合)または最初に作った分岐が0番目。
+	 * 鎖錠中は切り替えずに入力を保留し、鎖錠が解けたときに最後の入力で切り替える({@link #tickPendingSwitches})。
 	 */
 	public static boolean setSwitchBranch(ServerWorld world, long nodeId, int index) {
 		TrackNetwork network = network(world);
@@ -279,14 +299,75 @@ public final class TrackManager {
 		if (branches.isEmpty()) {
 			return false;
 		}
-		long segment = branches.get(Math.max(0, Math.min(branches.size() - 1, index)));
-		if (network.activeBranch(nodeId) == segment) {
+		Map<Long, Integer> pending = com.example.railwayvehicleaddon.operation.OperationState.get(world).pendingSwitches();
+		if (isSwitchLocked(world, nodeId)) {
+			pending.put(nodeId, index);
 			return true;
 		}
-		network.setSwitchState(nodeId, segment);
-		markDirty(world);
-		broadcast(world, new TrackSyncPayload(false, RailwayConfig.get().values(), List.of(), List.of(), Map.of(nodeId, segment)));
+		pending.remove(nodeId);
+		long segment = branches.get(Math.max(0, Math.min(branches.size() - 1, index)));
+		if (network.activeBranch(nodeId) != segment) {
+			applySwitch(world, network, nodeId, segment);
+		}
 		return true;
+	}
+
+	/**
+	 * 進路の自動設定: 運行表を持つ列車(holder)が、分岐器を分岐側の区間segmentIdへ開通させるよう求める。
+	 * 開通済みならそのまま、そうでなければ鎖錠中でない場合だけ切り替える。どちらの場合もuntilまで予約する
+	 * (予約中は他の列車・転てつ機・人力では切り替わらない)。開通できなければfalse。
+	 */
+	public static boolean routeSwitch(ServerWorld world, long nodeId, long segmentId, java.util.UUID holder, long until) {
+		TrackNetwork network = network(world);
+		List<Long> branches = network.switchBranches(nodeId);
+		if (!branches.contains(segmentId)) {
+			return false;
+		}
+		com.example.railwayvehicleaddon.operation.OperationState state = com.example.railwayvehicleaddon.operation.OperationState.get(world);
+		com.example.railwayvehicleaddon.operation.OperationState.Reservation r = state.reservation(nodeId, world.getTime());
+		if (r != null && !r.holder().equals(holder)) {
+			return network.activeBranch(nodeId) == segmentId;
+		}
+		if (network.activeBranch(nodeId) != segmentId) {
+			if (com.example.railwayvehicleaddon.operation.Interlock.occupied(world, network, nodeId, null)) {
+				return false;
+			}
+			applySwitch(world, network, nodeId, segmentId);
+		}
+		state.reserve(nodeId, holder, until);
+		return true;
+	}
+
+	/** 鎖錠中に保留した転てつ機の入力を、鎖錠が解けた分岐器から適用する(毎tick)。 */
+	public static void tickPendingSwitches(ServerWorld world) {
+		com.example.railwayvehicleaddon.operation.OperationState state = com.example.railwayvehicleaddon.operation.OperationState.get(world);
+		Map<Long, Integer> pending = state.pendingSwitches();
+		if (!pending.isEmpty()) {
+			TrackNetwork network = network(world);
+			for (Map.Entry<Long, Integer> e : new ArrayList<>(pending.entrySet())) {
+				long nodeId = e.getKey();
+				List<Long> branches = network.switchBranches(nodeId);
+				if (branches.isEmpty()) {
+					pending.remove(nodeId);
+					continue;
+				}
+				if (isSwitchLocked(world, nodeId)) {
+					continue;
+				}
+				pending.remove(nodeId);
+				long segment = branches.get(Math.max(0, Math.min(branches.size() - 1, e.getValue())));
+				if (network.activeBranch(nodeId) != segment) {
+					applySwitch(world, network, nodeId, segment);
+				}
+			}
+		}
+		state.cleanup(world.getTime());
+	}
+
+	private static void applySwitch(ServerWorld world, TrackNetwork network, long nodeId, long segmentId) {
+		network.setSwitchState(nodeId, segmentId);
+		markDirty(world);
+		broadcast(world, new TrackSyncPayload(false, RailwayConfig.get().values(), List.of(), List.of(), Map.of(nodeId, segmentId)));
 	}
 
 	/**

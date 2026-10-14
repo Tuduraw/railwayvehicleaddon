@@ -60,7 +60,8 @@ public abstract class TrackDeviceBlock extends BlockWithEntity {
 
 	@Override
 	public <T extends BlockEntity> BlockEntityTicker<T> getTicker(World world, BlockState state, BlockEntityType<T> type) {
-		if (world.isClient() || !kind().output()) {
+		// 在線検知器(出力)と、分岐器の装置(鎖錠中をコンパレーターへ出す)だけが毎tick動く
+		if (world.isClient() || (!kind().output() && kind().target() != DeviceKind.TargetType.SWITCH)) {
 			return null;
 		}
 		return validateTicker(type, ModBlocks.DEVICE_ENTITY, TrackDeviceBlockEntity::tick);
@@ -104,6 +105,11 @@ public abstract class TrackDeviceBlock extends BlockWithEntity {
 		boolean done = false;
 		if (target >= 0) {
 			if (kind().target() == DeviceKind.TargetType.SWITCH) {
+				if (TrackManager.network(serverWorld).isSwitch(target) && TrackManager.isSwitchLocked(serverWorld, target)) {
+					// 分岐区間に車両がいる・進路が予約されている間は切り替えない
+					player.sendMessage(Text.translatable("message.railwayvehicleaddon.switch_locked"), true);
+					return ActionResult.SUCCESS;
+				}
 				done = TrackManager.cycleSwitch(serverWorld, target);
 			} else if (kind().target() == DeviceKind.TargetType.DECK) {
 				int step = player.isSneaking() ? -1 : 1;
@@ -157,6 +163,17 @@ public abstract class TrackDeviceBlock extends BlockWithEntity {
 	@Override
 	protected boolean emitsRedstonePower(BlockState state) {
 		return kind().output();
+	}
+
+	/** 分岐器の装置(転てつてこ・転てつ機)は、分岐器が鎖錠中の間、コンパレーターへ強さ15を出す。 */
+	@Override
+	protected boolean hasComparatorOutput(BlockState state) {
+		return kind().target() == DeviceKind.TargetType.SWITCH;
+	}
+
+	@Override
+	protected int getComparatorOutput(BlockState state, World world, BlockPos pos, Direction direction) {
+		return world.getBlockEntity(pos) instanceof TrackDeviceBlockEntity entity && entity.switchLocked() ? 15 : 0;
 	}
 
 	@Override

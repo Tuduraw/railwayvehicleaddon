@@ -1,6 +1,8 @@
 package com.example.railwayvehicleaddon.entity;
 
 import com.example.railwayvehicleaddon.RailwayVehicleAddon;
+import com.example.railwayvehicleaddon.operation.Timetable;
+import com.example.railwayvehicleaddon.operation.TrainOperation;
 import com.example.railwayvehicleaddon.track.TrackManager;
 import com.example.railwayvehicleaddon.track.TrackNetwork;
 import com.example.railwayvehicleaddon.track.TrackPoint;
@@ -115,6 +117,12 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	/** 蒸気機関車: 火室に残っている燃焼時間(tick、出力100%で1ずつ減る) */
 	private double fireTicks;
 	private int powerWarningCooldown;
+	/** 運行表(本から読み込む)と、次の駅の番号・たどる向き(折り返しで-1) */
+	private Timetable timetable;
+	private int stopIndex;
+	private int stopStep = 1;
+	/** 最後に動いた向き(この車の前方なら+1)。停車中の編成の進行方向に使う */
+	private int lastTravelSign = 1;
 
 	// ------------------------------------------------------------------ 連結
 
@@ -342,6 +350,15 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 				}
 			}
 		}
+
+		// 在線表への登録・進路の自動設定・ATS(単独の車両も1両の編成として扱う)
+		TrainOperation.Result operation = TrainOperation.update(world, network, this, this.trackPos,
+				List.of(new TrainOperation.Car(this, 0.0, 1, couplerOffset(true), couplerOffset(false))),
+				this.speed, throttle, params.brake());
+		if (operation.cutPower()) {
+			powerFactor = 0f;
+		}
+		braking |= operation.brake();
 
 		TrackPoint center = network.pointAt(this.trackPos);
 		double grade = center != null ? center.grade() * this.trackPos.facing() : 0.0;
@@ -642,6 +659,15 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	 */
 	@Override
 	public ActionResult interact(PlayerEntity player, Hand hand) {
+		String bookText = bookText(player.getStackInHand(hand));
+		Timetable read = bookText == null ? null : Timetable.parse(bookText);
+		if (read != null) {
+			// 運行表を書いた本: この車両に運行表を読み込む(中身の無い運行表なら消す)
+			if (this.getEntityWorld() instanceof ServerWorld) {
+				loadTimetable(read, player);
+			}
+			return ActionResult.SUCCESS;
+		}
 		if (player.getStackInHand(hand).isOf(com.example.railwayvehicleaddon.item.ModItems.COUPLING_LEVER)) {
 			if (this.getEntityWorld() instanceof ServerWorld serverWorld) {
 				useCouplingLever(player, serverWorld, TrackManager.network(serverWorld));
@@ -649,6 +675,84 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			return ActionResult.SUCCESS;
 		}
 		return super.interact(player, hand);
+	}
+
+	// ------------------------------------------------------------------ 運行表
+
+	/** 本と羽根ペン・署名した本の本文(ページを改行でつないだもの)。本でなければnull。 */
+	private static String bookText(ItemStack stack) {
+		net.minecraft.component.type.WritableBookContentComponent writable =
+				stack.get(net.minecraft.component.DataComponentTypes.WRITABLE_BOOK_CONTENT);
+		if (writable != null) {
+			return String.join("\n", writable.stream(false).toList());
+		}
+		net.minecraft.component.type.WrittenBookContentComponent written =
+				stack.get(net.minecraft.component.DataComponentTypes.WRITTEN_BOOK_CONTENT);
+		if (written != null) {
+			StringBuilder sb = new StringBuilder();
+			for (net.minecraft.text.Text page : written.getPages(false)) {
+				sb.append(page.getString()).append('\n');
+			}
+			return sb.toString();
+		}
+		return null;
+	}
+
+	private void loadTimetable(Timetable read, PlayerEntity player) {
+		if (read.isEmpty()) {
+			this.timetable = null;
+			player.sendMessage(net.minecraft.text.Text.translatable("message.railwayvehicleaddon.timetable.cleared"), false);
+			return;
+		}
+		this.timetable = read;
+		this.stopIndex = 0;
+		this.stopStep = 1;
+		Timetable.Stop next = nextStop();
+		player.sendMessage(net.minecraft.text.Text.translatable("message.railwayvehicleaddon.timetable.loaded",
+				read.trainNumber().isEmpty() ? "-" : read.trainNumber(), read.stops().size(),
+				next == null ? "-" : next.describe()), false);
+	}
+
+	/** この車両の運行表。無ければnull。 */
+	public Timetable getTimetable() {
+		return this.timetable;
+	}
+
+	/** 運行表の次の駅。運行表が無い・最後の駅を過ぎた(終点が停止)ならnull。 */
+	public Timetable.Stop nextStop() {
+		if (this.timetable == null) {
+			return null;
+		}
+		List<Timetable.Stop> stops = this.timetable.stops();
+		return this.stopIndex >= 0 && this.stopIndex < stops.size() ? stops.get(this.stopIndex) : null;
+	}
+
+	/** 運行表の次の駅へ進む。最後の駅の後は、終点の設定(停止・折り返し・繰り返し)に従う。 */
+	public void advanceStop() {
+		if (this.timetable == null) {
+			return;
+		}
+		int size = this.timetable.stops().size();
+		int next = this.stopIndex + this.stopStep;
+		if (next < 0 || next >= size) {
+			switch (this.timetable.endMode()) {
+				case LOOP -> next = this.stopStep > 0 ? 0 : size - 1;
+				case REVERSE -> {
+					this.stopStep = -this.stopStep;
+					next = size <= 1 ? 0 : this.stopIndex + this.stopStep;
+				}
+				default -> next = size;      // 停止: 次の駅なし
+			}
+		}
+		this.stopIndex = next;
+	}
+
+	public int getLastTravelSign() {
+		return this.lastTravelSign;
+	}
+
+	public void setLastTravelSign(int sign) {
+		this.lastTravelSign = sign >= 0 ? 1 : -1;
 	}
 
 	private void useCouplingLever(PlayerEntity player, ServerWorld world, TrackNetwork network) {
@@ -1058,6 +1162,18 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			meanBrake /= totalMass;
 			meanResistance /= totalMass;
 		}
+		// 在線表への登録・進路の自動設定・ATS(編成ごとに1回)
+		List<TrainOperation.Car> operationCars = new ArrayList<>(members.size());
+		for (ConsistMember m : members) {
+			operationCars.add(new TrainOperation.Car(m.entity(), m.offset(), m.sign(),
+					m.entity().couplerOffset(true), m.entity().couplerOffset(false)));
+		}
+		TrainOperation.Result operation = TrainOperation.update(world, network, this, this.trackPos, operationCars,
+				this.speed, handle, meanBrake);
+		if (operation.cutPower()) {
+			target = 0.0;
+		}
+		braking |= operation.brake();
 
 		double v = this.speed;
 		boolean powering = target > 0 ? target > v : target < 0 && target < v;
@@ -1299,7 +1415,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		// サーバーでは、台車が開通していない分岐側から分岐器を通り抜けたら分岐器を進入側へ切り替える(割り出し)。
 		// これをしないと、先頭の台車の通過後に後ろの台車・後続車が分岐器の開通方向へ逸れる
 		java.util.function.BiConsumer<Long, Long> trailing = this.getEntityWorld() instanceof ServerWorld serverWorld
-				? (node, segment) -> TrackManager.trailSwitch(serverWorld, node, segment) : null;
+				? (node, segment) -> TrackManager.trailSwitch(serverWorld, node, segment, this.getUuid()) : null;
 		TrackNetwork.Walk frontWalk = network.walk(center, this.frontZ - zc, trailing);
 		TrackNetwork.Walk rearWalk = network.walk(center, this.rearZ - zc, trailing);
 		Vec3d front = contactPoint(network, frontWalk, this.frontZ - zc);
@@ -2045,6 +2161,11 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		view.putBoolean("CouplingBReversed", this.couplingBReversed);
 		this.uncoupledA.ifPresent(id -> view.putString("UncoupledA", id.toString()));
 		this.uncoupledB.ifPresent(id -> view.putString("UncoupledB", id.toString()));
+		if (this.timetable != null) {
+			view.putString("Timetable", this.timetable.source());
+			view.putInt("TimetableIndex", this.stopIndex);
+			view.putInt("TimetableStep", this.stopStep);
+		}
 	}
 
 	@Override
@@ -2064,6 +2185,10 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		this.couplingBReversed = view.getBoolean("CouplingBReversed", false);
 		this.uncoupledA = parseUuid(view.getString("UncoupledA", ""));
 		this.uncoupledB = parseUuid(view.getString("UncoupledB", ""));
+		String source = view.getString("Timetable", "");
+		this.timetable = source.isEmpty() ? null : Timetable.parse(source);
+		this.stopIndex = view.getInt("TimetableIndex", 0);
+		this.stopStep = view.getInt("TimetableStep", 1) >= 0 ? 1 : -1;
 	}
 
 	private static Optional<UUID> parseUuid(String value) {
