@@ -3,9 +3,8 @@ package com.example.railwayvehicleaddon.track.feature;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.List;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * 遷車台(トラバーサー)。桁(A端(ax, az)〜B端(bx, bz))が、桁と直角の方向(axisX, axisZ)へ
@@ -67,12 +66,12 @@ public final class TraverserFeature extends MovingDeckFeature {
 	}
 
 	/** 移動量0の位置での桁のA端・B端。 */
-	public Vec3d baseA() {
-		return new Vec3d(this.ax, this.y, this.az);
+	public Vec3 baseA() {
+		return new Vec3(this.ax, this.y, this.az);
 	}
 
-	public Vec3d baseB() {
-		return new Vec3d(this.bx, this.y, this.bz);
+	public Vec3 baseB() {
+		return new Vec3(this.bx, this.y, this.bz);
 	}
 
 	public double minParam() {
@@ -92,13 +91,13 @@ public final class TraverserFeature extends MovingDeckFeature {
 	}
 
 	@Override
-	public Vec3d endA(double param) {
-		return new Vec3d(this.ax + this.axisX * param, this.y, this.az + this.axisZ * param);
+	public Vec3 endA(double param) {
+		return new Vec3(this.ax + this.axisX * param, this.y, this.az + this.axisZ * param);
 	}
 
 	@Override
-	public Vec3d endB(double param) {
-		return new Vec3d(this.bx + this.axisX * param, this.y, this.bz + this.axisZ * param);
+	public Vec3 endB(double param) {
+		return new Vec3(this.bx + this.axisX * param, this.y, this.bz + this.axisZ * param);
 	}
 
 	@Override
@@ -107,9 +106,9 @@ public final class TraverserFeature extends MovingDeckFeature {
 	}
 
 	@Override
-	public Vec3d center() {
+	public Vec3 center() {
 		double mid = (minParam() + maxParam()) / 2.0;
-		return new Vec3d((this.ax + this.bx) / 2.0 + this.axisX * mid, this.y, (this.az + this.bz) / 2.0 + this.axisZ * mid);
+		return new Vec3((this.ax + this.bx) / 2.0 + this.axisX * mid, this.y, (this.az + this.bz) / 2.0 + this.axisZ * mid);
 	}
 
 	@Override

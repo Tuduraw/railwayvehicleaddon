@@ -5,15 +5,15 @@ import com.example.railwayvehicleaddon.operation.OperationState;
 import com.example.railwayvehicleaddon.track.TrackManager;
 import com.example.railwayvehicleaddon.track.TrackNetwork;
 import com.example.railwayvehicleaddon.track.TrackSegment;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.storage.ReadView;
-import net.minecraft.storage.WriteView;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 
 /**
  * 信号機・踏切遮断機の共通のブロックエンティティ。状態(現示・遮断中)はブロックの状態に持つ。
@@ -59,7 +59,7 @@ public class SignalDeviceBlockEntity extends BlockEntity {
 		this.autoBlock = autoBlock;
 		this.autoAspect = 0;
 		this.autoTimer = 0;
-		markDirty();
+		setChanged();
 	}
 
 	/**
@@ -67,16 +67,16 @@ public class SignalDeviceBlockEntity extends BlockEntity {
 	 * 車両がいれば停止。区間の中の分岐器の分岐区間に車両がいても(開通していない側から入ってくる列車)停止。
 	 * いなければ、次の信号機が停止なら注意、そうでなければ進行。
 	 */
-	private int computeAutoAspect(ServerWorld world) {
+	private int computeAutoAspect(ServerLevel world) {
 		TrackNetwork network = TrackManager.network(world);
 		if (!this.link.linked() || network.segment(this.link.segmentId()) == null) {
 			return 0;
 		}
 		OperationState state = OperationState.get(world);
-		long now = world.getTime();
+		long now = world.getGameTime();
 		boolean[] occupied = {false};
 		BlockPos[] nextSignal = {null};
-		BlockPos self = this.pos;
+		BlockPos self = this.worldPosition;
 		network.traverse(this.link.segmentId(), this.link.s(), this.link.dir(), MAX_SECTION, new TrackNetwork.PathVisitor() {
 			@Override
 			public boolean span(TrackSegment segment, double sFrom, double sTo, int dir, double distance) {
@@ -114,9 +114,9 @@ public class SignalDeviceBlockEntity extends BlockEntity {
 		if (occupied[0]) {
 			return 2;
 		}
-		if (nextSignal[0] != null && world.isChunkLoaded(nextSignal[0])) {
+		if (nextSignal[0] != null && world.hasChunkAt(nextSignal[0])) {
 			BlockState next = world.getBlockState(nextSignal[0]);
-			if (next.getBlock() instanceof SignalBlock && next.get(SignalBlock.ASPECT) == 2) {
+			if (next.getBlock() instanceof SignalBlock && next.getValue(SignalBlock.ASPECT) == 2) {
 				return 1;
 			}
 		}
@@ -124,44 +124,44 @@ public class SignalDeviceBlockEntity extends BlockEntity {
 	}
 
 	/** 信号機: 近くの線路へ連結し直す(設置時)。 */
-	public void relink(ServerWorld world) {
+	public void relink(ServerLevel world) {
 		this.linkTried = true;
-		this.link.link(world, this.pos, getCachedState().get(SignalBlock.FACING));
-		markDirty();
+		this.link.link(world, this.worldPosition, getBlockState().getValue(SignalBlock.FACING));
+		setChanged();
 		register(world);
 	}
 
-	private void register(ServerWorld world) {
+	private void register(ServerLevel world) {
 		OperationState state = OperationState.get(world);
 		if (!this.link.linked()) {
-			state.removeWayside(this.pos);
+			state.removeWayside(this.worldPosition);
 			return;
 		}
-		state.putWayside(new OperationState.Wayside(this.pos.toImmutable(), OperationState.WaysideKind.SIGNAL,
-				this.link.segmentId(), this.link.s(), this.link.dir(), "", 0, world.getTime()));
+		state.putWayside(new OperationState.Wayside(this.worldPosition.immutable(), OperationState.WaysideKind.SIGNAL,
+				this.link.segmentId(), this.link.s(), this.link.dir(), "", 0, world.getGameTime()));
 	}
 
 	/** チャンクの読み込みが外れた・壊された: 地上子の索引から外す(信号機は保存しない。読み込まれたら登録し直す)。 */
 	@Override
-	public void markRemoved() {
-		super.markRemoved();
-		if (this.world instanceof ServerWorld serverWorld) {
-			OperationState.get(serverWorld).unloadWayside(this.pos);
+	public void setRemoved() {
+		super.setRemoved();
+		if (this.level instanceof ServerLevel serverWorld) {
+			OperationState.get(serverWorld).unloadWayside(this.worldPosition);
 		}
 	}
 
 	@Override
-	protected void readData(ReadView view) {
-		super.readData(view);
+	protected void loadAdditional(ValueInput view) {
+		super.loadAdditional(view);
 		this.link.read(view);
-		this.linkTried = view.getBoolean("LinkTried", false);
+		this.linkTried = view.getBooleanOr("LinkTried", false);
 		// 以前の版で置いた信号機(保存に項目が無い)は、これまでどおりレッドストーンで現示を決める
-		this.autoBlock = view.getBoolean("AutoBlock", false);
+		this.autoBlock = view.getBooleanOr("AutoBlock", false);
 	}
 
 	@Override
-	protected void writeData(WriteView view) {
-		super.writeData(view);
+	protected void saveAdditional(ValueOutput view) {
+		super.saveAdditional(view);
 		this.link.write(view);
 		view.putBoolean("LinkTried", this.linkTried);
 		view.putBoolean("AutoBlock", this.autoBlock);
@@ -172,12 +172,12 @@ public class SignalDeviceBlockEntity extends BlockEntity {
 	 * 初めての処理で近くの線路へ連結する)。
 	 * 踏切: 遮断中は一定間隔で警報音を鳴らす。
 	 */
-	public static void tick(World world, BlockPos pos, BlockState state, SignalDeviceBlockEntity entity) {
-		if (world instanceof ServerWorld serverWorld && state.getBlock() instanceof SignalBlock) {
+	public static void tick(Level world, BlockPos pos, BlockState state, SignalDeviceBlockEntity entity) {
+		if (world instanceof ServerLevel serverWorld && state.getBlock() instanceof SignalBlock) {
 			if (!entity.linkTried) {
 				entity.relink(serverWorld);
-			} else if (entity.link.check(serverWorld, pos, state.get(SignalBlock.FACING))) {
-				entity.markDirty();
+			} else if (entity.link.check(serverWorld, pos, state.getValue(SignalBlock.FACING))) {
+				entity.setChanged();
 				entity.register(serverWorld);
 			}
 			if (++entity.registerTimer >= 20) {
@@ -187,20 +187,20 @@ public class SignalDeviceBlockEntity extends BlockEntity {
 			if (entity.autoBlock && ++entity.autoTimer >= AUTO_INTERVAL) {
 				entity.autoTimer = 0;
 				entity.autoAspect = entity.computeAutoAspect(serverWorld);
-				int aspect = Math.max(entity.autoAspect, SignalBlock.aspectFor(serverWorld.getReceivedRedstonePower(pos)));
-				if (state.get(SignalBlock.ASPECT) != aspect) {
-					serverWorld.setBlockState(pos, state.with(SignalBlock.ASPECT, aspect), net.minecraft.block.Block.NOTIFY_LISTENERS);
+				int aspect = Math.max(entity.autoAspect, SignalBlock.aspectFor(serverWorld.getBestNeighborSignal(pos)));
+				if (state.getValue(SignalBlock.ASPECT) != aspect) {
+					serverWorld.setBlock(pos, state.setValue(SignalBlock.ASPECT, aspect), net.minecraft.world.level.block.Block.UPDATE_CLIENTS);
 				}
 			}
 			return;
 		}
-		if (world.isClient() || !(state.getBlock() instanceof CrossingGateBlock) || !state.get(CrossingGateBlock.POWERED)) {
+		if (world.isClientSide() || !(state.getBlock() instanceof CrossingGateBlock) || !state.getValue(CrossingGateBlock.POWERED)) {
 			entity.bellTimer = 0;
 			return;
 		}
 		if (entity.bellTimer-- <= 0) {
 			entity.bellTimer = BELL_INTERVAL;
-			world.playSound(null, pos, SoundEvents.BLOCK_NOTE_BLOCK_BELL.value(), SoundCategory.BLOCKS, 1.2f, 1.5f);
+			world.playSound(null, pos, SoundEvents.NOTE_BLOCK_BELL.value(), SoundSource.BLOCKS, 1.2f, 1.5f);
 		}
 	}
 }

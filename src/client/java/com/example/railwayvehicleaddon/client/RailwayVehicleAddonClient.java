@@ -12,6 +12,7 @@ import com.example.railwayvehicleaddon.network.TrackRemovePayload;
 import com.example.railwayvehicleaddon.network.TrackSyncPayload;
 import com.example.tudursvehiclemod.client.hud.HudVariableProvider;
 import com.example.tudursvehiclemod.client.render.VehicleEntityRenderer;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
@@ -19,35 +20,34 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
+import net.minecraft.client.KeyMapping;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.MenuScreens;
+import net.minecraft.resources.Identifier;
 import com.example.railwayvehicleaddon.screen.ModScreenHandlers;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.ingame.HandledScreens;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.util.InputUtil;
-import net.minecraft.util.Identifier;
 import org.lwjgl.glfw.GLFW;
 
 public class RailwayVehicleAddonClient implements ClientModInitializer {
-	private static KeyBinding confirmKey;
-	private static KeyBinding clearKey;
-	private static KeyBinding deleteKey;
-	private static KeyBinding modeKey;
-	private static KeyBinding paramUpKey;
-	private static KeyBinding paramDownKey;
-	private static KeyBinding ballastKey;
-	private static KeyBinding forceKey;
+	private static KeyMapping confirmKey;
+	private static KeyMapping clearKey;
+	private static KeyMapping deleteKey;
+	private static KeyMapping modeKey;
+	private static KeyMapping paramUpKey;
+	private static KeyMapping paramDownKey;
+	private static KeyMapping ballastKey;
+	private static KeyMapping forceKey;
 	/** 連結解放キー(乗車中に押すと連結を外す)。測量ツールを持っていなくても使える */
-	private static KeyBinding uncoupleKey;
+	private static KeyMapping uncoupleKey;
 	/** 警笛・汽笛キー(運転中) */
-	private static KeyBinding hornKey;
+	private static KeyMapping hornKey;
 	/** ATOの入切キー(乗車中) */
-	private static KeyBinding atoKey;
+	private static KeyMapping atoKey;
 	/**
 	 * 敷設時の調整キー(架線の高さ↑↓・曲線半径のしきい値→←・リセットR)。既定のキーは本体MODの操作と重なるため、
 	 * キー入力の配信(KeyBindingの押下状態)には頼らず、割り当てたキーの物理的な状態を直接読む。測量ツールを持ち、
 	 * 画面を開いていないときだけ反応する。割り当ては操作設定で個別に変えられる。
 	 */
-	private static KeyBinding[] placementKeys;
+	private static KeyMapping[] placementKeys;
 	private static final boolean[] PLACEMENT_KEY_DOWN = new boolean[5];
 
 	@Override
@@ -57,14 +57,14 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 
 		EntityRendererRegistry.register(RailwayVehicleAddon.RAIL_VEHICLE, VehicleEntityRenderer::new);
 
-		HandledScreens.register(ModScreenHandlers.SUBSTATION, SubstationScreen::new);
-		HandledScreens.register(ModScreenHandlers.OPERATION_CONTROLLER, OperationControllerScreen::new);
+		MenuScreens.register(ModScreenHandlers.SUBSTATION, SubstationScreen::new);
+		MenuScreens.register(ModScreenHandlers.OPERATION_CONTROLLER, OperationControllerScreen::new);
 		ClientPlayNetworking.registerGlobalReceiver(com.example.railwayvehicleaddon.network.StopMarkerEditPayload.ID, (payload, context) ->
 				context.client().execute(() -> context.client().setScreen(new StopMarkerNameScreen(payload.pos(), payload.name()))));
 		com.example.railwayvehicleaddon.item.RouteCardItem.clientOpener = hand -> {
-			MinecraftClient client = MinecraftClient.getInstance();
+			Minecraft client = Minecraft.getInstance();
 			if (client.player != null) {
-				client.setScreen(new RouteCardScreen(hand, client.player.getStackInHand(hand)));
+				client.setScreen(new RouteCardScreen(hand, client.player.getItemInHand(hand)));
 			}
 		};
 
@@ -88,35 +88,35 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 		}));
 
 		// 前提MODの既定キーと重ならないキーを既定にし、それぞれ個別に変更できるようにする
-		KeyBinding.Category category = KeyBinding.Category.create(Identifier.of(RailwayVehicleAddon.MOD_ID, "railway"));
-		confirmKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-				"key.railwayvehicleaddon.survey_confirm", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_ENTER, category));
-		clearKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-				"key.railwayvehicleaddon.survey_clear", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_BACKSPACE, category));
-		deleteKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-				"key.railwayvehicleaddon.survey_delete", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_DELETE, category));
-		modeKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-				"key.railwayvehicleaddon.survey_mode", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_Z, category));
-		paramUpKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-				"key.railwayvehicleaddon.survey_param_up", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT_BRACKET, category));
-		paramDownKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-				"key.railwayvehicleaddon.survey_param_down", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_LEFT_BRACKET, category));
-		ballastKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-				"key.railwayvehicleaddon.survey_ballast", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_I, category));
-		forceKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-				"key.railwayvehicleaddon.survey_force", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_HOME, category));
-		uncoupleKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-				"key.railwayvehicleaddon.uncouple", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_END, category));
-		hornKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-				"key.railwayvehicleaddon.horn", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_X, category));
-		atoKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-				"key.railwayvehicleaddon.ato", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_INSERT, category));
-		placementKeys = new KeyBinding[]{
-				KeyBindingHelper.registerKeyBinding(new KeyBinding("key.railwayvehicleaddon.survey_wire_up", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_UP, category)),
-				KeyBindingHelper.registerKeyBinding(new KeyBinding("key.railwayvehicleaddon.survey_wire_down", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_DOWN, category)),
-				KeyBindingHelper.registerKeyBinding(new KeyBinding("key.railwayvehicleaddon.survey_radius_up", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT, category)),
-				KeyBindingHelper.registerKeyBinding(new KeyBinding("key.railwayvehicleaddon.survey_radius_down", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_LEFT, category)),
-				KeyBindingHelper.registerKeyBinding(new KeyBinding("key.railwayvehicleaddon.survey_placement_reset", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_R, category))};
+		KeyMapping.Category category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath(RailwayVehicleAddon.MOD_ID, "railway"));
+		confirmKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+				"key.railwayvehicleaddon.survey_confirm", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_ENTER, category));
+		clearKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+				"key.railwayvehicleaddon.survey_clear", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_BACKSPACE, category));
+		deleteKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+				"key.railwayvehicleaddon.survey_delete", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_DELETE, category));
+		modeKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+				"key.railwayvehicleaddon.survey_mode", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_Z, category));
+		paramUpKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+				"key.railwayvehicleaddon.survey_param_up", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT_BRACKET, category));
+		paramDownKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+				"key.railwayvehicleaddon.survey_param_down", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_LEFT_BRACKET, category));
+		ballastKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+				"key.railwayvehicleaddon.survey_ballast", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_I, category));
+		forceKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+				"key.railwayvehicleaddon.survey_force", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_HOME, category));
+		uncoupleKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+				"key.railwayvehicleaddon.uncouple", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_END, category));
+		hornKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+				"key.railwayvehicleaddon.horn", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_X, category));
+		atoKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+				"key.railwayvehicleaddon.ato", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_INSERT, category));
+		placementKeys = new KeyMapping[]{
+				KeyBindingHelper.registerKeyBinding(new KeyMapping("key.railwayvehicleaddon.survey_wire_up", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UP, category)),
+				KeyBindingHelper.registerKeyBinding(new KeyMapping("key.railwayvehicleaddon.survey_wire_down", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_DOWN, category)),
+				KeyBindingHelper.registerKeyBinding(new KeyMapping("key.railwayvehicleaddon.survey_radius_up", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT, category)),
+				KeyBindingHelper.registerKeyBinding(new KeyMapping("key.railwayvehicleaddon.survey_radius_down", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_LEFT, category)),
+				KeyBindingHelper.registerKeyBinding(new KeyMapping("key.railwayvehicleaddon.survey_placement_reset", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_R, category))};
 
 		ClientTickEvents.END_CLIENT_TICK.register(RailwayVehicleAddonClient::onClientTick);
 		// 乗車は入力処理(前提MODの右クリック乗車)より先に判定する
@@ -126,48 +126,48 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 		WorldRenderEvents.BEFORE_TRANSLUCENT.register(DeviceOverlayRenderer::render);
 	}
 
-	private static void onClientTick(MinecraftClient client) {
-		while (atoKey.wasPressed()) {
+	private static void onClientTick(Minecraft client) {
+		while (atoKey.consumeClick()) {
 			if (client.player != null && client.player.getVehicle() instanceof com.example.railwayvehicleaddon.entity.RailVehicleEntity) {
 				ClientPlayNetworking.send(new com.example.railwayvehicleaddon.network.AtoTogglePayload());
 			}
 		}
 		boolean holding = SurveySession.isHoldingTool(client.player);
-		while (confirmKey.wasPressed()) {
+		while (confirmKey.consumeClick()) {
 			if (holding) {
 				SurveySession.INSTANCE.confirm();
 			}
 		}
-		while (clearKey.wasPressed()) {
+		while (clearKey.consumeClick()) {
 			if (holding) {
 				SurveySession.INSTANCE.clear();
 			}
 		}
-		while (deleteKey.wasPressed()) {
+		while (deleteKey.consumeClick()) {
 			if (holding) {
 				SurveySession.INSTANCE.deletePoints();
 			}
 		}
-		while (modeKey.wasPressed()) {
+		while (modeKey.consumeClick()) {
 			if (holding) {
 				// スニーク中は逆順に切り替える
-				SurveySession.INSTANCE.cycleMode(client.player.isSneaking() ? -1 : 1);
+				SurveySession.INSTANCE.cycleMode(client.player.isShiftKeyDown() ? -1 : 1);
 			}
 		}
-		while (paramUpKey.wasPressed()) {
+		while (paramUpKey.consumeClick()) {
 			if (holding) {
 				SurveySession.INSTANCE.adjustParam(1);
 			}
 		}
-		while (paramDownKey.wasPressed()) {
+		while (paramDownKey.consumeClick()) {
 			if (holding) {
 				SurveySession.INSTANCE.adjustParam(-1);
 			}
 		}
-		while (ballastKey.wasPressed()) {
+		while (ballastKey.consumeClick()) {
 			if (holding) {
 				// 通常は道床の種類、スニーク中は電化方式を切り替える(同じキーを共用する)
-				if (client.player.isSneaking()) {
+				if (client.player.isShiftKeyDown()) {
 					SurveySession.INSTANCE.cycleElectrification();
 				} else {
 					SurveySession.INSTANCE.cycleBallast();
@@ -175,18 +175,18 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 			}
 		}
 		pollPlacementKeys(client, holding);
-		while (uncoupleKey.wasPressed()) {
+		while (uncoupleKey.consumeClick()) {
 			if (client.player != null && client.player.getVehicle() instanceof RailVehicleEntity) {
 				ClientPlayNetworking.send(new UncouplePayload());
 			}
 		}
-		while (hornKey.wasPressed()) {
+		while (hornKey.consumeClick()) {
 			if (client.player != null && client.player.getVehicle() instanceof RailVehicleEntity) {
 				ClientPlayNetworking.send(new HornPayload());
 			}
 		}
 		RailSoundManager.tick(client);
-		while (forceKey.wasPressed()) {
+		while (forceKey.consumeClick()) {
 			if (holding) {
 				SurveySession.INSTANCE.toggleForce();
 			}
@@ -198,15 +198,15 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 	}
 
 	/** 敷設時の調整キーを、割り当てたキーの物理的な状態から読む(押した瞬間だけ反応)。 */
-	private static void pollPlacementKeys(MinecraftClient client, boolean holding) {
+	private static void pollPlacementKeys(Minecraft client, boolean holding) {
 		for (int i = 0; i < placementKeys.length; i++) {
-			KeyBinding binding = placementKeys[i];
-			while (binding.wasPressed()) {
+			KeyMapping binding = placementKeys[i];
+			while (binding.consumeClick()) {
 				// 配信された押下は使わない(読み捨てて溜めない)
 			}
-			InputUtil.Key key = KeyBindingHelper.getBoundKeyOf(binding);
-			boolean down = holding && client.currentScreen == null && key.getCategory() == InputUtil.Type.KEYSYM
-					&& key.getCode() != GLFW.GLFW_KEY_UNKNOWN && InputUtil.isKeyPressed(client.getWindow(), key.getCode());
+			InputConstants.Key key = KeyBindingHelper.getBoundKeyOf(binding);
+			boolean down = holding && client.screen == null && key.getType() == InputConstants.Type.KEYSYM
+					&& key.getValue() != GLFW.GLFW_KEY_UNKNOWN && InputConstants.isKeyDown(client.getWindow(), key.getValue());
 			if (down && !PLACEMENT_KEY_DOWN[i]) {
 				switch (i) {
 					case 0 -> SurveySession.INSTANCE.adjustWireHeight(1);

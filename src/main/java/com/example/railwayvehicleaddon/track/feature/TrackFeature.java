@@ -1,9 +1,8 @@
 package com.example.railwayvehicleaddon.track.feature;
 
 import com.example.railwayvehicleaddon.track.TrackNetwork;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.Set;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * 線路に付属する設備(転車台・遷車台・車止めなど)。設備は線路グラフの区間・ノードを所有し、
@@ -37,7 +36,7 @@ public interface TrackFeature {
 	}
 
 	/** 表示・選択の中心。 */
-	Vec3d center();
+	Vec3 center();
 
 	/** 選択判定に使う半径(水平)。 */
 	double radius();

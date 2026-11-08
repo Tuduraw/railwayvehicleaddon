@@ -7,7 +7,7 @@
 ## 線路データ
 
 - 線路はブロックではなく、ノード(経由点)と区間(ベジェ曲線)のグラフとして
-  ディメンションごとのPersistentState(`railwayvehicleaddon_tracks.dat`)に保存する。
+  ディメンションごとのSavedData(`railwayvehicleaddon_tracks.dat`)に保存する。
   任意角度・任意半径の曲線と緩い勾配を扱うため。
 - 平面線形(XZのベジェ)と縦断線形(`HeightProfile`)は分離している。3次元のまま補間すると
   経由点間で勾配が波打つため。距離 `s` と勾配はすべて水平距離基準。
@@ -255,7 +255,7 @@
 - 給電係数(区間ID→0.0〜1.0)は10tickごとに計算して線路データに書き込む(`TrackManager.tickElectricalSupply`)。
   区画ごとに「稼働中の変電所の容量の合計」と「その区画で力行中の電車の数(需要)」を集計し、
   容量を需要で割った値(1.0が上限)を区画内の全区間に適用する。変電所が1つも無い(容量0)区画は常に0。
-  需要の計算は`ServerWorld.iterateEntities()`でワールド全体の鉄道車両を走査するため、極端に車両が
+  需要の計算は`ServerLevel.getAllEntities()`でワールド全体の鉄道車両を走査するため、極端に車両が
   多いワールドでは負荷に注意(間隔を10tickより長くする、対象を電化区間付近に絞る等の最適化の余地がある)。
 - END_WORLD_TICKで計算するため、電車側が読む値は直前の計算サイクル(最大10tick前)のもの。給電係数は
   元々10tick周期の粗い値なので、実用上の遅れにはならない。
@@ -426,7 +426,7 @@
 ## 保安・進路の自動化(ATS・分岐器の鎖錠・列車番号検知器・進路の自動設定)
 
 - 処理はすべて `operation` パッケージ。`OperationState`(ディメンションごと、保存しない)に、編成の在線表・地上子の索引・
-  分岐器の予約・保留中の転てつ機入力・ATSの動作中フラグを持つ。停止位置目標だけは `StopMarkerState`(PersistentState)にも保存し、
+  分岐器の予約・保留中の転てつ機入力・ATSの動作中フラグを持つ。停止位置目標だけは `StopMarkerState`(SavedData)にも保存し、
   読み込まれていない駅へも進路を探せるようにする。
 - **編成ごとの処理**: `TrainOperation.update` を、編成の位置を計算する車(`runConsistPhysics` の leader、単独車は自分)が毎tick1回呼ぶ。
   編成の在線範囲は、各車の連結面(couplerOffset)の最小・最大を leader の位置から `TrackNetwork.traverse` でたどった区間ごとの範囲

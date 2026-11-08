@@ -1,43 +1,43 @@
 package com.example.railwayvehicleaddon.screen;
 
 import com.example.railwayvehicleaddon.block.SubstationBlockEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.inventory.SimpleInventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.screen.ArrayPropertyDelegate;
-import net.minecraft.screen.PropertyDelegate;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.slot.Slot;
-import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.Mth;
+import net.minecraft.world.Container;
+import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerData;
+import net.minecraft.world.inventory.SimpleContainerData;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.ItemStack;
 
 /**
  * 変電所のGUI。燃料スロット1つと、プレイヤーのインベントリ。燃焼・給電・連結の状況は
  * PropertyDelegate(サーバーから同期される整数)で受け取る。
  */
-public class SubstationScreenHandler extends ScreenHandler {
+public class SubstationScreenHandler extends AbstractContainerMenu {
 	/** 燃料スロットの座標(パネル内) */
 	public static final int FUEL_SLOT_X = 26;
 	public static final int FUEL_SLOT_Y = 34;
 
-	private final Inventory inventory;
-	private final PropertyDelegate properties;
+	private final Container inventory;
+	private final ContainerData properties;
 
 	/** クライアント側(開く操作を受けたとき)。実データはサーバーから同期される。 */
-	public SubstationScreenHandler(int syncId, PlayerInventory playerInventory) {
-		this(syncId, playerInventory, new SimpleInventory(1), new ArrayPropertyDelegate(SubstationBlockEntity.PROPERTY_COUNT));
+	public SubstationScreenHandler(int syncId, Inventory playerInventory) {
+		this(syncId, playerInventory, new SimpleContainer(1), new SimpleContainerData(SubstationBlockEntity.PROPERTY_COUNT));
 	}
 
-	public SubstationScreenHandler(int syncId, PlayerInventory playerInventory, Inventory inventory, PropertyDelegate properties) {
+	public SubstationScreenHandler(int syncId, Inventory playerInventory, Container inventory, ContainerData properties) {
 		super(ModScreenHandlers.SUBSTATION, syncId);
 		this.inventory = inventory;
 		this.properties = properties;
-		inventory.onOpen(playerInventory.player);
+		inventory.startOpen(playerInventory.player);
 
 		this.addSlot(new Slot(inventory, 0, FUEL_SLOT_X, FUEL_SLOT_Y) {
 			@Override
-			public boolean canInsert(ItemStack stack) {
+			public boolean mayPlace(ItemStack stack) {
 				return SubstationBlockEntity.fuelTicks(stack) > 0;
 			}
 		});
@@ -49,7 +49,7 @@ public class SubstationScreenHandler extends ScreenHandler {
 		for (int col = 0; col < 9; col++) {
 			this.addSlot(new Slot(playerInventory, col, 8 + col * 18, 142));
 		}
-		this.addProperties(properties);
+		this.addDataSlots(properties);
 	}
 
 	public int burnTime() {
@@ -67,7 +67,7 @@ public class SubstationScreenHandler extends ScreenHandler {
 		if (total <= 0) {
 			return time > 0 ? 1f : 0f;
 		}
-		return MathHelper.clamp(time / (float) total, 0f, 1f);
+		return Mth.clamp(time / (float) total, 0f, 1f);
 	}
 
 	/** 0=未連結、1=連結済み、2=連結先は電化されていない */
@@ -92,34 +92,34 @@ public class SubstationScreenHandler extends ScreenHandler {
 	}
 
 	@Override
-	public boolean canUse(PlayerEntity player) {
-		return this.inventory.canPlayerUse(player);
+	public boolean stillValid(Player player) {
+		return this.inventory.stillValid(player);
 	}
 
 	@Override
-	public ItemStack quickMove(PlayerEntity player, int index) {
+	public ItemStack quickMoveStack(Player player, int index) {
 		ItemStack result = ItemStack.EMPTY;
 		Slot slot = this.slots.get(index);
-		if (slot != null && slot.hasStack()) {
-			ItemStack original = slot.getStack();
+		if (slot != null && slot.hasItem()) {
+			ItemStack original = slot.getItem();
 			result = original.copy();
 			if (index == 0) {
 				// 燃料スロットからプレイヤーのインベントリへ
-				if (!this.insertItem(original, 1, this.slots.size(), true)) {
+				if (!this.moveItemStackTo(original, 1, this.slots.size(), true)) {
 					return ItemStack.EMPTY;
 				}
 			} else if (SubstationBlockEntity.fuelTicks(original) > 0) {
 				// プレイヤーのインベントリから燃料スロットへ
-				if (!this.insertItem(original, 0, 1, false)) {
+				if (!this.moveItemStackTo(original, 0, 1, false)) {
 					return ItemStack.EMPTY;
 				}
 			} else {
 				return ItemStack.EMPTY;
 			}
 			if (original.isEmpty()) {
-				slot.setStack(ItemStack.EMPTY);
+				slot.setByPlayer(ItemStack.EMPTY);
 			} else {
-				slot.markDirty();
+				slot.setChanged();
 			}
 		}
 		return result;

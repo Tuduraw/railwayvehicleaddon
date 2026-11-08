@@ -1,29 +1,29 @@
 package com.example.railwayvehicleaddon.block;
 
 import com.mojang.serialization.MapCodec;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.BlockWithEntity;
-import net.minecraft.block.ShapeContext;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.BlockEntityTicker;
-import net.minecraft.block.entity.BlockEntityType;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.text.Text;
-import net.minecraft.item.ItemPlacementContext;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.state.StateManager;
-import net.minecraft.state.property.EnumProperty;
-import net.minecraft.state.property.IntProperty;
-import net.minecraft.state.property.Properties;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.shape.VoxelShape;
-import net.minecraft.world.BlockView;
-import net.minecraft.world.World;
-import net.minecraft.world.block.WireOrientation;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.BaseEntityBlock;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityTicker;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.EnumProperty;
+import net.minecraft.world.level.block.state.properties.IntegerProperty;
+import net.minecraft.world.level.redstone.Orientation;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 /**
  * 信号機(3灯式)。受けたレッドストーン入力の強さで現示が変わる。
@@ -40,67 +40,67 @@ import net.minecraft.world.block.WireOrientation;
  * 停止現示では信号機の手前で止まるよう、注意現示では信号機までに注意の速度へ落とすよう、
  * 速度を超えた列車にブレーキを掛ける。
  */
-public class SignalBlock extends BlockWithEntity {
-	public static final MapCodec<SignalBlock> CODEC = createCodec(SignalBlock::new);
-	public static final EnumProperty<Direction> FACING = Properties.HORIZONTAL_FACING;
+public class SignalBlock extends BaseEntityBlock {
+	public static final MapCodec<SignalBlock> CODEC = simpleCodec(SignalBlock::new);
+	public static final EnumProperty<Direction> FACING = BlockStateProperties.HORIZONTAL_FACING;
 	/** 0=進行、1=注意、2=停止 */
-	public static final IntProperty ASPECT = IntProperty.of("aspect", 0, 2);
-	private static final VoxelShape SHAPE = Block.createCuboidShape(4.0, 0.0, 4.0, 12.0, 16.0, 12.0);
+	public static final IntegerProperty ASPECT = IntegerProperty.create("aspect", 0, 2);
+	private static final VoxelShape SHAPE = Block.box(4.0, 0.0, 4.0, 12.0, 16.0, 12.0);
 
-	public SignalBlock(Settings settings) {
+	public SignalBlock(Properties settings) {
 		super(settings);
-		setDefaultState(getDefaultState().with(FACING, Direction.NORTH).with(ASPECT, 0));
+		registerDefaultState(defaultBlockState().setValue(FACING, Direction.NORTH).setValue(ASPECT, 0));
 	}
 
 	@Override
-	protected MapCodec<? extends BlockWithEntity> getCodec() {
+	protected MapCodec<? extends BaseEntityBlock> codec() {
 		return CODEC;
 	}
 
 	@Override
-	protected void appendProperties(StateManager.Builder<Block, BlockState> builder) {
+	protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
 		builder.add(FACING, ASPECT);
 	}
 
 	@Override
-	protected net.minecraft.block.BlockRenderType getRenderType(BlockState state) {
-		return net.minecraft.block.BlockRenderType.MODEL;
+	protected net.minecraft.world.level.block.RenderShape getRenderShape(BlockState state) {
+		return net.minecraft.world.level.block.RenderShape.MODEL;
 	}
 
 	@Override
-	public BlockEntity createBlockEntity(BlockPos pos, BlockState state) {
+	public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
 		return new SignalDeviceBlockEntity(pos, state);
 	}
 
 	@Override
-	public <T extends BlockEntity> BlockEntityTicker<T> getTicker(World world, BlockState state, BlockEntityType<T> type) {
-		return world.isClient() ? null : validateTicker(type, ModBlocks.SIGNAL_DEVICE_ENTITY, SignalDeviceBlockEntity::tick);
+	public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level world, BlockState state, BlockEntityType<T> type) {
+		return world.isClientSide() ? null : createTickerHelper(type, ModBlocks.SIGNAL_DEVICE_ENTITY, SignalDeviceBlockEntity::tick);
 	}
 
 	@Override
-	public void onPlaced(World world, BlockPos pos, BlockState state, LivingEntity placer, ItemStack itemStack) {
-		super.onPlaced(world, pos, state, placer, itemStack);
-		if (world instanceof ServerWorld serverWorld && world.getBlockEntity(pos) instanceof SignalDeviceBlockEntity entity) {
+	public void setPlacedBy(Level world, BlockPos pos, BlockState state, LivingEntity placer, ItemStack itemStack) {
+		super.setPlacedBy(world, pos, state, placer, itemStack);
+		if (world instanceof ServerLevel serverWorld && world.getBlockEntity(pos) instanceof SignalDeviceBlockEntity entity) {
 			entity.setAutoBlock(true);
 			entity.relink(serverWorld);
-			if (placer instanceof PlayerEntity player) {
-				player.sendMessage(Text.translatable("message.railwayvehicleaddon.signal.placed", entity.link().describe(serverWorld)), false);
-				player.sendMessage(Text.translatable("message.railwayvehicleaddon.signal.mode_auto"), false);
-				if (entity.link().ambiguous(serverWorld, state.get(FACING))) {
-					player.sendMessage(Text.translatable("message.railwayvehicleaddon.wayside.ambiguous"), false);
+			if (placer instanceof Player player) {
+				player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.signal.placed", entity.link().describe(serverWorld)), false);
+				player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.signal.mode_auto"), false);
+				if (entity.link().ambiguous(serverWorld, state.getValue(FACING))) {
+					player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.wayside.ambiguous"), false);
 				}
 			}
 		}
 	}
 
 	@Override
-	protected net.minecraft.util.ActionResult onUseWithItem(ItemStack stack, BlockState state, World world, BlockPos pos,
-															PlayerEntity player, net.minecraft.util.Hand hand,
-															net.minecraft.util.hit.BlockHitResult hit) {
-		if (stack.isOf(com.example.railwayvehicleaddon.item.ModItems.SURVEY_TOOL)) {
-			return net.minecraft.util.ActionResult.PASS;
+	protected net.minecraft.world.InteractionResult useItemOn(ItemStack stack, BlockState state, Level world, BlockPos pos,
+															Player player, net.minecraft.world.InteractionHand hand,
+															net.minecraft.world.phys.BlockHitResult hit) {
+		if (stack.is(com.example.railwayvehicleaddon.item.ModItems.SURVEY_TOOL)) {
+			return net.minecraft.world.InteractionResult.PASS;
 		}
-		return super.onUseWithItem(stack, state, world, pos, player, hand, hit);
+		return super.useItemOn(stack, state, world, pos, player, hand, hit);
 	}
 
 	/**
@@ -108,32 +108,32 @@ public class SignalBlock extends BlockWithEntity {
 	 * 自動閉塞でも、レッドストーンの入力があれば、入力の現示と厳しい方になる。
 	 */
 	@Override
-	protected net.minecraft.util.ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player,
-													net.minecraft.util.hit.BlockHitResult hit) {
-		if (world instanceof ServerWorld serverWorld && world.getBlockEntity(pos) instanceof SignalDeviceBlockEntity entity) {
-			if (player.isSneaking()) {
+	protected net.minecraft.world.InteractionResult useWithoutItem(BlockState state, Level world, BlockPos pos, Player player,
+													net.minecraft.world.phys.BlockHitResult hit) {
+		if (world instanceof ServerLevel serverWorld && world.getBlockEntity(pos) instanceof SignalDeviceBlockEntity entity) {
+			if (player.isShiftKeyDown()) {
 				entity.setAutoBlock(!entity.isAutoBlock());
-				int aspect = aspectFor(serverWorld.getReceivedRedstonePower(pos));
-				if (state.get(ASPECT) != aspect) {
-					serverWorld.setBlockState(pos, state.with(ASPECT, aspect), Block.NOTIFY_LISTENERS);
+				int aspect = aspectFor(serverWorld.getBestNeighborSignal(pos));
+				if (state.getValue(ASPECT) != aspect) {
+					serverWorld.setBlock(pos, state.setValue(ASPECT, aspect), Block.UPDATE_CLIENTS);
 				}
 			}
-			player.sendMessage(Text.translatable(entity.isAutoBlock()
+			player.displayClientMessage(Component.translatable(entity.isAutoBlock()
 					? "message.railwayvehicleaddon.signal.mode_auto" : "message.railwayvehicleaddon.signal.mode_redstone"), true);
 		}
-		return net.minecraft.util.ActionResult.SUCCESS;
+		return net.minecraft.world.InteractionResult.SUCCESS;
 	}
 
 	@Override
-	protected VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+	protected VoxelShape getShape(BlockState state, BlockGetter world, BlockPos pos, CollisionContext context) {
 		return SHAPE;
 	}
 
 	@Override
-	public BlockState getPlacementState(ItemPlacementContext ctx) {
+	public BlockState getStateForPlacement(BlockPlaceContext ctx) {
 		// 灯火を設置したプレイヤーの方へ向ける
-		BlockState state = getDefaultState().with(FACING, ctx.getHorizontalPlayerFacing().getOpposite());
-		return state.with(ASPECT, aspectFor(ctx.getWorld().getReceivedRedstonePower(ctx.getBlockPos())));
+		BlockState state = defaultBlockState().setValue(FACING, ctx.getHorizontalDirection().getOpposite());
+		return state.setValue(ASPECT, aspectFor(ctx.getLevel().getBestNeighborSignal(ctx.getClickedPos())));
 	}
 
 	public static int aspectFor(int power) {
@@ -141,17 +141,17 @@ public class SignalBlock extends BlockWithEntity {
 	}
 
 	@Override
-	protected void neighborUpdate(BlockState state, World world, BlockPos pos, Block sourceBlock,
-								  WireOrientation wireOrientation, boolean notify) {
-		super.neighborUpdate(state, world, pos, sourceBlock, wireOrientation, notify);
-		if (world instanceof ServerWorld) {
-			int aspect = aspectFor(world.getReceivedRedstonePower(pos));
+	protected void neighborChanged(BlockState state, Level world, BlockPos pos, Block sourceBlock,
+								  Orientation wireOrientation, boolean notify) {
+		super.neighborChanged(state, world, pos, sourceBlock, wireOrientation, notify);
+		if (world instanceof ServerLevel) {
+			int aspect = aspectFor(world.getBestNeighborSignal(pos));
 			if (world.getBlockEntity(pos) instanceof SignalDeviceBlockEntity entity) {
 				// 自動閉塞: 在線で決めた現示とレッドストーンの入力の、厳しい方
 				aspect = Math.max(aspect, entity.autoAspect());
 			}
-			if (state.get(ASPECT) != aspect) {
-				world.setBlockState(pos, state.with(ASPECT, aspect), Block.NOTIFY_LISTENERS);
+			if (state.getValue(ASPECT) != aspect) {
+				world.setBlock(pos, state.setValue(ASPECT, aspect), Block.UPDATE_CLIENTS);
 			}
 		}
 	}

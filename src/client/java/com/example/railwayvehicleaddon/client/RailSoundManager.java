@@ -3,11 +3,6 @@ package com.example.railwayvehicleaddon.client;
 import com.example.railwayvehicleaddon.entity.RailVehicleEntity;
 import com.example.tudursvehiclemod.client.sound.AddonSoundLoader;
 import com.example.tudursvehiclemod.client.sound.VanillaStyleSoundAttenuation;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.entity.Entity;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
 import org.lwjgl.openal.AL10;
 
 import java.util.ArrayList;
@@ -17,6 +12,11 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import net.minecraft.client.Minecraft;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * 鉄道車両の動作音(クライアント)。前提MODのエンジン音と同じく、OGGはAddonSoundLoaderが読み込んだバッファを使い、
@@ -44,7 +44,7 @@ public final class RailSoundManager {
 	private static final Map<Integer, State> STATES = new HashMap<>();
 	private static final List<int[]> ONE_SHOTS = new ArrayList<>();
 	/** いま処理している車両の位置(音源の位置。前提MODのエンジン音と同じく左右の定位に使う) */
-	private static Vec3d currentPos = Vec3d.ZERO;
+	private static Vec3 currentPos = Vec3.ZERO;
 
 	private RailSoundManager() {
 	}
@@ -64,9 +64,9 @@ public final class RailSoundManager {
 		boolean moving;
 	}
 
-	public static void tick(MinecraftClient client) {
-		if (client.world == null || client.isPaused()) {
-			if (client.world == null) {
+	public static void tick(Minecraft client) {
+		if (client.level == null || client.isPaused()) {
+			if (client.level == null) {
 				stopAll();
 			} else {
 				pauseLoops();
@@ -74,10 +74,10 @@ public final class RailSoundManager {
 			cleanupOneShots();
 			return;
 		}
-		Vec3d listener = client.gameRenderer.getCamera().getCameraPos();
+		Vec3 listener = client.gameRenderer.getMainCamera().position();
 		float master = categoryVolume(client);
 		Set<Integer> present = new HashSet<>();
-		for (Entity entity : client.world.getEntities()) {
+		for (Entity entity : client.level.entitiesForRendering()) {
 			if (!(entity instanceof RailVehicleEntity vehicle) || vehicle.isRemoved()) {
 				continue;
 			}
@@ -85,10 +85,10 @@ public final class RailSoundManager {
 			if (spec == null) {
 				continue;
 			}
-			double distance = vehicle.getEntityPos().distanceTo(listener);
+			double distance = vehicle.position().distanceTo(listener);
 			float loopGain = VanillaStyleSoundAttenuation.computeGain(distance, spec.volume() * LOOP_RANGE,
 					BASE_REFERENCE_DISTANCE, BASE_MAX_DISTANCE) * master;
-			currentPos = vehicle.getEntityPos();
+			currentPos = vehicle.position();
 			State state = STATES.computeIfAbsent(vehicle.getId(), id -> new State());
 			present.add(vehicle.getId());
 			update(vehicle, spec, state, loopGain, client.player != null && client.player.getVehicle() == vehicle);
@@ -111,11 +111,11 @@ public final class RailSoundManager {
 		double v = vehicle.getRailSpeed();
 		double speed = Math.abs(v);
 		float maxSpeed = Math.max(0.05f, vehicle.getDefinition().maxSpeed());
-		float speedFrac = (float) MathHelper.clamp(speed / maxSpeed, 0.0, 1.0);
-		float throttle = MathHelper.clamp(Math.abs(vehicle.getThrottle()), 0f, 1f);
+		float speedFrac = (float) Mth.clamp(speed / maxSpeed, 0.0, 1.0);
+		float throttle = Mth.clamp(Math.abs(vehicle.getThrottle()), 0f, 1f);
 
 		// 走行音
-		float runGain = (float) MathHelper.clamp(speed / 0.5, 0.0, 1.0);
+		float runGain = (float) Mth.clamp(speed / 0.5, 0.0, 1.0);
 		setLoop(state, "running", spec.running(), runGain * 0.6f * gain, 0.6f + 0.9f * speedFrac);
 
 		// 主電動機・エンジン
@@ -123,13 +123,13 @@ public final class RailSoundManager {
 			float level;
 			float pitch;
 			if (spec.motorEngine()) {
-				boolean alive = vehicle.hasPassengers() || speed > 0.01;
+				boolean alive = vehicle.isVehicle() || speed > 0.01;
 				level = alive ? 0.35f + 0.65f * throttle : 0f;
-				pitch = MathHelper.lerp(throttle, spec.motorPitchMin(), spec.motorPitchMax());
+				pitch = Mth.lerp(throttle, spec.motorPitchMin(), spec.motorPitchMax());
 			} else {
 				level = speed > 0.003 || throttle > 0.01f
 						? 0.12f * Math.min(1f, speedFrac * 6f) + 0.75f * throttle * Math.min(1f, 0.35f + speedFrac * 3f) : 0f;
-				pitch = MathHelper.lerp(speedFrac, spec.motorPitchMin(), spec.motorPitchMax());
+				pitch = Mth.lerp(speedFrac, spec.motorPitchMin(), spec.motorPitchMax());
 			}
 			state.motorLevel += (level - state.motorLevel) * 0.15f;
 			state.motorPitch = state.motorPitch < 0f ? pitch : state.motorPitch + (pitch - state.motorPitch) * 0.2f;
@@ -172,7 +172,7 @@ public final class RailSoundManager {
 				state.axleSinceJoint = new double[n];
 				java.util.Arrays.fill(state.axleSegment, -1L);
 			}
-			float clickGain = (float) MathHelper.clamp(speed / 0.25, 0.15, 1.0) * gain;
+			float clickGain = (float) Mth.clamp(speed / 0.25, 0.15, 1.0) * gain;
 			int i = 0;
 			for (double bogie : bogies) {
 				for (double axle : new double[]{bogie + AXLE_SPACING / 2, bogie - AXLE_SPACING / 2}) {
@@ -221,16 +221,16 @@ public final class RailSoundManager {
 	}
 
 	/** サーバーから届いた一回きりの音。 */
-	public static void playEvent(MinecraftClient client, int entityId, String kind) {
-		if (client.world == null || !(client.world.getEntityById(entityId) instanceof RailVehicleEntity vehicle)) {
+	public static void playEvent(Minecraft client, int entityId, String kind) {
+		if (client.level == null || !(client.level.getEntity(entityId) instanceof RailVehicleEntity vehicle)) {
 			return;
 		}
 		RailVehicleEntity.SoundSpec spec = vehicle.getSoundSpec();
 		if (spec == null) {
 			return;
 		}
-		currentPos = vehicle.getEntityPos();
-		double distance = currentPos.distanceTo(client.gameRenderer.getCamera().getCameraPos());
+		currentPos = vehicle.position();
+		double distance = currentPos.distanceTo(client.gameRenderer.getMainCamera().position());
 		float master = categoryVolume(client);
 		switch (kind) {
 			case "horn" -> playOneShot(spec.horn(), VanillaStyleSoundAttenuation.computeGain(distance,
@@ -266,7 +266,7 @@ public final class RailSoundManager {
 		}
 		AL10.alSource3f(source, AL10.AL_POSITION, (float) currentPos.x, (float) currentPos.y, (float) currentPos.z);
 		AL10.alSourcef(source, AL10.AL_GAIN, Math.min(1f, gain));
-		AL10.alSourcef(source, AL10.AL_PITCH, MathHelper.clamp(pitch, 0.25f, 3.0f));
+		AL10.alSourcef(source, AL10.AL_PITCH, Mth.clamp(pitch, 0.25f, 3.0f));
 		if (AL10.alGetSourcei(source, AL10.AL_SOURCE_STATE) != AL10.AL_PLAYING) {
 			AL10.alSourcePlay(source);
 		}
@@ -321,9 +321,9 @@ public final class RailSoundManager {
 	}
 
 	/** ゲームの音量設定(マスター×「友好的な生物」)を掛ける。前提MODの乗り物と同じ扱いになるようNEUTRALを使う。 */
-	private static float categoryVolume(MinecraftClient client) {
-		return (float) (client.options.getSoundVolumeOption(SoundCategory.MASTER).getValue()
-				* client.options.getSoundVolumeOption(SoundCategory.NEUTRAL).getValue());
+	private static float categoryVolume(Minecraft client) {
+		return (float) (client.options.getSoundSourceOptionInstance(SoundSource.MASTER).get()
+				* client.options.getSoundSourceOptionInstance(SoundSource.NEUTRAL).get());
 	}
 
 	/** すべての音を止めて片付ける(切断時・ワールドを離れたとき)。 */

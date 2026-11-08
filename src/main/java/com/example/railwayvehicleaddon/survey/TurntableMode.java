@@ -6,13 +6,12 @@ import com.example.railwayvehicleaddon.track.TrackNetwork;
 import com.example.railwayvehicleaddon.track.feature.MovingDeckFeature;
 import com.example.railwayvehicleaddon.track.feature.TrackFeature;
 import com.example.railwayvehicleaddon.track.feature.TurntableFeature;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * 転車台モード。
@@ -83,8 +82,8 @@ public final class TurntableMode implements SurveyMode {
 		}
 		SurveyPoint first = points.get(0);
 		SurveyPoint second = points.get(1);
-		Vec3d p0 = first.pos();
-		Vec3d p1 = second.pos();
+		Vec3 p0 = first.pos();
+		Vec3 p1 = second.pos();
 		if (Math.abs(p0.y - p1.y) > 0.51) {
 			return LayoutPlan.failed(new RoutePlanner.Issue("deck_level", p1, 0));
 		}
@@ -106,7 +105,7 @@ public final class TurntableMode implements SurveyMode {
 		angles.add(a0);
 		angles.add(norm(a0 + 180.0));
 		for (int k = 2; k < points.size(); k++) {
-			Vec3d p = points.get(k).pos();
+			Vec3 p = points.get(k).pos();
 			double a = norm(Math.toDegrees(Math.atan2(p.z - cz, p.x - cx)));
 			double snapped = norm(a0 + Math.round(norm(a - a0) / step) * step);
 			boolean dup = false;
@@ -120,7 +119,7 @@ public final class TurntableMode implements SurveyMode {
 		angles.sort((x, z) -> Double.compare(norm(x - a0), norm(z - a0)));
 
 		List<RoutePlanner.Issue> issues = new ArrayList<>();
-		List<Vec3d> newNodes = new ArrayList<>();
+		List<Vec3> newNodes = new ArrayList<>();
 		List<LayoutPlan.Edge> edges = new ArrayList<>();
 		List<Integer> stubEdges = new ArrayList<>();
 		List<NodeRef> connRefs = new ArrayList<>();
@@ -128,13 +127,13 @@ public final class TurntableMode implements SurveyMode {
 			double rad = Math.toRadians(angle);
 			double dx = Math.cos(rad);
 			double dz = Math.sin(rad);
-			Vec3d at = new Vec3d(cx + dx * radius, y, cz + dz * radius);
+			Vec3 at = new Vec3(cx + dx * radius, y, cz + dz * radius);
 			SurveyPoint snapped = same(angle, a0) ? first : same(angle, a0 + 180.0) ? second : null;
 			connRefs.add(MovingDeckPlans.connection(network, snapped, at, dx, dz, newNodes, edges, stubEdges, issues));
 		}
 		// 桁(初期位置は1点目の方向)
-		Vec3d deckA = new Vec3d(cx + Math.cos(Math.toRadians(a0)) * radius, y, cz + Math.sin(Math.toRadians(a0)) * radius);
-		Vec3d deckB = new Vec3d(2.0 * cx - deckA.x, y, 2.0 * cz - deckA.z);
+		Vec3 deckA = new Vec3(cx + Math.cos(Math.toRadians(a0)) * radius, y, cz + Math.sin(Math.toRadians(a0)) * radius);
+		Vec3 deckB = new Vec3(2.0 * cx - deckA.x, y, 2.0 * cz - deckA.z);
 		NodeRef deckRefA = NodeRef.created(newNodes.size());
 		newNodes.add(deckA);
 		NodeRef deckRefB = NodeRef.created(newNodes.size());
@@ -183,14 +182,14 @@ public final class TurntableMode implements SurveyMode {
 			}
 
 			@Override
-			public List<Vec3d[]> outline() {
-				List<Vec3d[]> lines = new ArrayList<>();
-				Vec3d prev = null;
+			public List<Vec3[]> outline() {
+				List<Vec3[]> lines = new ArrayList<>();
+				Vec3 prev = null;
 				for (int i = 0; i <= 48; i++) {
 					double rad = Math.PI * 2.0 * i / 48.0;
-					Vec3d cur = new Vec3d(cx + Math.cos(rad) * radius, y + 0.1, cz + Math.sin(rad) * radius);
+					Vec3 cur = new Vec3(cx + Math.cos(rad) * radius, y + 0.1, cz + Math.sin(rad) * radius);
 					if (prev != null) {
-						lines.add(new Vec3d[]{prev, cur});
+						lines.add(new Vec3[]{prev, cur});
 					}
 					prev = cur;
 				}

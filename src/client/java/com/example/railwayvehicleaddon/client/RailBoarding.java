@@ -3,11 +3,11 @@ package com.example.railwayvehicleaddon.client;
 import com.example.railwayvehicleaddon.entity.RailVehicleEntity;
 import com.example.railwayvehicleaddon.network.BoardPayload;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.entity.Entity;
-import net.minecraft.util.hit.EntityHitResult;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
@@ -23,30 +23,30 @@ public final class RailBoarding {
 	private RailBoarding() {
 	}
 
-	public static void tick(MinecraftClient client) {
-		boolean down = client.options.useKey.isPressed();
+	public static void tick(Minecraft client) {
+		boolean down = client.options.keyUse.isDown();
 		boolean edge = down && !wasDown;
 		wasDown = down;
-		if (!edge || client.player == null || client.world == null || client.currentScreen != null
-				|| client.player.hasVehicle() || !client.player.getMainHandStack().isEmpty() || client.player.isSneaking()) {
+		if (!edge || client.player == null || client.level == null || client.screen != null
+				|| client.player.isPassenger() || !client.player.getMainHandItem().isEmpty() || client.player.isShiftKeyDown()) {
 			return;
 		}
-		Vec3d eye = client.player.getCameraPosVec(1.0f);
-		Vec3d dir = client.player.getRotationVec(1.0f);
-		double reach = client.player.getEntityInteractionRange() + 1.0;
+		Vec3 eye = client.player.getEyePosition(1.0f);
+		Vec3 dir = client.player.getViewVector(1.0f);
+		double reach = client.player.entityInteractionRange() + 1.0;
 		// 手前にブロックがあればそちらが優先(壁越しには乗らない)
 		double limit = reach;
-		HitResult target = client.crosshairTarget;
+		HitResult target = client.hitResult;
 		Entity targetEntity = null;
 		if (target != null && target.getType() == HitResult.Type.BLOCK) {
-			limit = Math.min(limit, target.getPos().distanceTo(eye));
+			limit = Math.min(limit, target.getLocation().distanceTo(eye));
 		} else if (target instanceof EntityHitResult eh) {
 			targetEntity = eh.getEntity();
 		}
 		RailVehicleEntity best = null;
 		double bestT = Double.MAX_VALUE;
-		for (Entity e : client.world.getEntities()) {
-			if (!(e instanceof RailVehicleEntity car) || e.squaredDistanceTo(client.player) > 60.0 * 60.0) {
+		for (Entity e : client.level.entitiesForRendering()) {
+			if (!(e instanceof RailVehicleEntity car) || e.distanceToSqr(client.player) > 60.0 * 60.0) {
 				continue;
 			}
 			double t = intersect(car, eye, dir);
@@ -58,23 +58,23 @@ public final class RailBoarding {
 		if (best == null) {
 			return;
 		}
-		if (targetEntity != null && targetEntity != best && targetEntity.getEntityPos().distanceTo(eye) < bestT) {
+		if (targetEntity != null && targetEntity != best && targetEntity.position().distanceTo(eye) < bestT) {
 			return;
 		}
 		// 車内に立っている(目が車体の箱の中にある)ときは、見ている先(1.5ブロック先)に近い座席に座る
-		Vec3d hit = eye.add(dir.multiply(bestT > 1.0e-6 ? bestT : 1.5));
+		Vec3 hit = eye.add(dir.scale(bestT > 1.0e-6 ? bestT : 1.5));
 		ClientPlayNetworking.send(new BoardPayload(best.getId(), hit.x, hit.y, hit.z));
 	}
 
 	/** 視線と車体の箱の交点までの距離。当たらなければ-1。 */
-	private static double intersect(RailVehicleEntity car, Vec3d eye, Vec3d dir) {
+	private static double intersect(RailVehicleEntity car, Vec3 eye, Vec3 dir) {
 		float scale = car.getScale() > 0f ? car.getScale() : 1f;
 		double hw = car.getDefinition().width() * scale / 2.0;
 		double h = car.getDefinition().height() * scale;
 		double[] ext = car.getBodyExtent();
 		Quaternionf inv = new Quaternionf()
-				.rotationY((float) Math.toRadians(-car.getYaw()))
-				.rotateX((float) Math.toRadians(car.getPitch()))
+				.rotationY((float) Math.toRadians(-car.getYRot()))
+				.rotateX((float) Math.toRadians(car.getXRot()))
 				.conjugate();
 		Vector3f o = new Vector3f((float) (eye.x - car.getX()), (float) (eye.y - car.getY()), (float) (eye.z - car.getZ()));
 		Vector3f d = new Vector3f((float) dir.x, (float) dir.y, (float) dir.z);

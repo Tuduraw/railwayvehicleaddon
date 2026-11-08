@@ -2,15 +2,14 @@ package com.example.railwayvehicleaddon.operation;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.codec.PacketCodecs;
-import net.minecraft.util.StringIdentifiable;
-
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.util.StringRepresentable;
 
 /**
  * 運行表。経路アイテム(RouteCardItem)に保存して作り、運行管理装置が編成の車両へ割り当てる(車両にも保存する)。
@@ -35,10 +34,10 @@ public record Timetable(String trainNumber, int type, Map<String, Integer> route
 	/** 発車時刻なし */
 	public static final int NO_DEPART_TIME = -1;
 
-	public enum EndMode implements StringIdentifiable {
+	public enum EndMode implements StringRepresentable {
 		STOP("stop"), REVERSE("reverse"), LOOP("loop");
 
-		public static final Codec<EndMode> CODEC = StringIdentifiable.createCodec(EndMode::values);
+		public static final Codec<EndMode> CODEC = StringRepresentable.fromEnum(EndMode::values);
 		private final String id;
 
 		EndMode(String id) {
@@ -46,7 +45,7 @@ public record Timetable(String trainNumber, int type, Map<String, Integer> route
 		}
 
 		@Override
-		public String asString() {
+		public String getSerializedName() {
 			return this.id;
 		}
 
@@ -95,7 +94,7 @@ public record Timetable(String trainNumber, int type, Map<String, Integer> route
 			EndMode.CODEC.optionalFieldOf("end", EndMode.STOP).forGetter(Timetable::endMode)
 	).apply(instance, Timetable::new));
 
-	public static final PacketCodec<RegistryByteBuf, Timetable> PACKET_CODEC = PacketCodecs.registryCodec(CODEC);
+	public static final StreamCodec<RegistryFriendlyByteBuf, Timetable> PACKET_CODEC = ByteBufCodecs.fromCodecWithRegistries(CODEC);
 
 	public static final Timetable EMPTY = new Timetable("", 0, Map.of(), List.of(), EndMode.STOP);
 

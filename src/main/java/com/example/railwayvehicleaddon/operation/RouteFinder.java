@@ -3,8 +3,6 @@ package com.example.railwayvehicleaddon.operation;
 import com.example.railwayvehicleaddon.track.TrackNetwork;
 import com.example.railwayvehicleaddon.track.TrackPoint;
 import com.example.railwayvehicleaddon.track.TrackSegment;
-import net.minecraft.server.world.ServerWorld;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -14,6 +12,7 @@ import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.LongPredicate;
+import net.minecraft.server.level.ServerLevel;
 
 /**
  * 進路の自動設定で、対向の分岐器をどの分岐側へ開通させるかを決める。
@@ -35,9 +34,9 @@ public final class RouteFinder {
 	/**
 	 * @param holder 進路を求める列車(運行表を持つ車両)のUUID。この列車の予約している分岐器は切り替えられるものとして扱う
 	 */
-	public static long choose(ServerWorld world, TrackNetwork network, OperationState state, long nodeId, long fromSegment,
+	public static long choose(ServerLevel world, TrackNetwork network, OperationState state, long nodeId, long fromSegment,
 							  double arrivalX, double arrivalZ, Timetable.Stop target, UUID holder) {
-		long now = world.getTime();
+		long now = world.getGameTime();
 		String key = nodeId + "|" + fromSegment + "|" + target.station() + "|" + target.platform() + "|" + holder;
 		OperationState.RouteChoice cached = state.cachedRoute(key, now);
 		if (cached != null) {

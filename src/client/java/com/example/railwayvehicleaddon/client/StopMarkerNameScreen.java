@@ -3,12 +3,12 @@ package com.example.railwayvehicleaddon.client;
 import com.example.railwayvehicleaddon.network.StopMarkerEditPayload;
 import com.example.railwayvehicleaddon.operation.Timetable;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
 
 /**
  * 停止位置目標の名前の編集画面(素手で右クリックすると開く)。「駅名 番線」(例:「A駅 1」)を入力し、読み取った駅名と番線を
@@ -20,10 +20,10 @@ public class StopMarkerNameScreen extends Screen {
 
 	private final BlockPos pos;
 	private final String initial;
-	private TextFieldWidget field;
+	private EditBox field;
 
 	public StopMarkerNameScreen(BlockPos pos, String name) {
-		super(Text.translatable("screen.railwayvehicleaddon.stop_marker.title"));
+		super(Component.translatable("screen.railwayvehicleaddon.stop_marker.title"));
 		this.pos = pos;
 		this.initial = name == null ? "" : name;
 	}
@@ -32,25 +32,25 @@ public class StopMarkerNameScreen extends Screen {
 	protected void init() {
 		int x = this.width / 2 - 100;
 		int y = this.height / 2 - 30;
-		String text = this.field != null ? this.field.getText() : this.initial;
-		this.field = new TextFieldWidget(this.textRenderer, x, y, 200, 20, Text.empty());
+		String text = this.field != null ? this.field.getValue() : this.initial;
+		this.field = new EditBox(this.font, x, y, 200, 20, Component.empty());
 		this.field.setMaxLength(Timetable.MAX_NAME);
-		this.field.setText(text);
-		addDrawableChild(this.field);
+		this.field.setValue(text);
+		addRenderableWidget(this.field);
 		setInitialFocus(this.field);
-		addDrawableChild(ButtonWidget.builder(Text.translatable("screen.railwayvehicleaddon.route_card.save"), b -> save())
-				.dimensions(x, y + 50, 96, 20).build());
-		addDrawableChild(ButtonWidget.builder(Text.translatable("screen.railwayvehicleaddon.route_card.cancel"), b -> close())
-				.dimensions(x + 104, y + 50, 96, 20).build());
+		addRenderableWidget(Button.builder(Component.translatable("screen.railwayvehicleaddon.route_card.save"), b -> save())
+				.bounds(x, y + 50, 96, 20).build());
+		addRenderableWidget(Button.builder(Component.translatable("screen.railwayvehicleaddon.route_card.cancel"), b -> onClose())
+				.bounds(x + 104, y + 50, 96, 20).build());
 	}
 
 	private void save() {
-		ClientPlayNetworking.send(new StopMarkerEditPayload(this.pos, this.field.getText()));
-		close();
+		ClientPlayNetworking.send(new StopMarkerEditPayload(this.pos, this.field.getValue()));
+		onClose();
 	}
 
 	@Override
-	public boolean keyPressed(net.minecraft.client.input.KeyInput input) {
+	public boolean keyPressed(net.minecraft.client.input.KeyEvent input) {
 		if (input.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER || input.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_KP_ENTER) {
 			save();
 			return true;
@@ -59,23 +59,23 @@ public class StopMarkerNameScreen extends Screen {
 	}
 
 	@Override
-	public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+	public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
 		super.render(context, mouseX, mouseY, delta);
 		int x = this.width / 2 - 100;
 		int y = this.height / 2 - 30;
-		context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, y - 28, TEXT);
-		context.drawTextWithShadow(this.textRenderer, Text.translatable("screen.railwayvehicleaddon.stop_marker.hint"), x, y - 12, TEXT_DIM);
-		Timetable.Stop parsed = Timetable.parseMarkerName(this.field.getText());
-		Text preview = parsed.station().isEmpty()
-				? Text.translatable("screen.railwayvehicleaddon.stop_marker.preview_empty")
-				: Text.translatable("screen.railwayvehicleaddon.stop_marker.preview", parsed.station(),
-				parsed.platform() > 0 ? Text.translatable("message.railwayvehicleaddon.stop_marker.platform", parsed.platform())
-						: Text.translatable("message.railwayvehicleaddon.stop_marker.any_platform"));
-		context.drawTextWithShadow(this.textRenderer, preview, x, y + 28, TEXT_DIM);
+		context.drawCenteredString(this.font, this.title, this.width / 2, y - 28, TEXT);
+		context.drawString(this.font, Component.translatable("screen.railwayvehicleaddon.stop_marker.hint"), x, y - 12, TEXT_DIM);
+		Timetable.Stop parsed = Timetable.parseMarkerName(this.field.getValue());
+		Component preview = parsed.station().isEmpty()
+				? Component.translatable("screen.railwayvehicleaddon.stop_marker.preview_empty")
+				: Component.translatable("screen.railwayvehicleaddon.stop_marker.preview", parsed.station(),
+				parsed.platform() > 0 ? Component.translatable("message.railwayvehicleaddon.stop_marker.platform", parsed.platform())
+						: Component.translatable("message.railwayvehicleaddon.stop_marker.any_platform"));
+		context.drawString(this.font, preview, x, y + 28, TEXT_DIM);
 	}
 
 	@Override
-	public boolean shouldPause() {
+	public boolean isPauseScreen() {
 		return false;
 	}
 }

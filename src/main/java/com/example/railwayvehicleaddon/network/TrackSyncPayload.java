@@ -4,15 +4,14 @@ import com.example.railwayvehicleaddon.RailwayConfig;
 import com.example.railwayvehicleaddon.RailwayVehicleAddon;
 import com.example.railwayvehicleaddon.track.TrackNode;
 import com.example.railwayvehicleaddon.track.TrackSegment;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.util.Identifier;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.Identifier;
 
 /**
  * サーバー→クライアント: 線路ノード・区間の追加(または全量送信)。
@@ -22,12 +21,12 @@ import java.util.Map;
  * switchesは分岐器の開通方向(ノードID→区間ID)。切替時はこれだけを入れて送る。
  */
 public record TrackSyncPayload(boolean reset, RailwayConfig.Values config, List<TrackNode> nodes,
-							   List<TrackSegment> segments, Map<Long, Long> switches) implements CustomPayload {
+							   List<TrackSegment> segments, Map<Long, Long> switches) implements CustomPacketPayload {
 
-	public static final CustomPayload.Id<TrackSyncPayload> ID =
-			new CustomPayload.Id<>(Identifier.of(RailwayVehicleAddon.MOD_ID, "track_sync"));
+	public static final CustomPacketPayload.Type<TrackSyncPayload> ID =
+			new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath(RailwayVehicleAddon.MOD_ID, "track_sync"));
 
-	public static final PacketCodec<RegistryByteBuf, TrackSyncPayload> CODEC = PacketCodec.ofStatic(
+	public static final StreamCodec<RegistryFriendlyByteBuf, TrackSyncPayload> CODEC = StreamCodec.of(
 			(buf, payload) -> {
 				buf.writeBoolean(payload.reset());
 				TrackCodecs.writeConfig(buf, payload.config());
@@ -67,7 +66,7 @@ public record TrackSyncPayload(boolean reset, RailwayConfig.Values config, List<
 			});
 
 	@Override
-	public Id<? extends CustomPayload> getId() {
+	public Type<? extends CustomPacketPayload> type() {
 		return ID;
 	}
 }

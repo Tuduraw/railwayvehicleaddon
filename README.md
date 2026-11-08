@@ -6,16 +6,18 @@
 鉄道車両と、曲線・勾配を自動生成する独自の線路システムを追加するアドオンMODです。
 
 - Minecraft 1.21.11 / Fabric Loader 0.18.2 以上 / Fabric API 0.139.4+1.21.11
-- 前提MOD: tudursvehiclemod 1.0.3 以上
+- 前提MOD: tudursvehiclemod 1.1.1 以上(Mojang マッピング版。[tudursvehiclemod-mojmap](https://github.com/Tuduraw/tudursvehiclemod-mojmap))
+- Forge 1.20.1 版は別プロジェクト(`railwayvehicleaddon-forge`)で、このプロジェクトから生成します(そちらの `PORTING.md`)
 
 ---
 
 ## ビルド
 
-1. 前提MODのディレクトリで `./gradlew publishToMavenLocal` を実行し、ローカルMavenへ公開します。
-2. このMODのディレクトリで `./gradlew build` を実行します。
+1. 前提MOD(tudursvehiclemod-mojmap)のディレクトリで `./gradlew publishToMavenLocal` を実行し、ローカルMavenへ公開します。
+2. このMODのディレクトリで `./gradlew build` を実行します。`build/libs/railwayvehicleaddon-<版>-fabric-1.21.11.jar` ができます。
 
 前提MODのバージョンは `gradle.properties` の `tudursvehiclemod_version` で指定します。
+ソースは Mojang の公式マッピング(MojMap)で書かれています(`MOJMAP.md`)。
 
 ---
 

@@ -3,36 +3,35 @@ package com.example.railwayvehicleaddon.block;
 import com.example.railwayvehicleaddon.screen.SubstationScreenHandler;
 import com.example.railwayvehicleaddon.track.TrackManager;
 import com.example.railwayvehicleaddon.track.TrackNetwork;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.inventory.Inventories;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.network.listener.ClientPlayPacketListener;
-import net.minecraft.network.packet.Packet;
-import net.minecraft.network.packet.s2c.play.BlockEntityUpdateS2CPacket;
-import net.minecraft.registry.RegistryWrapper;
-import net.minecraft.screen.NamedScreenHandlerFactory;
-import net.minecraft.screen.PropertyDelegate;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.storage.ReadView;
-import net.minecraft.storage.WriteView;
-import net.minecraft.text.Text;
-import net.minecraft.util.collection.DefaultedList;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.World;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.core.NonNullList;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ClientGamePacketListener;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.Container;
+import net.minecraft.world.ContainerHelper;
+import net.minecraft.world.MenuProvider;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerData;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * 変電所。燃料スロットの石炭・木炭・石炭ブロックを、かまどのように1つずつ燃やして発電し、
@@ -46,7 +45,7 @@ import java.util.Set;
  * (ブロックエンティティをチャンクごとに探すより軽いため)。チャンクが即座にアンロードされた
  * 場合に登録から外れないまま残ることがあるが、アンロード中はtick()が呼ばれないため実害はない。
  */
-public class SubstationBlockEntity extends BlockEntity implements TrackLinkable, Inventory, NamedScreenHandlerFactory {
+public class SubstationBlockEntity extends BlockEntity implements TrackLinkable, Container, MenuProvider {
 	/** 燃えている変電所1つが給電区画に提供する容量(同時に力行できる電車の数の目安) */
 	public static final int CAPACITY = 3;
 	/** 石炭・木炭1個、石炭ブロック1個の燃焼時間(tick)。バニラのかまどと同じ値 */
@@ -67,7 +66,7 @@ public class SubstationBlockEntity extends BlockEntity implements TrackLinkable,
 
 	private static final Set<SubstationBlockEntity> ACTIVE = Collections.newSetFromMap(new IdentityHashMap<>());
 
-	private final DefaultedList<ItemStack> items = DefaultedList.ofSize(1, ItemStack.EMPTY);
+	private final NonNullList<ItemStack> items = NonNullList.withSize(1, ItemStack.EMPTY);
 	private long targetId = -1L;
 	private int burnTime;
 	private int burnTotal;
@@ -78,10 +77,10 @@ public class SubstationBlockEntity extends BlockEntity implements TrackLinkable,
 
 	/** 燃料として使える個数と燃焼時間。燃料でなければ0。 */
 	public static int fuelTicks(ItemStack stack) {
-		if (stack.isOf(Items.COAL) || stack.isOf(Items.CHARCOAL)) {
+		if (stack.is(Items.COAL) || stack.is(Items.CHARCOAL)) {
 			return COAL_BURN_TIME;
 		}
-		return stack.isOf(Items.COAL_BLOCK) ? COAL_BLOCK_BURN_TIME : 0;
+		return stack.is(Items.COAL_BLOCK) ? COAL_BLOCK_BURN_TIME : 0;
 	}
 
 	@Override
@@ -97,11 +96,11 @@ public class SubstationBlockEntity extends BlockEntity implements TrackLinkable,
 	@Override
 	public void setTargetId(long targetId) {
 		this.targetId = targetId;
-		markDirty();
-		if (this.world != null) {
+		setChanged();
+		if (this.level != null) {
 			// 測量ツールのプレビューが連結先の線を描けるよう、クライアントへも送る
-			BlockState state = getCachedState();
-			this.world.updateListeners(this.pos, state, state, 3);
+			BlockState state = getBlockState();
+			this.level.sendBlockUpdated(this.worldPosition, state, state, 3);
 		}
 	}
 
@@ -109,8 +108,8 @@ public class SubstationBlockEntity extends BlockEntity implements TrackLinkable,
 		return this.burnTime > 0;
 	}
 
-	public static void tick(World world, BlockPos pos, BlockState state, SubstationBlockEntity entity) {
-		if (world.isClient()) {
+	public static void tick(Level world, BlockPos pos, BlockState state, SubstationBlockEntity entity) {
+		if (world.isClientSide()) {
 			return;
 		}
 		boolean changed = false;
@@ -123,7 +122,7 @@ public class SubstationBlockEntity extends BlockEntity implements TrackLinkable,
 			ItemStack stack = entity.items.get(0);
 			int ticks = fuelTicks(stack);
 			if (ticks > 0) {
-				stack.decrement(1);
+				stack.shrink(1);
 				entity.burnTime = ticks;
 				entity.burnTotal = ticks;
 				changed = true;
@@ -139,21 +138,21 @@ public class SubstationBlockEntity extends BlockEntity implements TrackLinkable,
 			}
 		}
 		if (changed) {
-			entity.markDirty();
+			entity.setChanged();
 		}
 	}
 
 	@Override
-	public void markRemoved() {
-		super.markRemoved();
+	public void setRemoved() {
+		super.setRemoved();
 		ACTIVE.remove(this);
 	}
 
 	/** このワールドで現在燃えている変電所。TrackManagerの給電計算から呼ばれる。 */
-	public static List<SubstationBlockEntity> activeIn(ServerWorld world) {
+	public static List<SubstationBlockEntity> activeIn(ServerLevel world) {
 		List<SubstationBlockEntity> list = new ArrayList<>();
 		for (SubstationBlockEntity entity : ACTIVE) {
-			if (entity.getWorld() == world) {
+			if (entity.getLevel() == world) {
 				list.add(entity);
 			}
 		}
@@ -163,17 +162,17 @@ public class SubstationBlockEntity extends BlockEntity implements TrackLinkable,
 	// ------------------------------------------------------------------ GUI
 
 	@Override
-	public Text getDisplayName() {
-		return Text.translatable("block.railwayvehicleaddon.substation");
+	public Component getDisplayName() {
+		return Component.translatable("block.railwayvehicleaddon.substation");
 	}
 
 	@Override
-	public ScreenHandler createMenu(int syncId, PlayerInventory playerInventory, PlayerEntity player) {
+	public AbstractContainerMenu createMenu(int syncId, Inventory playerInventory, Player player) {
 		return new SubstationScreenHandler(syncId, playerInventory, this, createPropertyDelegate());
 	}
 
-	private PropertyDelegate createPropertyDelegate() {
-		return new PropertyDelegate() {
+	private ContainerData createPropertyDelegate() {
+		return new ContainerData() {
 			@Override
 			public int get(int index) {
 				if (index == PROP_BURN_TIME) {
@@ -191,7 +190,7 @@ public class SubstationBlockEntity extends BlockEntity implements TrackLinkable,
 			}
 
 			@Override
-			public int size() {
+			public int getCount() {
 				return PROPERTY_COUNT;
 			}
 		};
@@ -199,11 +198,11 @@ public class SubstationBlockEntity extends BlockEntity implements TrackLinkable,
 
 	/** 連結先に関する表示値(サーバー側でだけ意味を持つ。クライアント側のコピーは同期された値で上書きされる)。 */
 	private int linkInfo(int index) {
-		if (!(this.world instanceof ServerWorld serverWorld)) {
+		if (!(this.level instanceof ServerLevel serverWorld)) {
 			return 0;
 		}
 		TrackNetwork network = TrackManager.network(serverWorld);
-		Vec3d target = this.targetId >= 0
+		Vec3 target = this.targetId >= 0
 				? DeviceLinks.targetPosition(network, DeviceKind.TargetType.SEGMENT, this.targetId) : null;
 		boolean electrified = target != null && network.segment(this.targetId) != null
 				&& network.segment(this.targetId).electrified();
@@ -220,7 +219,7 @@ public class SubstationBlockEntity extends BlockEntity implements TrackLinkable,
 	// ------------------------------------------------------------------ Inventory
 
 	@Override
-	public int size() {
+	public int getContainerSize() {
 		return this.items.size();
 	}
 
@@ -230,76 +229,76 @@ public class SubstationBlockEntity extends BlockEntity implements TrackLinkable,
 	}
 
 	@Override
-	public ItemStack getStack(int slot) {
+	public ItemStack getItem(int slot) {
 		return this.items.get(slot);
 	}
 
 	@Override
-	public ItemStack removeStack(int slot, int amount) {
-		ItemStack result = Inventories.splitStack(this.items, slot, amount);
+	public ItemStack removeItem(int slot, int amount) {
+		ItemStack result = ContainerHelper.removeItem(this.items, slot, amount);
 		if (!result.isEmpty()) {
-			markDirty();
+			setChanged();
 		}
 		return result;
 	}
 
 	@Override
-	public ItemStack removeStack(int slot) {
-		return Inventories.removeStack(this.items, slot);
+	public ItemStack removeItemNoUpdate(int slot) {
+		return ContainerHelper.takeItem(this.items, slot);
 	}
 
 	@Override
-	public void setStack(int slot, ItemStack stack) {
+	public void setItem(int slot, ItemStack stack) {
 		this.items.set(slot, stack);
-		if (stack.getCount() > getMaxCountPerStack()) {
-			stack.setCount(getMaxCountPerStack());
+		if (stack.getCount() > getMaxStackSize()) {
+			stack.setCount(getMaxStackSize());
 		}
-		markDirty();
+		setChanged();
 	}
 
 	@Override
-	public boolean isValid(int slot, ItemStack stack) {
+	public boolean canPlaceItem(int slot, ItemStack stack) {
 		return fuelTicks(stack) > 0;
 	}
 
 	@Override
-	public boolean canPlayerUse(PlayerEntity player) {
-		return this.world != null && this.world.getBlockEntity(this.pos) == this
-				&& player.squaredDistanceTo(this.pos.getX() + 0.5, this.pos.getY() + 0.5, this.pos.getZ() + 0.5) <= 64.0;
+	public boolean stillValid(Player player) {
+		return this.level != null && this.level.getBlockEntity(this.worldPosition) == this
+				&& player.distanceToSqr(this.worldPosition.getX() + 0.5, this.worldPosition.getY() + 0.5, this.worldPosition.getZ() + 0.5) <= 64.0;
 	}
 
 	@Override
-	public void clear() {
+	public void clearContent() {
 		this.items.clear();
 	}
 
 	// ------------------------------------------------------------------ 保存・同期
 
 	@Override
-	protected void readData(ReadView view) {
-		super.readData(view);
-		Inventories.readData(view, this.items);
-		this.targetId = view.getLong("Target", -1L);
-		this.burnTime = view.getInt("BurnTime", 0);
-		this.burnTotal = view.getInt("BurnTotal", 0);
+	protected void loadAdditional(ValueInput view) {
+		super.loadAdditional(view);
+		ContainerHelper.loadAllItems(view, this.items);
+		this.targetId = view.getLongOr("Target", -1L);
+		this.burnTime = view.getIntOr("BurnTime", 0);
+		this.burnTotal = view.getIntOr("BurnTotal", 0);
 	}
 
 	@Override
-	protected void writeData(WriteView view) {
-		super.writeData(view);
-		Inventories.writeData(view, this.items, true);
+	protected void saveAdditional(ValueOutput view) {
+		super.saveAdditional(view);
+		ContainerHelper.saveAllItems(view, this.items, true);
 		view.putLong("Target", this.targetId);
 		view.putInt("BurnTime", this.burnTime);
 		view.putInt("BurnTotal", this.burnTotal);
 	}
 
 	@Override
-	public Packet<ClientPlayPacketListener> toUpdatePacket() {
-		return BlockEntityUpdateS2CPacket.create(this);
+	public Packet<ClientGamePacketListener> getUpdatePacket() {
+		return ClientboundBlockEntityDataPacket.create(this);
 	}
 
 	@Override
-	public NbtCompound toInitialChunkDataNbt(RegistryWrapper.WrapperLookup registries) {
-		return createNbt(registries);
+	public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
+		return saveWithoutMetadata(registries);
 	}
 }

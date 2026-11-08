@@ -3,18 +3,17 @@ package com.example.railwayvehicleaddon.track;
 import com.example.railwayvehicleaddon.track.feature.FeatureTypes;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.world.PersistentState;
-import net.minecraft.world.PersistentStateType;
-
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.saveddata.SavedData;
+import net.minecraft.world.level.saveddata.SavedDataType;
 
 /**
  * ディメンションごとの線路グラフの保存先(world/<dim>/data/railwayvehicleaddon_tracks.dat)。
  * 実データはTrackNetworkが持ち、このクラスは保存・読み込みだけを担当する。
  */
-public final class TrackNetworkState extends PersistentState {
+public final class TrackNetworkState extends SavedData {
 
 	private static final Codec<TrackNode> NODE_CODEC = RecordCodecBuilder.create(instance -> instance.group(
 			Codec.LONG.fieldOf("id").forGetter(TrackNode::id),
@@ -64,8 +63,8 @@ public final class TrackNetworkState extends PersistentState {
 		return state;
 	}));
 
-	public static final PersistentStateType<TrackNetworkState> TYPE =
-			new PersistentStateType<>("railwayvehicleaddon_tracks", TrackNetworkState::new, CODEC, null);
+	public static final SavedDataType<TrackNetworkState> TYPE =
+			new SavedDataType<>("railwayvehicleaddon_tracks", TrackNetworkState::new, CODEC, null);
 
 	private final TrackNetwork network = new TrackNetwork();
 
@@ -76,8 +75,8 @@ public final class TrackNetworkState extends PersistentState {
 		return this.network;
 	}
 
-	public static TrackNetworkState get(ServerWorld world) {
-		return world.getPersistentStateManager().getOrCreate(TYPE);
+	public static TrackNetworkState get(ServerLevel world) {
+		return world.getDataStorage().computeIfAbsent(TYPE);
 	}
 
 	private static List<Double> toList(double[] values) {

@@ -8,22 +8,21 @@ import com.example.railwayvehicleaddon.track.TrackNetwork;
 import com.example.railwayvehicleaddon.track.TrackPoint;
 import com.example.railwayvehicleaddon.track.TrackPos;
 import com.example.railwayvehicleaddon.track.TrackSegment;
-import net.minecraft.block.BlockState;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkPos;
-
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.block.state.BlockState;
 
 /**
  * 編成ごとの運転・保安の処理。毎tick、編成の位置をまとめて計算する車(単独の車両はその車両)から、
@@ -113,13 +112,13 @@ public final class TrainOperation {
 	 * @param capSpeed    編成の最高速度(各車の最高速度の最小)
 	 * @param override    運転者がノッチ・ブレーキを操作している(ATOを切って手動に戻す)
 	 */
-	public static Result update(ServerWorld world, TrackNetwork network, RailVehicleEntity leader, TrackPos leaderPos,
+	public static Result update(ServerLevel world, TrackNetwork network, RailVehicleEntity leader, TrackPos leaderPos,
 								List<Car> cars, double speed, float handle, double brakeDecel, double maxSpeed, double capSpeed,
 								boolean override) {
 		if (leaderPos == null || network.segment(leaderPos.segmentId()) == null) {
 			return Result.NONE;
 		}
-		long now = world.getTime();
+		long now = world.getGameTime();
 		OperationState state = OperationState.get(world);
 		RailwayConfig config = RailwayConfig.get();
 
@@ -134,7 +133,7 @@ public final class TrainOperation {
 				max = Math.max(max, e);
 			}
 			hasCab |= car.entity().hasDriverSeat();
-			members.add(car.entity().getUuid());
+			members.add(car.entity().getUUID());
 		}
 		double v = Math.abs(speed);
 		int manualSigma = speed > MOVING ? 1 : speed < -MOVING ? -1 : handle > 0f ? 1 : handle < 0f ? -1 : 0;
@@ -147,7 +146,7 @@ public final class TrainOperation {
 		if (ato != null && override) {
 			ato.enabled = false;
 			ato.display = AtoState.Display.OFF;
-			notifyDrivers(world, cars, Text.translatable("message.railwayvehicleaddon.ato.manual"), false);
+			notifyDrivers(world, cars, Component.translatable("message.railwayvehicleaddon.ato.manual"), false);
 			ato = null;
 		}
 		int atoLeaderDir = ato != null && controllerCar != null ? ato.dir * controllerCar.sign() : 0;
@@ -161,7 +160,7 @@ public final class TrainOperation {
 		int travel = sigma != 0 ? sigma : leader.getLastTravelSign();
 
 		// 1. 在線範囲(編成の後端から前端まで、線路に沿って)
-		OperationState.Consist consist = new OperationState.Consist(leader.getUuid(), members, controller, now);
+		OperationState.Consist consist = new OperationState.Consist(leader.getUUID(), members, controller, now);
 		List<OperationState.Span> spans = new ArrayList<>();
 		final int spanTravel = travel;
 		TrackPos start = network.walk(leaderPos, min).pos();
@@ -175,7 +174,7 @@ public final class TrainOperation {
 		// 2. 速度制限(編成の今の制限)
 		TrackPos front = network.walk(leaderPos, travel > 0 ? max : min).pos();
 		int frontDir = front.facing() * travel;
-		OperationState.SpeedLimitState limit = updateSpeedLimit(state, network, leader.getUuid(), spans, front, frontDir, travel, now);
+		OperationState.SpeedLimitState limit = updateSpeedLimit(state, network, leader.getUUID(), spans, front, frontDir, travel, now);
 
 		Timetable.Stop next = controller == null ? null : controller.nextStop();
 		if (ato == null && next != null && markerWithin(state, spans, next, now)) {
@@ -191,7 +190,7 @@ public final class TrainOperation {
 			} else if (markerWithin(state, spans, next, now) && !next.pass()) {
 				arrive(world, ato, next, now, cars);
 			} else {
-				int dir = departureDirection(world, network, state, leaderPos, min, max, next, controller.getUuid(), now);
+				int dir = departureDirection(world, network, state, leaderPos, min, max, next, controller.getUUID(), now);
 				if (dir == 0) {
 					ato.phase = AtoState.Phase.NO_ROUTE;
 					ato.dwellUntil = now + 40L;
@@ -213,11 +212,11 @@ public final class TrainOperation {
 
 		boolean routing = next != null;
 		boolean ats = hasCab && config.ats_enabled;
-		if (controller != null && controller.isManaged() && (now + (leader.getUuid().hashCode() & 0xF)) % CHUNK_INTERVAL == 0) {
-			state.setLoadChunks(leader.getUuid(), chunksFor(network, spans, front, frontDir, v, brakeDecel));
+		if (controller != null && controller.isManaged() && (now + (leader.getUUID().hashCode() & 0xF)) % CHUNK_INTERVAL == 0) {
+			state.setLoadChunks(leader.getUUID(), chunksFor(network, spans, front, frontDir, v, brakeDecel));
 		}
 		if (sigma == 0 || (!routing && !ats && ato == null)) {
-			state.setAtsLatched(leader.getUuid(), false);
+			state.setAtsLatched(leader.getUUID(), false);
 			if (ato != null) {
 				updateDisplay(ato, cars, AtoState.Display.HELD, ato.phase, limit, -1.0);
 				return new Result(true, 0f, 1.0, false);
@@ -234,7 +233,7 @@ public final class TrainOperation {
 		}
 		Scan result = new Scan();
 		final Timetable.Stop target = next;
-		final UUID holder = controller == null ? null : controller.getUuid();
+		final UUID holder = controller == null ? null : controller.getUUID();
 		final boolean atoActive = ato != null;
 		network.traverse(front.segmentId(), front.s(), frontDir, scan, new TrackNetwork.PathVisitor() {
 			@Override
@@ -313,9 +312,9 @@ public final class TrainOperation {
 
 		// 4. ATS: 先読みの範囲の信号機・速度制限すべてについて、許容速度を求め、どれかを超えていればブレーキを掛ける
 		//    (手前の信号機が進行でも、その先の停止の信号機に対して止まれる速さかを見る)
-		boolean latched = state.atsLatched(leader.getUuid());
+		boolean latched = state.atsLatched(leader.getUUID());
 		boolean engage = false;
-		Text reason = null;
+		Component reason = null;
 		double strictest = Double.MAX_VALUE;
 		List<SignalState> signals = readSignals(world, result.signals);
 		if (ats) {
@@ -351,9 +350,9 @@ public final class TrainOperation {
 					engage = true;
 					if (allow < strictest) {
 						strictest = allow;
-						reason = c[2] == 0 ? Text.translatable("message.railwayvehicleaddon.ats.stop")
-								: c[2] == 1 ? Text.translatable("message.railwayvehicleaddon.ats.caution", Math.round(config.ats_caution_speed_kmh))
-								: Text.translatable("message.railwayvehicleaddon.ats.limit", Math.round(vt / Ato.KMH));
+						reason = c[2] == 0 ? Component.translatable("message.railwayvehicleaddon.ats.stop")
+								: c[2] == 1 ? Component.translatable("message.railwayvehicleaddon.ats.caution", Math.round(config.ats_caution_speed_kmh))
+								: Component.translatable("message.railwayvehicleaddon.ats.limit", Math.round(vt / Ato.KMH));
 					}
 				}
 			}
@@ -361,13 +360,13 @@ public final class TrainOperation {
 					&& limit.current + LIMIT_TOLERANCE < strictest) {
 				engage = true;
 				strictest = limit.current + LIMIT_TOLERANCE;
-				reason = Text.translatable("message.railwayvehicleaddon.ats.limit", Math.round(limit.current / Ato.KMH));
+				reason = Component.translatable("message.railwayvehicleaddon.ats.limit", Math.round(limit.current / Ato.KMH));
 			}
 		}
 		if (engage && !latched && reason != null) {
 			notifyDrivers(world, cars, reason, true);
 		}
-		state.setAtsLatched(leader.getUuid(), engage);
+		state.setAtsLatched(leader.getUUID(), engage);
 
 		// 5. ATO
 		if (ato != null) {
@@ -379,7 +378,7 @@ public final class TrainOperation {
 
 	// ------------------------------------------------------------------ ATO
 
-	private static Result runAto(ServerWorld world, AtoState ato, RailVehicleEntity controller, List<Car> cars,
+	private static Result runAto(ServerLevel world, AtoState ato, RailVehicleEntity controller, List<Car> cars,
 								 OperationState state, List<OperationState.Span> spans, Timetable.Stop next, Scan scan,
 								 List<SignalState> signals, boolean trackEnds, OperationState.SpeedLimitState limit, double v,
 								 double brakeDecel, double maxSpeed, double capSpeed, int leaderDir, boolean atsEngaged,
@@ -402,7 +401,7 @@ public final class TrainOperation {
 				if (now >= ato.dwellUntil) {
 					Timetable.Stop at = controller.nextStop();
 					if (at != null && at.departTime() >= 0) {
-						int minutes = Timetable.minutesOfDay(world.getTimeOfDay());
+						int minutes = Timetable.minutesOfDay(world.getDayTime());
 						int late = Math.floorMod(minutes - at.departTime(), 1440);
 						if (late >= DEPART_WINDOW_MINUTES) {
 							ato.phase = AtoState.Phase.WAIT_DEPART;
@@ -479,17 +478,17 @@ public final class TrainOperation {
 	}
 
 	/** 停車駅に着いた: 停車時間を数え始める。 */
-	private static void arrive(ServerWorld world, AtoState ato, Timetable.Stop stop, long now, List<Car> cars) {
+	private static void arrive(ServerLevel world, AtoState ato, Timetable.Stop stop, long now, List<Car> cars) {
 		ato.phase = AtoState.Phase.DWELL;
 		ato.dwellUntil = now + Math.max(0, stop.dwell()) * 20L;
-		notifyDrivers(world, cars, Text.translatable("message.railwayvehicleaddon.ato.arrived", stop.describe(), stop.dwell()), false);
+		notifyDrivers(world, cars, Component.translatable("message.railwayvehicleaddon.ato.arrived", stop.describe(), stop.dwell()), false);
 	}
 
 	/**
 	 * 発車の向き(leaderの前方なら+1)。編成の前端から前へ、後端から後ろへ、次の駅の停止位置目標までの道のりを比べ、
 	 * 短い方にする。どちらからも着けなければ0。
 	 */
-	private static int departureDirection(ServerWorld world, TrackNetwork network, OperationState state, TrackPos leaderPos,
+	private static int departureDirection(ServerLevel world, TrackNetwork network, OperationState state, TrackPos leaderPos,
 										  double min, double max, Timetable.Stop next, UUID holder, long now) {
 		Map<Long, List<Double>> targets = RouteFinder.targetsFor(state, network, next, now);
 		if (targets.isEmpty()) {
@@ -658,15 +657,15 @@ public final class TrainOperation {
 	private record SignalState(double distance, int aspect) {
 	}
 
-	private static List<SignalState> readSignals(ServerWorld world, List<SignalAhead> ahead) {
+	private static List<SignalState> readSignals(ServerLevel world, List<SignalAhead> ahead) {
 		List<SignalState> result = new ArrayList<>(ahead.size());
 		for (SignalAhead a : ahead) {
-			if (!world.isChunkLoaded(a.pos())) {
+			if (!world.hasChunkAt(a.pos())) {
 				continue;
 			}
 			BlockState signal = world.getBlockState(a.pos());
 			if (signal.getBlock() instanceof SignalBlock) {
-				result.add(new SignalState(a.distance(), signal.get(SignalBlock.ASPECT)));
+				result.add(new SignalState(a.distance(), signal.getValue(SignalBlock.ASPECT)));
 			}
 		}
 		return result;
@@ -739,22 +738,22 @@ public final class TrainOperation {
 	private static void advance(RailVehicleEntity controller, List<Car> cars) {
 		controller.advanceStop();
 		Timetable.Stop next = controller.nextStop();
-		Text text = next == null ? Text.translatable("message.railwayvehicleaddon.timetable.finished")
-				: Text.translatable("message.railwayvehicleaddon.timetable.next", next.describe());
+		Component text = next == null ? Component.translatable("message.railwayvehicleaddon.timetable.finished")
+				: Component.translatable("message.railwayvehicleaddon.timetable.next", next.describe());
 		for (Car car : cars) {
-			if (car.entity().drivingPlayer() instanceof ServerPlayerEntity player) {
-				player.sendMessage(text, true);
+			if (car.entity().drivingPlayer() instanceof ServerPlayer player) {
+				player.displayClientMessage(text, true);
 			}
 		}
 	}
 
-	private static void notifyDrivers(ServerWorld world, List<Car> cars, Text reason, boolean bell) {
+	private static void notifyDrivers(ServerLevel world, List<Car> cars, Component reason, boolean bell) {
 		for (Car car : cars) {
-			PlayerEntity driver = car.entity().drivingPlayer();
-			if (driver instanceof ServerPlayerEntity player) {
-				player.sendMessage(reason, true);
+			Player driver = car.entity().drivingPlayer();
+			if (driver instanceof ServerPlayer player) {
+				player.displayClientMessage(reason, true);
 				if (bell) {
-					world.playSound(null, player.getBlockPos(), SoundEvents.BLOCK_NOTE_BLOCK_BELL.value(), SoundCategory.PLAYERS, 1.0f, 2.0f);
+					world.playSound(null, player.blockPosition(), SoundEvents.NOTE_BLOCK_BELL.value(), SoundSource.PLAYERS, 1.0f, 2.0f);
 				}
 			}
 		}

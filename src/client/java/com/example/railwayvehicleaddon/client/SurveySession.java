@@ -29,16 +29,15 @@ import com.example.railwayvehicleaddon.track.TrackSegment;
 import com.example.railwayvehicleaddon.track.feature.MovingDeckFeature;
 import com.example.railwayvehicleaddon.track.feature.TrackFeature;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.block.Block;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
-
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.util.Mth;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -184,13 +183,13 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 	}
 
 	/** 視線の先の線路装置(転てつてこ等、変電所を含む。無ければnull)。 */
-	public static BlockPos lookedAtDevice(ClientPlayerEntity player) {
-		HitResult hit = player.raycast(DEVICE_REACH, 1.0f, false);
-		if (hit.getType() != HitResult.Type.BLOCK || player.getEntityWorld() == null) {
+	public static BlockPos lookedAtDevice(LocalPlayer player) {
+		HitResult hit = player.pick(DEVICE_REACH, 1.0f, false);
+		if (hit.getType() != HitResult.Type.BLOCK || player.level() == null) {
 			return null;
 		}
 		BlockPos pos = ((BlockHitResult) hit).getBlockPos();
-		return player.getEntityWorld().getBlockEntity(pos) instanceof TrackLinkable ? pos : null;
+		return player.level().getBlockEntity(pos) instanceof TrackLinkable ? pos : null;
 	}
 
 	public Set<Long> removeFeatureSelection() {
@@ -216,10 +215,10 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 	/** 架線の高さを0.5ブロック上げ下げする(既定: ↑・↓)。 */
 	public void adjustWireHeight(int direction) {
 		float h = Math.round(effectiveWireHeight() / WIRE_STEP) * WIRE_STEP + direction * WIRE_STEP;
-		this.wireHeight = MathHelper.clamp(h, WIRE_MIN, WIRE_MAX);
+		this.wireHeight = Mth.clamp(h, WIRE_MIN, WIRE_MAX);
 		this.dirty = true;
 		this.statusTimer = 0;
-		notify(Text.translatable("message.railwayvehicleaddon.survey.wire_height", String.format("%.1f", this.wireHeight)));
+		notify(Component.translatable("message.railwayvehicleaddon.survey.wire_height", String.format("%.1f", this.wireHeight)));
 	}
 
 	/** 曲線半径のしきい値を5ブロック刻みで上げ下げする(既定: →・←)。設定の min_curve_radius は下回れない。 */
@@ -228,10 +227,10 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		float r = effectiveMinRadius();
 		float next = direction > 0 ? (float) (Math.floor(r / RADIUS_STEP) + 1) * RADIUS_STEP
 				: (float) (Math.ceil(r / RADIUS_STEP) - 1) * RADIUS_STEP;
-		this.minRadius = MathHelper.clamp(next, floor, RADIUS_MAX);
+		this.minRadius = Mth.clamp(next, floor, RADIUS_MAX);
 		this.dirty = true;
 		this.statusTimer = 0;
-		notify(Text.translatable("message.railwayvehicleaddon.survey.min_radius", String.format("%.0f", this.minRadius)));
+		notify(Component.translatable("message.railwayvehicleaddon.survey.min_radius", String.format("%.0f", this.minRadius)));
 	}
 
 	/** 架線の高さと曲線半径のしきい値を、設定の既定値に戻す(既定: R)。 */
@@ -240,14 +239,14 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		this.minRadius = -1f;
 		this.dirty = true;
 		this.statusTimer = 0;
-		notify(Text.translatable("message.railwayvehicleaddon.survey.placement_reset",
+		notify(Component.translatable("message.railwayvehicleaddon.survey.placement_reset",
 				String.format("%.1f", effectiveWireHeight()), String.format("%.0f", effectiveMinRadius())));
 	}
 
-	private static void notify(Text text) {
-		ClientPlayerEntity player = MinecraftClient.getInstance().player;
+	private static void notify(Component text) {
+		LocalPlayer player = Minecraft.getInstance().player;
 		if (player != null) {
-			player.sendMessage(text, true);
+			player.displayClientMessage(text, true);
 		}
 	}
 
@@ -256,17 +255,17 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		this.electrification = this.electrification.next();
 		this.dirty = true;
 		this.statusTimer = 0;
-		ClientPlayerEntity player = MinecraftClient.getInstance().player;
+		LocalPlayer player = Minecraft.getInstance().player;
 		if (player != null) {
-			player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.electrification_changed",
-					Text.translatable("message.railwayvehicleaddon.electrification."
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.survey.electrification_changed",
+					Component.translatable("message.railwayvehicleaddon.electrification."
 							+ this.electrification.name().toLowerCase(java.util.Locale.ROOT))), true);
 		}
 	}
 
 	/** 強制置換が実際に効くか(有効化していて、かつクリエイティブ)。 */
 	public boolean effectiveForce() {
-		ClientPlayerEntity player = MinecraftClient.getInstance().player;
+		LocalPlayer player = Minecraft.getInstance().player;
 		return this.forceReplace && player != null && player.isCreative();
 	}
 
@@ -274,17 +273,17 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		return this.params.getOrDefault(this.mode.id(), this.mode.defaultParam());
 	}
 
-	public static boolean isHoldingTool(ClientPlayerEntity player) {
-		return player != null && player.getMainHandStack().isOf(ModItems.SURVEY_TOOL);
+	public static boolean isHoldingTool(LocalPlayer player) {
+		return player != null && player.getMainHandItem().is(ModItems.SURVEY_TOOL);
 	}
 
 	// ------------------------------------------------------------------ 右クリック
 
 	@Override
 	public void onUse(boolean sneaking) {
-		MinecraftClient client = MinecraftClient.getInstance();
-		ClientPlayerEntity player = client.player;
-		if (player == null || client.world == null) {
+		Minecraft client = Minecraft.getInstance();
+		LocalPlayer player = client.player;
+		if (player == null || client.level == null) {
 			return;
 		}
 		if (this.mode == SurveyModes.LINK) {
@@ -325,12 +324,12 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 			ClientPlayNetworking.send(new ToggleSwitchPayload(this.targetSwitch));
 			return;
 		}
-		HitResult hit = player.raycast(PLACE_REACH, 1.0f, true);
+		HitResult hit = player.pick(PLACE_REACH, 1.0f, true);
 		if (hit.getType() != HitResult.Type.BLOCK) {
 			return;
 		}
 		BlockPos block = ((BlockHitResult) hit).getBlockPos();
-		Vec3d pos = new Vec3d(block.getX() + 0.5, block.getY() + 1.0, block.getZ() + 0.5);
+		Vec3 pos = new Vec3(block.getX() + 0.5, block.getY() + 1.0, block.getZ() + 0.5);
 
 		if (this.selection.size() == 1) {
 			movePoint(player, this.selection.get(0), pos);
@@ -341,7 +340,7 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		}
 	}
 
-	private void useLinkMode(ClientPlayerEntity player, boolean sneaking) {
+	private void useLinkMode(LocalPlayer player, boolean sneaking) {
 		if (sneaking) {
 			this.linkDevice = null;
 			return;
@@ -349,20 +348,20 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		BlockPos device = lookedAtDevice(player);
 		if (device != null) {
 			this.linkDevice = device;
-			Block block = player.getEntityWorld().getBlockState(device).getBlock();
-			player.sendMessage(Text.translatable("message.railwayvehicleaddon.device.selected", block.getName()), true);
+			Block block = player.level().getBlockState(device).getBlock();
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.device.selected", block.getName()), true);
 			return;
 		}
 		if (this.linkDevice == null) {
 			return;
 		}
-		if (!(player.getEntityWorld().getBlockEntity(this.linkDevice) instanceof TrackLinkable entity)) {
+		if (!(player.level().getBlockEntity(this.linkDevice) instanceof TrackLinkable entity)) {
 			this.linkDevice = null;
 			return;
 		}
 		long target = linkTargetFor(entity.linkTarget());
 		if (target < 0) {
-			player.sendMessage(Text.translatable("message.railwayvehicleaddon.device.aim_target."
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.device.aim_target."
 					+ entity.linkTarget().name().toLowerCase(java.util.Locale.ROOT)), true);
 			return;
 		}
@@ -379,12 +378,12 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 	}
 
 	/** 既存線路の端へ接続する点にするか判定する(接続できなければ位置そのままの点)。 */
-	private SurveyPoint makePoint(Vec3d pos, int index, int count) {
+	private SurveyPoint makePoint(Vec3 pos, int index, int count) {
 		TrackNetwork network = ClientTrackData.network();
 		if (this.mode.allowsSnap(index, count)) {
 			TrackNode snap = network.findDeadEndNear(pos.x, pos.y, pos.z, TrackManager.SNAP_RADIUS, TrackManager.SNAP_RADIUS);
 			if (snap != null) {
-				return new SurveyPoint(new Vec3d(snap.x(), snap.y(), snap.z()), snap.id());
+				return new SurveyPoint(new Vec3(snap.x(), snap.y(), snap.z()), snap.id());
 			}
 		}
 		if (this.mode.allowsTrackSnap(index)) {
@@ -396,41 +395,41 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 					TrackNode node = network.node(nodeId);
 					if (node != null && !network.isReserved(nodeId)
 							&& Math.hypot(node.x() - nearest.point().x(), node.z() - nearest.point().z()) < TrackManager.SNAP_RADIUS) {
-						return new SurveyPoint(new Vec3d(node.x(), node.y(), node.z()), nodeId);
+						return new SurveyPoint(new Vec3(node.x(), node.y(), node.z()), nodeId);
 					}
 				}
 				if (network.featureOfSegment(nearest.segmentId()) == null) {
 					TrackPoint p = nearest.point();
-					return new SurveyPoint(new Vec3d(p.x(), p.y(), p.z()), -1L, nearest.segmentId(), nearest.s());
+					return new SurveyPoint(new Vec3(p.x(), p.y(), p.z()), -1L, nearest.segmentId(), nearest.s());
 				}
 			}
 		}
 		return new SurveyPoint(pos, -1L);
 	}
 
-	private void appendPoint(ClientPlayerEntity player, Vec3d pos) {
+	private void appendPoint(LocalPlayer player, Vec3 pos) {
 		RailwayConfig.Values config = ClientTrackData.config();
 		if (this.closed) {
-			player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.already_closed"), true);
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.survey.already_closed"), true);
 			return;
 		}
 		if (this.points.size() >= config.maxWaypoints()) {
-			player.sendMessage(Text.translatable("message.railwayvehicleaddon.issue.too_many_waypoints", config.maxWaypoints()), true);
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.issue.too_many_waypoints", config.maxWaypoints()), true);
 			return;
 		}
 		// 最初の点を狙った → 環状に閉じる
 		if (this.mode.supportsClose() && this.points.size() >= 3) {
-			Vec3d first = this.points.get(0).pos();
+			Vec3 first = this.points.get(0).pos();
 			if (Math.hypot(first.x - pos.x, first.z - pos.z) <= TrackManager.SNAP_RADIUS && Math.abs(first.y - pos.y) <= TrackManager.SNAP_RADIUS) {
 				this.closed = true;
 				this.dirty = true;
-				player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.closed"), true);
+				player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.survey.closed"), true);
 				return;
 			}
 		}
 		// 新規生成モードでは、終点を既存線路に接続したらそれ以上は伸ばせない
 		if (this.mode.supportsInsert() && this.points.size() >= 2 && this.points.get(this.points.size() - 1).snapped()) {
-			player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.end_already_snapped"), true);
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.survey.end_already_snapped"), true);
 			return;
 		}
 		SurveyPoint point = makePoint(pos, this.points.size(), this.points.size());
@@ -438,10 +437,10 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		this.dirty = true;
 		String key = point.snapped() ? "message.railwayvehicleaddon.survey.snapped"
 				: point.onTrack() ? "message.railwayvehicleaddon.survey.on_track" : "message.railwayvehicleaddon.survey.added";
-		player.sendMessage(Text.translatable(key, this.points.size()), true);
+		player.displayClientMessage(Component.translatable(key, this.points.size()), true);
 	}
 
-	private void movePoint(ClientPlayerEntity player, int index, Vec3d pos) {
+	private void movePoint(LocalPlayer player, int index, Vec3 pos) {
 		if (index < 0 || index >= this.points.size()) {
 			this.selection.clear();
 			return;
@@ -449,16 +448,16 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		this.points.set(index, makePoint(pos, index, this.points.size()));
 		this.selection.clear();
 		this.dirty = true;
-		player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.moved", index + 1), true);
+		player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.survey.moved", index + 1), true);
 	}
 
-	private void insertPoint(ClientPlayerEntity player, Vec3d pos) {
+	private void insertPoint(LocalPlayer player, Vec3 pos) {
 		int a = Math.min(this.selection.get(0), this.selection.get(1));
 		int b = Math.max(this.selection.get(0), this.selection.get(1));
 		int n = this.points.size();
 		boolean adjacent = b - a == 1 || (this.closed && a == 0 && b == n - 1);
 		if (!this.mode.supportsInsert() || !adjacent) {
-			player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.insert_invalid"), true);
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.survey.insert_invalid"), true);
 			return;
 		}
 		// 環状線で最後と最初の点の間なら末尾に挿入する
@@ -466,10 +465,10 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		this.points.add(at, new SurveyPoint(pos, -1L));
 		this.selection.clear();
 		this.dirty = true;
-		player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.inserted", at + 1), true);
+		player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.survey.inserted", at + 1), true);
 	}
 
-	private void undo(ClientPlayerEntity player) {
+	private void undo(LocalPlayer player) {
 		if (this.closed) {
 			this.closed = false;
 		} else if (!this.points.isEmpty()) {
@@ -478,14 +477,14 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 			return;
 		}
 		this.dirty = true;
-		player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.undone", this.points.size()), true);
+		player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.survey.undone", this.points.size()), true);
 	}
 
 	// ------------------------------------------------------------------ キー操作
 
 	/** 削除キー: 狙っている点、無ければ選択中の点を消す。 */
 	public void deletePoints() {
-		ClientPlayerEntity player = MinecraftClient.getInstance().player;
+		LocalPlayer player = Minecraft.getInstance().player;
 		List<Integer> targets = new ArrayList<>();
 		if (this.targetPoint >= 0) {
 			targets.add(this.targetPoint);
@@ -507,7 +506,7 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		this.selection.clear();
 		this.dirty = true;
 		if (player != null) {
-			player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.deleted", this.points.size()), true);
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.survey.deleted", this.points.size()), true);
 		}
 	}
 
@@ -525,37 +524,37 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 	public void cycleMode(int step) {
 		clear();
 		this.mode = SurveyModes.next(this.mode, step);
-		ClientPlayerEntity player = MinecraftClient.getInstance().player;
+		LocalPlayer player = Minecraft.getInstance().player;
 		if (player != null) {
-			player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.mode_changed",
-					Text.translatable("message.railwayvehicleaddon.mode." + this.mode.id())), true);
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.survey.mode_changed",
+					Component.translatable("message.railwayvehicleaddon.mode." + this.mode.id())), true);
 		}
 	}
 
 	public void cycleBallast() {
 		this.ballast = this.ballast.next();
 		this.statusTimer = 0;
-		ClientPlayerEntity player = MinecraftClient.getInstance().player;
+		LocalPlayer player = Minecraft.getInstance().player;
 		if (player != null) {
-			player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.ballast_changed",
-					Text.translatable("message.railwayvehicleaddon.ballast." + this.ballast.name().toLowerCase(java.util.Locale.ROOT))), true);
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.survey.ballast_changed",
+					Component.translatable("message.railwayvehicleaddon.ballast." + this.ballast.name().toLowerCase(java.util.Locale.ROOT))), true);
 		}
 	}
 
 	public void toggleForce() {
-		ClientPlayerEntity player = MinecraftClient.getInstance().player;
+		LocalPlayer player = Minecraft.getInstance().player;
 		if (player == null) {
 			return;
 		}
 		if (!player.isCreative()) {
 			this.forceReplace = false;
-			player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.force_creative_only"), true);
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.survey.force_creative_only"), true);
 			return;
 		}
 		this.forceReplace = !this.forceReplace;
 		this.dirty = true;
 		this.statusTimer = 0;
-		player.sendMessage(Text.translatable(this.forceReplace
+		player.displayClientMessage(Component.translatable(this.forceReplace
 				? "message.railwayvehicleaddon.survey.force_on" : "message.railwayvehicleaddon.survey.force_off"), true);
 	}
 
@@ -582,7 +581,7 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 	}
 
 	public void confirm() {
-		ClientPlayerEntity player = MinecraftClient.getInstance().player;
+		LocalPlayer player = Minecraft.getInstance().player;
 		if (player == null) {
 			return;
 		}
@@ -603,12 +602,12 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 			return;
 		}
 		if (this.points.size() < this.mode.minPoints()) {
-			player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.need_points", this.mode.minPoints()), true);
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.survey.need_points", this.mode.minPoints()), true);
 			return;
 		}
 		recompute();
 		if (this.preview == null || !this.preview.canPlace()) {
-			player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.cannot_place"), true);
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.survey.cannot_place"), true);
 			return;
 		}
 		// 点は結果(PlaceResultPayload)を受け取ってから消す
@@ -622,9 +621,9 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 
 	// ------------------------------------------------------------------ 毎tick
 
-	public void tick(MinecraftClient client) {
-		ClientPlayerEntity player = client.player;
-		if (player == null || client.world == null) {
+	public void tick(Minecraft client) {
+		LocalPlayer player = client.player;
+		if (player == null || client.level == null) {
 			return;
 		}
 		if (!isHoldingTool(player)) {
@@ -653,8 +652,8 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 			recompute();
 		}
 
-		Vec3d eye = player.getCameraPosVec(1.0f);
-		Vec3d look = player.getRotationVec(1.0f);
+		Vec3 eye = player.getEyePosition(1.0f);
+		Vec3 look = player.getViewVector(1.0f);
 		boolean link = this.mode == SurveyModes.LINK;
 		boolean remove = this.mode == SurveyModes.REMOVE;
 		this.targetPoint = this.mode.placesTrack() ? findTargetPoint(eye, look) : -1;
@@ -664,7 +663,7 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		if (this.targetFeature >= 0 && remove) {
 			this.targetSegment = -1L;
 		}
-		if (link && this.linkDevice != null && player.getEntityWorld().getBlockEntity(this.linkDevice) instanceof TrackLinkable linkable) {
+		if (link && this.linkDevice != null && player.level().getBlockEntity(this.linkDevice) instanceof TrackLinkable linkable) {
 			// 選んだ装置が連結できる種類の対象だけを狙う
 			DeviceKind.TargetType type = linkable.linkTarget();
 			if (type != DeviceKind.TargetType.SWITCH) {
@@ -687,8 +686,8 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 	private void recompute() {
 		this.dirty = false;
 		this.rescanTimer = RESCAN_INTERVAL;
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (!this.mode.placesTrack() || this.points.isEmpty() || client.world == null) {
+		Minecraft client = Minecraft.getInstance();
+		if (!this.mode.placesTrack() || this.points.isEmpty() || client.level == null) {
 			this.preview = null;
 			return;
 		}
@@ -700,80 +699,80 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		for (LayoutPlan.FeatureSpec spec : plan.features()) {
 			extra.addAll(spec.clearance(config));
 		}
-		ClearanceScanner.ScanResult scan = ClearanceScanner.scan(client.world, segments, extra, config, true);
+		ClearanceScanner.ScanResult scan = ClearanceScanner.scan(client.level, segments, extra, config, true);
 		this.preview = new Preview(plan, segments, scan, effectiveForce());
 	}
 
-	private void showStatus(ClientPlayerEntity player) {
-		Text modeName = Text.translatable("message.railwayvehicleaddon.mode." + this.mode.id());
+	private void showStatus(LocalPlayer player) {
+		Component modeName = Component.translatable("message.railwayvehicleaddon.mode." + this.mode.id());
 		if (this.mode == SurveyModes.LINK) {
-			player.sendMessage(Text.translatable(this.linkDevice == null
+			player.displayClientMessage(Component.translatable(this.linkDevice == null
 					? "message.railwayvehicleaddon.survey.status_link" : "message.railwayvehicleaddon.survey.status_link_selected", modeName), true);
 			return;
 		}
 		if (this.mode == SurveyModes.ELECTRIFY) {
-			Text typeName = Text.translatable("message.railwayvehicleaddon.electrification."
+			Component typeName = Component.translatable("message.railwayvehicleaddon.electrification."
 					+ this.electrification.name().toLowerCase(java.util.Locale.ROOT));
-			player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.status_electrify", modeName, typeName,
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.survey.status_electrify", modeName, typeName,
 					this.removeSelection.size()), true);
 			return;
 		}
 		if (!this.mode.placesTrack()) {
-			player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.status_remove", modeName,
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.survey.status_remove", modeName,
 					this.removeSelection.size(), this.removeFeatureSelection.size()), true);
 			return;
 		}
-		Text paramText = Text.empty();
+		Component paramText = Component.empty();
 		if (this.mode.maxParam() > this.mode.minParam()) {
-			paramText = paramText.copy().append(Text.translatable("message.railwayvehicleaddon.param." + this.mode.id(), this.mode.paramLabel(param())));
+			paramText = paramText.copy().append(Component.translatable("message.railwayvehicleaddon.param." + this.mode.id(), this.mode.paramLabel(param())));
 		}
-		paramText = paramText.copy().append(Text.translatable("message.railwayvehicleaddon.survey.tag_ballast",
-				Text.translatable("message.railwayvehicleaddon.ballast." + this.ballast.name().toLowerCase(java.util.Locale.ROOT))));
-		paramText = paramText.copy().append(Text.translatable("message.railwayvehicleaddon.survey.tag_radius", String.format("%.0f", effectiveMinRadius())));
+		paramText = paramText.copy().append(Component.translatable("message.railwayvehicleaddon.survey.tag_ballast",
+				Component.translatable("message.railwayvehicleaddon.ballast." + this.ballast.name().toLowerCase(java.util.Locale.ROOT))));
+		paramText = paramText.copy().append(Component.translatable("message.railwayvehicleaddon.survey.tag_radius", String.format("%.0f", effectiveMinRadius())));
 		if (this.electrification == ElectrificationType.OVERHEAD) {
-			paramText = paramText.copy().append(Text.translatable("message.railwayvehicleaddon.survey.tag_wire", String.format("%.1f", effectiveWireHeight())));
+			paramText = paramText.copy().append(Component.translatable("message.railwayvehicleaddon.survey.tag_wire", String.format("%.1f", effectiveWireHeight())));
 		}
 		if (this.electrification != ElectrificationType.NONE) {
-			paramText = paramText.copy().append(Text.translatable("message.railwayvehicleaddon.survey.tag_electrify",
-					Text.translatable("message.railwayvehicleaddon.electrification."
+			paramText = paramText.copy().append(Component.translatable("message.railwayvehicleaddon.survey.tag_electrify",
+					Component.translatable("message.railwayvehicleaddon.electrification."
 							+ this.electrification.name().toLowerCase(java.util.Locale.ROOT))));
 		}
 		if (effectiveForce()) {
-			paramText = paramText.copy().append(Text.translatable("message.railwayvehicleaddon.survey.tag_force"));
+			paramText = paramText.copy().append(Component.translatable("message.railwayvehicleaddon.survey.tag_force"));
 		}
 		Preview p = this.preview;
-		Text detail;
+		Component detail;
 		if (p == null) {
-			detail = Text.translatable("message.railwayvehicleaddon.survey.hint." + this.mode.id());
+			detail = Component.translatable("message.railwayvehicleaddon.survey.hint." + this.mode.id());
 		} else if (!p.plan().issues().isEmpty()) {
 			RoutePlanner.Issue issue = p.plan().issues().get(0);
-			detail = Text.translatable("message.railwayvehicleaddon.issue." + issue.key(), issue.formattedValue());
+			detail = Component.translatable("message.railwayvehicleaddon.issue." + issue.key(), issue.formattedValue());
 		} else if (p.segments().isEmpty() && p.plan().features().isEmpty()) {
-			detail = Text.translatable("message.railwayvehicleaddon.survey.hint." + this.mode.id());
+			detail = Component.translatable("message.railwayvehicleaddon.survey.hint." + this.mode.id());
 		} else if (p.scan().hasBlocking() && !p.scan().hasBlocking(p.force())) {
 			// 強制置換で、本来撤去できないブロックも撤去する
 			ClearanceScanner.ScanResult scan = p.scan();
-			detail = Text.translatable("message.railwayvehicleaddon.survey.status_force",
+			detail = Component.translatable("message.railwayvehicleaddon.survey.status_force",
 					String.format("%.1f", p.plan().totalLength()), scan.count(BlockCategory.BLOCKED_FLUID), scan.count(BlockCategory.BLOCKED_HARD));
 		} else if (p.scan().hasBlocking()) {
 			ClearanceScanner.ScanResult scan = p.scan();
-			detail = Text.translatable("message.railwayvehicleaddon.survey.status_blocked",
+			detail = Component.translatable("message.railwayvehicleaddon.survey.status_blocked",
 					scan.count(BlockCategory.BLOCKED_FLUID), scan.count(BlockCategory.BLOCKED_HARD),
 					scan.count(BlockCategory.UNLOADED));
 		} else {
 			ClearanceScanner.ScanResult scan = p.scan();
 			String key = scan.count(BlockCategory.PLAYER_PLACED) > 0
 					? "message.railwayvehicleaddon.survey.status_warn" : "message.railwayvehicleaddon.survey.status_ok";
-			detail = Text.translatable(key, String.format("%.1f", p.plan().totalLength()),
+			detail = Component.translatable(key, String.format("%.1f", p.plan().totalLength()),
 					scan.count(BlockCategory.NATURAL), scan.count(BlockCategory.PLAYER_PLACED));
 		}
-		player.sendMessage(Text.translatable("message.railwayvehicleaddon.survey.status_mode", modeName, paramText, detail), true);
+		player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.survey.status_mode", modeName, paramText, detail), true);
 	}
 
 	// ------------------------------------------------------------------ 視線判定
 
 	/** 視線上の点の距離(視線からの距離がtolerance以内のとき)。外れていれば-1。 */
-	private static double rayDistance(Vec3d eye, Vec3d look, double x, double y, double z, double tolerance, double reach) {
+	private static double rayDistance(Vec3 eye, Vec3 look, double x, double y, double z, double tolerance, double reach) {
 		double dx = x - eye.x;
 		double dy = y - eye.y;
 		double dz = z - eye.z;
@@ -785,11 +784,11 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		return perpSq <= tolerance * tolerance ? along : -1.0;
 	}
 
-	private int findTargetPoint(Vec3d eye, Vec3d look) {
+	private int findTargetPoint(Vec3 eye, Vec3 look) {
 		int best = -1;
 		double bestAlong = Double.MAX_VALUE;
 		for (int i = 0; i < this.points.size(); i++) {
-			Vec3d p = this.points.get(i).pos();
+			Vec3 p = this.points.get(i).pos();
 			double along = rayDistance(eye, look, p.x, p.y + 0.25, p.z, POINT_TOLERANCE, TARGET_REACH);
 			if (along >= 0.0 && along < bestAlong) {
 				bestAlong = along;
@@ -799,7 +798,7 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		return best;
 	}
 
-	private static long findTargetSwitch(TrackNetwork network, Vec3d eye, Vec3d look) {
+	private static long findTargetSwitch(TrackNetwork network, Vec3 eye, Vec3 look) {
 		long best = -1L;
 		double bestAlong = Double.MAX_VALUE;
 		for (TrackNode node : network.nodes()) {
@@ -816,14 +815,14 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 	 * 視線が設備の範囲(中心から半径以内の水平面)に当たっているか。placing(敷設モード中)では
 	 * 動かせる設備(転車台・遷車台)だけを対象にし、撤去モードではすべての設備を対象にする。
 	 */
-	private static long findTargetFeature(TrackNetwork network, Vec3d eye, Vec3d look, boolean all) {
+	private static long findTargetFeature(TrackNetwork network, Vec3 eye, Vec3 look, boolean all) {
 		long best = -1L;
 		double bestT = Double.MAX_VALUE;
 		for (TrackFeature feature : network.features()) {
 			if (!all && !(feature instanceof MovingDeckFeature)) {
 				continue;
 			}
-			Vec3d c = feature.center();
+			Vec3 c = feature.center();
 			if (Math.abs(look.y) < 1.0e-4) {
 				continue;
 			}
@@ -841,7 +840,7 @@ public final class SurveySession implements SurveyToolItem.ClientHandler {
 		return best;
 	}
 
-	private static long findTargetSegment(TrackNetwork network, Vec3d eye, Vec3d look) {
+	private static long findTargetSegment(TrackNetwork network, Vec3 eye, Vec3 look) {
 		long best = -1L;
 		double bestAlong = Double.MAX_VALUE;
 		for (long id : network.segmentsNear(eye.x, eye.z, TARGET_REACH)) {

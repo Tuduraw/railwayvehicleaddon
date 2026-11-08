@@ -2,28 +2,28 @@ package com.example.railwayvehicleaddon.block;
 
 import com.example.railwayvehicleaddon.item.ModItems;
 import com.example.railwayvehicleaddon.track.TrackManager;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.BlockWithEntity;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.BlockEntityTicker;
-import net.minecraft.block.entity.BlockEntityType;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.state.StateManager;
-import net.minecraft.state.property.BooleanProperty;
-import net.minecraft.state.property.Properties;
-import net.minecraft.text.Text;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.world.BlockView;
-import net.minecraft.world.World;
-import net.minecraft.world.block.WireOrientation;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.BaseEntityBlock;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityTicker;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.BooleanProperty;
+import net.minecraft.world.level.redstone.Orientation;
+import net.minecraft.world.phys.BlockHitResult;
 
 /**
  * 線路装置の共通部分。設置すると近くの対象(種類に応じて分岐器・転車台/遷車台・線路区間)に
@@ -33,50 +33,50 @@ import net.minecraft.world.block.WireOrientation;
  * (連結モードでの装置の選択など)を優先する。レッドストーン入力の装置は入力の強さが変わったときに
  * 動作し、設置時・読み込み時点の入力では動作しない。
  */
-public abstract class TrackDeviceBlock extends BlockWithEntity {
-	public static final BooleanProperty POWERED = Properties.POWERED;
+public abstract class TrackDeviceBlock extends BaseEntityBlock {
+	public static final BooleanProperty POWERED = BlockStateProperties.POWERED;
 
-	protected TrackDeviceBlock(Settings settings) {
+	protected TrackDeviceBlock(Properties settings) {
 		super(settings);
-		setDefaultState(getDefaultState().with(POWERED, false));
+		registerDefaultState(defaultBlockState().setValue(POWERED, false));
 	}
 
 	public abstract DeviceKind kind();
 
 	@Override
-	protected void appendProperties(StateManager.Builder<Block, BlockState> builder) {
+	protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
 		builder.add(POWERED);
 	}
 
 	@Override
-	protected net.minecraft.block.BlockRenderType getRenderType(BlockState state) {
-		return net.minecraft.block.BlockRenderType.MODEL;
+	protected net.minecraft.world.level.block.RenderShape getRenderShape(BlockState state) {
+		return net.minecraft.world.level.block.RenderShape.MODEL;
 	}
 
 	@Override
-	public BlockEntity createBlockEntity(BlockPos pos, BlockState state) {
+	public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
 		return new TrackDeviceBlockEntity(pos, state);
 	}
 
 	@Override
-	public <T extends BlockEntity> BlockEntityTicker<T> getTicker(World world, BlockState state, BlockEntityType<T> type) {
+	public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level world, BlockState state, BlockEntityType<T> type) {
 		// 在線検知器(出力)と、分岐器の装置(鎖錠中をコンパレーターへ出す)だけが毎tick動く
-		if (world.isClient() || (!kind().output() && kind().target() != DeviceKind.TargetType.SWITCH)) {
+		if (world.isClientSide() || (!kind().output() && kind().target() != DeviceKind.TargetType.SWITCH)) {
 			return null;
 		}
-		return validateTicker(type, ModBlocks.DEVICE_ENTITY, TrackDeviceBlockEntity::tick);
+		return createTickerHelper(type, ModBlocks.DEVICE_ENTITY, TrackDeviceBlockEntity::tick);
 	}
 
 	@Override
-	public void onPlaced(World world, BlockPos pos, BlockState state, LivingEntity placer, ItemStack itemStack) {
-		super.onPlaced(world, pos, state, placer, itemStack);
-		if (world instanceof ServerWorld serverWorld && world.getBlockEntity(pos) instanceof TrackDeviceBlockEntity entity) {
+	public void setPlacedBy(Level world, BlockPos pos, BlockState state, LivingEntity placer, ItemStack itemStack) {
+		super.setPlacedBy(world, pos, state, placer, itemStack);
+		if (world instanceof ServerLevel serverWorld && world.getBlockEntity(pos) instanceof TrackDeviceBlockEntity entity) {
 			long target = DeviceLinks.findNearest(serverWorld, pos, kind().target());
 			entity.setTargetId(target);
-			entity.setLastPower(world.getReceivedRedstonePower(pos));
-			if (placer instanceof PlayerEntity player) {
-				player.sendMessage(target >= 0 ? DeviceLinks.describe(serverWorld, kind().target(), target)
-						: Text.translatable("message.railwayvehicleaddon.device.no_target"), true);
+			entity.setLastPower(world.getBestNeighborSignal(pos));
+			if (placer instanceof Player player) {
+				player.displayClientMessage(target >= 0 ? DeviceLinks.describe(serverWorld, kind().target(), target)
+						: Component.translatable("message.railwayvehicleaddon.device.no_target"), true);
 			}
 		}
 	}
@@ -84,22 +84,22 @@ public abstract class TrackDeviceBlock extends BlockWithEntity {
 	// ------------------------------------------------------------------ 人力操作
 
 	@Override
-	protected ActionResult onUseWithItem(ItemStack stack, BlockState state, World world, BlockPos pos, PlayerEntity player,
-										 Hand hand, BlockHitResult hit) {
-		if (stack.isOf(ModItems.SURVEY_TOOL)) {
+	protected InteractionResult useItemOn(ItemStack stack, BlockState state, Level world, BlockPos pos, Player player,
+										 InteractionHand hand, BlockHitResult hit) {
+		if (stack.is(ModItems.SURVEY_TOOL)) {
 			// 測量ツールの操作(連結モードの装置選択など)を優先する
-			return ActionResult.PASS;
+			return InteractionResult.PASS;
 		}
-		return kind().manual() ? ActionResult.PASS_TO_DEFAULT_BLOCK_ACTION : ActionResult.PASS;
+		return kind().manual() ? InteractionResult.TRY_WITH_EMPTY_HAND : InteractionResult.PASS;
 	}
 
 	@Override
-	protected ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player, BlockHitResult hit) {
+	protected InteractionResult useWithoutItem(BlockState state, Level world, BlockPos pos, Player player, BlockHitResult hit) {
 		if (!kind().manual()) {
-			return ActionResult.PASS;
+			return InteractionResult.PASS;
 		}
-		if (!(world instanceof ServerWorld serverWorld) || !(world.getBlockEntity(pos) instanceof TrackDeviceBlockEntity entity)) {
-			return ActionResult.SUCCESS;
+		if (!(world instanceof ServerLevel serverWorld) || !(world.getBlockEntity(pos) instanceof TrackDeviceBlockEntity entity)) {
+			return InteractionResult.SUCCESS;
 		}
 		long target = entity.targetId();
 		boolean done = false;
@@ -107,42 +107,42 @@ public abstract class TrackDeviceBlock extends BlockWithEntity {
 			if (kind().target() == DeviceKind.TargetType.SWITCH) {
 				if (TrackManager.network(serverWorld).isSwitch(target) && TrackManager.isSwitchLocked(serverWorld, target)) {
 					// 分岐区間に車両がいる・進路が予約されている間は切り替えない
-					player.sendMessage(Text.translatable("message.railwayvehicleaddon.switch_locked"), true);
-					return ActionResult.SUCCESS;
+					player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.switch_locked"), true);
+					return InteractionResult.SUCCESS;
 				}
 				done = TrackManager.cycleSwitch(serverWorld, target);
 			} else if (kind().target() == DeviceKind.TargetType.DECK) {
-				int step = player.isSneaking() ? -1 : 1;
-				done = TrackManager.moveDeck(serverWorld, target, deck -> deck.selectNext(step), text -> player.sendMessage(text, true));
+				int step = player.isShiftKeyDown() ? -1 : 1;
+				done = TrackManager.moveDeck(serverWorld, target, deck -> deck.selectNext(step), text -> player.displayClientMessage(text, true));
 				if (done) {
-					player.sendMessage(Text.translatable("message.railwayvehicleaddon.device.deck_moving"), true);
+					player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.device.deck_moving"), true);
 				}
-				return ActionResult.SUCCESS;
+				return InteractionResult.SUCCESS;
 			}
 		}
 		if (!done) {
-			player.sendMessage(Text.translatable("message.railwayvehicleaddon.device.no_target"), true);
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.device.no_target"), true);
 		}
-		return ActionResult.SUCCESS;
+		return InteractionResult.SUCCESS;
 	}
 
 	// ------------------------------------------------------------------ レッドストーン入力
 
 	@Override
-	protected void neighborUpdate(BlockState state, World world, BlockPos pos, Block sourceBlock,
-								  WireOrientation wireOrientation, boolean notify) {
-		super.neighborUpdate(state, world, pos, sourceBlock, wireOrientation, notify);
-		if (!kind().input() || !(world instanceof ServerWorld serverWorld)
+	protected void neighborChanged(BlockState state, Level world, BlockPos pos, Block sourceBlock,
+								  Orientation wireOrientation, boolean notify) {
+		super.neighborChanged(state, world, pos, sourceBlock, wireOrientation, notify);
+		if (!kind().input() || !(world instanceof ServerLevel serverWorld)
 				|| !(world.getBlockEntity(pos) instanceof TrackDeviceBlockEntity entity)) {
 			return;
 		}
-		int power = world.getReceivedRedstonePower(pos);
+		int power = world.getBestNeighborSignal(pos);
 		if (power == entity.lastPower()) {
 			return;
 		}
 		entity.setLastPower(power);
-		if (state.get(POWERED) != (power > 0)) {
-			world.setBlockState(pos, state.with(POWERED, power > 0), Block.NOTIFY_LISTENERS);
+		if (state.getValue(POWERED) != (power > 0)) {
+			world.setBlock(pos, state.setValue(POWERED, power > 0), Block.UPDATE_CLIENTS);
 		}
 		long target = entity.targetId();
 		if (target < 0) {
@@ -161,23 +161,23 @@ public abstract class TrackDeviceBlock extends BlockWithEntity {
 	// ------------------------------------------------------------------ レッドストーン出力
 
 	@Override
-	protected boolean emitsRedstonePower(BlockState state) {
+	protected boolean isSignalSource(BlockState state) {
 		return kind().output();
 	}
 
 	/** 分岐器の装置(転てつてこ・転てつ機)は、分岐器が鎖錠中の間、コンパレーターへ強さ15を出す。 */
 	@Override
-	protected boolean hasComparatorOutput(BlockState state) {
+	protected boolean hasAnalogOutputSignal(BlockState state) {
 		return kind().target() == DeviceKind.TargetType.SWITCH;
 	}
 
 	@Override
-	protected int getComparatorOutput(BlockState state, World world, BlockPos pos, Direction direction) {
+	protected int getAnalogOutputSignal(BlockState state, Level world, BlockPos pos, Direction direction) {
 		return world.getBlockEntity(pos) instanceof TrackDeviceBlockEntity entity && entity.switchLocked() ? 15 : 0;
 	}
 
 	@Override
-	protected int getWeakRedstonePower(BlockState state, BlockView world, BlockPos pos, Direction direction) {
-		return kind().output() && state.get(POWERED) ? 15 : 0;
+	protected int getSignal(BlockState state, BlockGetter world, BlockPos pos, Direction direction) {
+		return kind().output() && state.getValue(POWERED) ? 15 : 0;
 	}
 }

@@ -2,10 +2,6 @@ package com.example.railwayvehicleaddon.operation;
 
 import com.example.railwayvehicleaddon.entity.RailVehicleEntity;
 import com.example.railwayvehicleaddon.track.TrackNetwork;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -14,6 +10,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.WeakHashMap;
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * 運転・保安の処理で使う、ディメンションごとのサーバー上の状態(保存しない)。
@@ -24,7 +23,7 @@ import java.util.WeakHashMap;
  * </ul>
  */
 public final class OperationState {
-	private static final Map<ServerWorld, OperationState> STATES = new WeakHashMap<>();
+	private static final Map<ServerLevel, OperationState> STATES = new WeakHashMap<>();
 	/** 在線表の登録がこれより古い(tick)編成は、もう無いものとして扱う */
 	private static final long CONSIST_STALE_TICKS = 1L;
 	/** 地上子の登録がこれより古い(tick)ものは、チャンクの読み込みが外れたものとして扱う */
@@ -32,7 +31,7 @@ public final class OperationState {
 	/** 停止位置目標を連結し直すときに線路を探す距離 */
 	private static final double LINK_RANGE = com.example.railwayvehicleaddon.block.WaysideLink.LINK_RANGE;
 
-	public static OperationState get(ServerWorld world) {
+	public static OperationState get(ServerLevel world) {
 		synchronized (STATES) {
 			OperationState state = STATES.get(world);
 			if (state == null) {
@@ -237,7 +236,7 @@ public final class OperationState {
 				continue;
 			}
 			if (network.segment(w.segmentId()) == null) {
-				Vec3d c = Vec3d.ofCenter(w.pos());
+				Vec3 c = Vec3.atCenterOf(w.pos());
 				TrackNetwork.Nearest nearest = network.nearestPoint(c.x, c.y, c.z, LINK_RANGE);
 				if (nearest == null || network.featureOfSegment(nearest.segmentId()) != null) {
 					continue;
@@ -341,14 +340,14 @@ public final class OperationState {
 	 * 運行管理装置が割り当てた編成について、読み込んでおくチャンク(在線範囲の周りと、先読みの経路)。
 	 * TrainOperationが一定間隔で計算し、運行管理装置が読み込みを要求する。
 	 */
-	private final Map<UUID, java.util.Set<net.minecraft.util.math.ChunkPos>> loadChunks = new HashMap<>();
+	private final Map<UUID, java.util.Set<net.minecraft.world.level.ChunkPos>> loadChunks = new HashMap<>();
 
-	public void setLoadChunks(UUID consistKey, java.util.Set<net.minecraft.util.math.ChunkPos> chunks) {
+	public void setLoadChunks(UUID consistKey, java.util.Set<net.minecraft.world.level.ChunkPos> chunks) {
 		this.loadChunks.put(consistKey, chunks);
 	}
 
-	public java.util.Set<net.minecraft.util.math.ChunkPos> loadChunks(UUID consistKey) {
-		java.util.Set<net.minecraft.util.math.ChunkPos> chunks = this.loadChunks.get(consistKey);
+	public java.util.Set<net.minecraft.world.level.ChunkPos> loadChunks(UUID consistKey) {
+		java.util.Set<net.minecraft.world.level.ChunkPos> chunks = this.loadChunks.get(consistKey);
 		return chunks == null ? java.util.Set.of() : chunks;
 	}
 

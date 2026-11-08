@@ -3,18 +3,18 @@ package com.example.railwayvehicleaddon.block;
 import com.example.railwayvehicleaddon.entity.RailVehicleEntity;
 import com.example.railwayvehicleaddon.operation.OperationState;
 import com.example.railwayvehicleaddon.operation.Timetable;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.network.listener.ClientPlayPacketListener;
-import net.minecraft.network.packet.Packet;
-import net.minecraft.network.packet.s2c.play.BlockEntityUpdateS2CPacket;
-import net.minecraft.registry.RegistryWrapper;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.storage.ReadView;
-import net.minecraft.storage.WriteView;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ClientGamePacketListener;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 
 /**
  * 停止位置目標・列車番号検知器の状態。線路への連結(WaysideLink)と名前、列車番号検知器の設定と出力を持つ。
@@ -95,31 +95,31 @@ public class WaysideBlockEntity extends BlockEntity {
 	}
 
 	private boolean isDetector() {
-		return getCachedState().getBlock() instanceof TrainNumberDetectorBlock;
+		return getBlockState().getBlock() instanceof TrainNumberDetectorBlock;
 	}
 
 	private boolean isSpeedLimit() {
-		return getCachedState().getBlock() instanceof SpeedLimitSignBlock;
+		return getBlockState().getBlock() instanceof SpeedLimitSignBlock;
 	}
 
 	/** 標識の状態が変わった(制限速度を変えた)ときに、地上子の索引へすぐ登録し直す。 */
-	public void refresh(ServerWorld world) {
-		markDirty();
+	public void refresh(ServerLevel world) {
+		setChanged();
 		register(world);
 	}
 
 	private void changed() {
-		markDirty();
-		if (this.world instanceof ServerWorld serverWorld) {
+		setChanged();
+		if (this.level instanceof ServerLevel serverWorld) {
 			register(serverWorld);
-			BlockState state = getCachedState();
-			this.world.updateListeners(this.pos, state, state, 3);
+			BlockState state = getBlockState();
+			this.level.sendBlockUpdated(this.worldPosition, state, state, 3);
 		}
 	}
 
-	public void relink(ServerWorld world) {
-		this.link.link(world, this.pos, getCachedState().get(WaysideBlock.FACING));
-		markDirty();
+	public void relink(ServerLevel world) {
+		this.link.link(world, this.worldPosition, getBlockState().getValue(WaysideBlock.FACING));
+		setChanged();
 		register(world);
 	}
 
@@ -128,43 +128,43 @@ public class WaysideBlockEntity extends BlockEntity {
 	 * 線路が撤去されて連結先が無くなっても、保存してある登録は消さない(線路が敷き直されたら連結し直す)。
 	 * 登録を消すのはブロックが壊されたときだけ。
 	 */
-	private void register(ServerWorld world) {
+	private void register(ServerLevel world) {
 		OperationState state = OperationState.get(world);
 		if (isDetector()) {
-			state.removeWayside(this.pos);
+			state.removeWayside(this.worldPosition);
 			return;
 		}
 		if (isSpeedLimit()) {
 			// 速度制限標識: 保存はしない(読み込まれている間、定期的に登録し直す。古い登録は索引から外れる)
 			if (!this.link.linked()) {
-				state.unloadWayside(this.pos);
+				state.unloadWayside(this.worldPosition);
 				return;
 			}
-			state.putWayside(new OperationState.Wayside(this.pos.toImmutable(), OperationState.WaysideKind.SPEED_LIMIT,
+			state.putWayside(new OperationState.Wayside(this.worldPosition.immutable(), OperationState.WaysideKind.SPEED_LIMIT,
 					this.link.segmentId(), this.link.s(), this.link.dir(), "",
-					SpeedLimitSignBlock.kmh(getCachedState()), world.getTime()));
+					SpeedLimitSignBlock.kmh(getBlockState()), world.getGameTime()));
 			return;
 		}
 		Timetable.Stop parsed = Timetable.parseMarkerName(this.name);
 		if (!this.link.linked()) {
 			// 連結先が無い間は、保存してある連結先のまま名前だけ反映する
-			OperationState.Wayside old = state.waysideAt(this.pos);
+			OperationState.Wayside old = state.waysideAt(this.worldPosition);
 			if (old != null && (!old.name().equals(parsed.station()) || old.platform() != parsed.platform())) {
 				state.putWayside(new OperationState.Wayside(old.pos(), old.kind(), old.segmentId(), old.s(), old.dir(),
 						parsed.station(), parsed.platform(), old.seen()));
 			}
 			return;
 		}
-		state.putWayside(new OperationState.Wayside(this.pos.toImmutable(), OperationState.WaysideKind.STOP_MARKER,
-				this.link.segmentId(), this.link.s(), this.link.dir(), parsed.station(), parsed.platform(), world.getTime()));
+		state.putWayside(new OperationState.Wayside(this.worldPosition.immutable(), OperationState.WaysideKind.STOP_MARKER,
+				this.link.segmentId(), this.link.s(), this.link.dir(), parsed.station(), parsed.platform(), world.getGameTime()));
 	}
 
-	public static void tick(World world, BlockPos pos, BlockState state, WaysideBlockEntity entity) {
-		if (!(world instanceof ServerWorld serverWorld)) {
+	public static void tick(Level world, BlockPos pos, BlockState state, WaysideBlockEntity entity) {
+		if (!(world instanceof ServerLevel serverWorld)) {
 			return;
 		}
-		if (entity.link.check(serverWorld, pos, state.get(WaysideBlock.FACING))) {
-			entity.markDirty();
+		if (entity.link.check(serverWorld, pos, state.getValue(WaysideBlock.FACING))) {
+			entity.setChanged();
 			entity.register(serverWorld);
 		}
 		if (++entity.registerTimer >= REGISTER_INTERVAL) {
@@ -178,12 +178,12 @@ public class WaysideBlockEntity extends BlockEntity {
 	}
 
 	/** 列車番号検知器: 検知点にかかっている編成の値を出力する。 */
-	private void detect(ServerWorld world, BlockState state) {
-		int current = state.get(TrainNumberDetectorBlock.POWER);
+	private void detect(ServerLevel world, BlockState state) {
+		int current = state.getValue(TrainNumberDetectorBlock.POWER);
 		int value = current;
 		boolean found = false;
 		if (this.link.linked()) {
-			for (OperationState.Span span : OperationState.get(world).spansOn(this.link.segmentId(), world.getTime())) {
+			for (OperationState.Span span : OperationState.get(world).spansOn(this.link.segmentId(), world.getGameTime())) {
 				if (this.link.s() < span.s0() - DETECT_TOLERANCE || this.link.s() > span.s1() + DETECT_TOLERANCE) {
 					continue;
 				}
@@ -199,7 +199,7 @@ public class WaysideBlockEntity extends BlockEntity {
 			value = 0;
 		}
 		if (value != current) {
-			world.setBlockState(this.pos, state.with(TrainNumberDetectorBlock.POWER, value), 3);
+			world.setBlock(this.worldPosition, state.setValue(TrainNumberDetectorBlock.POWER, value), 3);
 		}
 	}
 
@@ -221,27 +221,27 @@ public class WaysideBlockEntity extends BlockEntity {
 
 	/** ブロックが壊された・置き換えられたら、地上子の索引(と保存)から外す。チャンクの読み込みが外れただけなら残す。 */
 	@Override
-	public void onBlockReplaced(BlockPos pos, BlockState oldState) {
-		super.onBlockReplaced(pos, oldState);
-		if (this.world instanceof ServerWorld serverWorld) {
+	public void preRemoveSideEffects(BlockPos pos, BlockState oldState) {
+		super.preRemoveSideEffects(pos, oldState);
+		if (this.level instanceof ServerLevel serverWorld) {
 			OperationState.get(serverWorld).removeWayside(pos);
 		}
 	}
 
 	@Override
-	protected void readData(ReadView view) {
-		super.readData(view);
+	protected void loadAdditional(ValueInput view) {
+		super.loadAdditional(view);
 		this.link.read(view);
-		this.name = view.getString("Name", "");
-		int m = view.getInt("Mode", 0);
+		this.name = view.getStringOr("Name", "");
+		int m = view.getIntOr("Mode", 0);
 		this.mode = DetectorMode.values()[Math.max(0, Math.min(DetectorMode.values().length - 1, m))];
-		this.directional = view.getBoolean("Directional", false);
-		this.hold = view.getBoolean("Hold", false);
+		this.directional = view.getBooleanOr("Directional", false);
+		this.hold = view.getBooleanOr("Hold", false);
 	}
 
 	@Override
-	protected void writeData(WriteView view) {
-		super.writeData(view);
+	protected void saveAdditional(ValueOutput view) {
+		super.saveAdditional(view);
 		this.link.write(view);
 		view.putString("Name", this.name);
 		view.putInt("Mode", this.mode.ordinal());
@@ -250,12 +250,12 @@ public class WaysideBlockEntity extends BlockEntity {
 	}
 
 	@Override
-	public Packet<ClientPlayPacketListener> toUpdatePacket() {
-		return BlockEntityUpdateS2CPacket.create(this);
+	public Packet<ClientGamePacketListener> getUpdatePacket() {
+		return ClientboundBlockEntityDataPacket.create(this);
 	}
 
 	@Override
-	public NbtCompound toInitialChunkDataNbt(RegistryWrapper.WrapperLookup registries) {
-		return createNbt(registries);
+	public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
+		return saveWithoutMetadata(registries);
 	}
 }

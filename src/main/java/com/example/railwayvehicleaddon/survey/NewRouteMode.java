@@ -3,10 +3,9 @@ package com.example.railwayvehicleaddon.survey;
 import com.example.railwayvehicleaddon.RailwayConfig;
 import com.example.railwayvehicleaddon.track.RoutePlanner;
 import com.example.railwayvehicleaddon.track.TrackNetwork;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * 新規生成モード(既定)。点の並びをそのまま1本の路線にする。
@@ -73,13 +72,13 @@ public final class NewRouteMode implements SurveyMode {
 			endTangent = new double[]{-outward[0], -outward[1]};
 		}
 
-		List<Vec3d> positions = new ArrayList<>(n);
+		List<Vec3> positions = new ArrayList<>(n);
 		for (SurveyPoint p : points) {
 			positions.add(p.pos());
 		}
 		RoutePlanner.PlannedRoute route = RoutePlanner.plan(positions, startTangent, endTangent, input.closed(), config);
 
-		List<Vec3d> newNodes = new ArrayList<>();
+		List<Vec3> newNodes = new ArrayList<>();
 		List<NodeRef> refs = new ArrayList<>(n);
 		for (SurveyPoint p : points) {
 			if (p.snapped()) {

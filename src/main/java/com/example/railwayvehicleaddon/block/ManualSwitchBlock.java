@@ -1,13 +1,13 @@
 package com.example.railwayvehicleaddon.block;
 
 import com.mojang.serialization.MapCodec;
-import net.minecraft.block.BlockWithEntity;
+import net.minecraft.world.level.block.BaseEntityBlock;
 
 /** 転てつてこ(人力)。動作はDeviceKind.MANUAL_SWITCH参照。 */
 public class ManualSwitchBlock extends TrackDeviceBlock {
-	public static final MapCodec<ManualSwitchBlock> CODEC = createCodec(ManualSwitchBlock::new);
+	public static final MapCodec<ManualSwitchBlock> CODEC = simpleCodec(ManualSwitchBlock::new);
 
-	public ManualSwitchBlock(Settings settings) {
+	public ManualSwitchBlock(Properties settings) {
 		super(settings);
 	}
 
@@ -17,7 +17,7 @@ public class ManualSwitchBlock extends TrackDeviceBlock {
 	}
 
 	@Override
-	protected MapCodec<? extends BlockWithEntity> getCodec() {
+	protected MapCodec<? extends BaseEntityBlock> codec() {
 		return CODEC;
 	}
 }

@@ -1,13 +1,12 @@
 package com.example.railwayvehicleaddon.network;
 
 import com.example.railwayvehicleaddon.RailwayVehicleAddon;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.util.Identifier;
-
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.Identifier;
 
 /**
  * クライアント→サーバー: 電化モードで選んだ区間の電化方式を切り替える。
@@ -15,14 +14,14 @@ import java.util.List;
  * @param electrification 適用する電化方式(ElectrificationType.id())。選んだ区間が全部すでに
  *                        この方式なら、サーバー側で非電化に戻す(トグル)
  */
-public record ElectrifyPayload(List<Long> segmentIds, int electrification, float wireHeight) implements CustomPayload {
+public record ElectrifyPayload(List<Long> segmentIds, int electrification, float wireHeight) implements CustomPacketPayload {
 
-	public static final CustomPayload.Id<ElectrifyPayload> ID =
-			new CustomPayload.Id<>(Identifier.of(RailwayVehicleAddon.MOD_ID, "electrify"));
+	public static final CustomPacketPayload.Type<ElectrifyPayload> ID =
+			new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath(RailwayVehicleAddon.MOD_ID, "electrify"));
 
 	private static final int HARD_LIMIT = 256;
 
-	public static final PacketCodec<RegistryByteBuf, ElectrifyPayload> CODEC = PacketCodec.ofStatic(
+	public static final StreamCodec<RegistryFriendlyByteBuf, ElectrifyPayload> CODEC = StreamCodec.of(
 			(buf, payload) -> {
 				buf.writeVarInt(payload.segmentIds().size());
 				payload.segmentIds().forEach(buf::writeLong);
@@ -41,7 +40,7 @@ public record ElectrifyPayload(List<Long> segmentIds, int electrification, float
 			});
 
 	@Override
-	public Id<? extends CustomPayload> getId() {
+	public Type<? extends CustomPacketPayload> type() {
 		return ID;
 	}
 }

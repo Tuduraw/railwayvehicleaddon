@@ -4,14 +4,13 @@ import com.example.railwayvehicleaddon.RailwayConfig;
 import com.example.railwayvehicleaddon.track.TrackNetwork;
 import com.example.railwayvehicleaddon.track.TrackPoint;
 import com.example.railwayvehicleaddon.track.TrackSegment;
-import net.minecraft.server.world.ServerWorld;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import net.minecraft.server.level.ServerLevel;
 
 /**
  * 分岐器の鎖錠(分岐区間に車両がいる間・進路の予約中は切り替えない)の判定。
@@ -125,9 +124,9 @@ public final class Interlock {
 	 * 分岐区間に、ignoreMembers(null可)に含まれない車両の編成がいるか。
 	 * ignoreMembersには、割り出しで通っている編成自身の車両を渡す。
 	 */
-	public static boolean occupied(ServerWorld world, TrackNetwork network, long nodeId, Set<UUID> ignoreMembers) {
+	public static boolean occupied(ServerLevel world, TrackNetwork network, long nodeId, Set<UUID> ignoreMembers) {
 		OperationState state = OperationState.get(world);
-		long now = world.getTime();
+		long now = world.getGameTime();
 		for (ZoneSpan zone : zone(network, nodeId)) {
 			for (OperationState.Span span : state.spansOn(zone.segmentId(), now)) {
 				if (span.s1() < zone.s0() || span.s0() > zone.s1()) {
@@ -143,11 +142,11 @@ public final class Interlock {
 	}
 
 	/** 分岐区間に車両がいるか、holder以外の列車の予約があれば鎖錠中(切り替えられない)。holderはnull可。 */
-	public static boolean locked(ServerWorld world, TrackNetwork network, long nodeId, UUID holder) {
+	public static boolean locked(ServerLevel world, TrackNetwork network, long nodeId, UUID holder) {
 		if (occupied(world, network, nodeId, null)) {
 			return true;
 		}
-		OperationState.Reservation r = OperationState.get(world).reservation(nodeId, world.getTime());
+		OperationState.Reservation r = OperationState.get(world).reservation(nodeId, world.getGameTime());
 		return r != null && !r.holder().equals(holder);
 	}
 }

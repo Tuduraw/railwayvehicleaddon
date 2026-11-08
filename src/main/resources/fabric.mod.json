@@ -17,6 +17,6 @@
     "fabric-api": "*",
     "minecraft": "1.21.11",
     "java": ">=21",
-    "tudursvehiclemod": ">=1.0.3"
+    "tudursvehiclemod": ">=1.1.1"
   }
 }

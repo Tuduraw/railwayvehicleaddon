@@ -3,14 +3,13 @@ package com.example.railwayvehicleaddon.network;
 import com.example.railwayvehicleaddon.RailwayVehicleAddon;
 import com.example.railwayvehicleaddon.track.feature.FeatureTypes;
 import com.example.railwayvehicleaddon.track.feature.TrackFeature;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtElement;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtOps;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.util.Identifier;
-
+import net.minecraft.nbt.Tag;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.Identifier;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -19,20 +18,20 @@ import java.util.List;
  * 設備は種類ごとに形が違うため、保存と同じコーデック(FeatureTypes.CODEC)でNBTにして送る。
  * 転車台・遷車台が動いている間は、状態が変わるたびに送られる。
  */
-public record FeatureSyncPayload(boolean reset, List<TrackFeature> features, List<Long> removedIds) implements CustomPayload {
+public record FeatureSyncPayload(boolean reset, List<TrackFeature> features, List<Long> removedIds) implements CustomPacketPayload {
 
-	public static final CustomPayload.Id<FeatureSyncPayload> ID =
-			new CustomPayload.Id<>(Identifier.of(RailwayVehicleAddon.MOD_ID, "feature_sync"));
+	public static final CustomPacketPayload.Type<FeatureSyncPayload> ID =
+			new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath(RailwayVehicleAddon.MOD_ID, "feature_sync"));
 
-	public static final PacketCodec<RegistryByteBuf, FeatureSyncPayload> CODEC = PacketCodec.ofStatic(
+	public static final StreamCodec<RegistryFriendlyByteBuf, FeatureSyncPayload> CODEC = StreamCodec.of(
 			(buf, payload) -> {
 				buf.writeBoolean(payload.reset());
-				List<NbtElement> encoded = new ArrayList<>();
+				List<Tag> encoded = new ArrayList<>();
 				for (TrackFeature feature : payload.features()) {
 					FeatureTypes.CODEC.encodeStart(NbtOps.INSTANCE, feature).result().ifPresent(encoded::add);
 				}
 				buf.writeVarInt(encoded.size());
-				for (NbtElement element : encoded) {
+				for (Tag element : encoded) {
 					buf.writeNbt(element);
 				}
 				buf.writeVarInt(payload.removedIds().size());
@@ -43,7 +42,7 @@ public record FeatureSyncPayload(boolean reset, List<TrackFeature> features, Lis
 				int count = buf.readVarInt();
 				List<TrackFeature> features = new ArrayList<>(count);
 				for (int i = 0; i < count; i++) {
-					NbtCompound nbt = buf.readNbt();
+					CompoundTag nbt = buf.readNbt();
 					if (nbt != null) {
 						FeatureTypes.CODEC.parse(NbtOps.INSTANCE, nbt).result().ifPresent(features::add);
 					}
@@ -57,7 +56,7 @@ public record FeatureSyncPayload(boolean reset, List<TrackFeature> features, Lis
 			});
 
 	@Override
-	public Id<? extends CustomPayload> getId() {
+	public Type<? extends CustomPacketPayload> type() {
 		return ID;
 	}
 }

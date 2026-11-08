@@ -5,25 +5,25 @@ import com.example.railwayvehicleaddon.track.HeightProfile;
 import com.example.railwayvehicleaddon.track.PlanCurve;
 import com.example.railwayvehicleaddon.track.TrackNode;
 import com.example.railwayvehicleaddon.track.TrackSegment;
-import net.minecraft.network.PacketByteBuf;
+import net.minecraft.network.FriendlyByteBuf;
 
 /** 線路データの通信用シリアライズ。保存形式(TrackNetworkState.CODEC)とは独立している。 */
 public final class TrackCodecs {
 	private TrackCodecs() {
 	}
 
-	public static void writeNode(PacketByteBuf buf, TrackNode node) {
+	public static void writeNode(FriendlyByteBuf buf, TrackNode node) {
 		buf.writeLong(node.id());
 		buf.writeDouble(node.x());
 		buf.writeDouble(node.y());
 		buf.writeDouble(node.z());
 	}
 
-	public static TrackNode readNode(PacketByteBuf buf) {
+	public static TrackNode readNode(FriendlyByteBuf buf) {
 		return new TrackNode(buf.readLong(), buf.readDouble(), buf.readDouble(), buf.readDouble());
 	}
 
-	public static void writeSegment(PacketByteBuf buf, TrackSegment segment) {
+	public static void writeSegment(FriendlyByteBuf buf, TrackSegment segment) {
 		buf.writeLong(segment.id());
 		buf.writeLong(segment.nodeA());
 		buf.writeLong(segment.nodeB());
@@ -39,7 +39,7 @@ public final class TrackCodecs {
 		buf.writeFloat(segment.wireHeight());
 	}
 
-	public static TrackSegment readSegment(PacketByteBuf buf) {
+	public static TrackSegment readSegment(FriendlyByteBuf buf) {
 		long id = buf.readLong();
 		long a = buf.readLong();
 		long b = buf.readLong();
@@ -59,7 +59,7 @@ public final class TrackCodecs {
 				ballast, electrification, wireHeight);
 	}
 
-	public static void writeConfig(PacketByteBuf buf, RailwayConfig.Values v) {
+	public static void writeConfig(FriendlyByteBuf buf, RailwayConfig.Values v) {
 		buf.writeFloat(v.gauge());
 		buf.writeFloat(v.minCurveRadius());
 		buf.writeFloat(v.maxGrade());
@@ -75,7 +75,7 @@ public final class TrackCodecs {
 		buf.writeFloat(v.catenaryHeight());
 	}
 
-	public static RailwayConfig.Values readConfig(PacketByteBuf buf) {
+	public static RailwayConfig.Values readConfig(FriendlyByteBuf buf) {
 		return new RailwayConfig.Values(buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat(),
 				buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readVarInt(), buf.readFloat(), buf.readFloat(),
 				buf.readFloat(), buf.readFloat());

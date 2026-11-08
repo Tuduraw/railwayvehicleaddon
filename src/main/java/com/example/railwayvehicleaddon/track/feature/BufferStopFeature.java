@@ -5,9 +5,8 @@ import com.example.railwayvehicleaddon.track.TrackNode;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.Set;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * 車止め。線路の端(ノード)に置き、車両がその手前(margin)で止まるようにする。
@@ -27,7 +26,7 @@ public final class BufferStopFeature implements TrackFeature {
 	private final long id;
 	private final long node;
 	private final double margin;
-	private Vec3d center = Vec3d.ZERO;
+	private Vec3 center = Vec3.ZERO;
 
 	public BufferStopFeature(long id, long node, double margin) {
 		this.id = id;
@@ -68,7 +67,7 @@ public final class BufferStopFeature implements TrackFeature {
 		network.setEndMargin(this.node, this.margin);
 		TrackNode n = network.node(this.node);
 		if (n != null) {
-			this.center = new Vec3d(n.x(), n.y(), n.z());
+			this.center = new Vec3(n.x(), n.y(), n.z());
 		}
 	}
 
@@ -78,7 +77,7 @@ public final class BufferStopFeature implements TrackFeature {
 	}
 
 	@Override
-	public Vec3d center() {
+	public Vec3 center() {
 		return this.center;
 	}
 

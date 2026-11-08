@@ -9,17 +9,17 @@ import com.example.railwayvehicleaddon.track.feature.MovingDeckFeature;
 import com.example.railwayvehicleaddon.track.feature.TrackFeature;
 import com.example.railwayvehicleaddon.track.feature.TraverserFeature;
 import com.example.railwayvehicleaddon.track.feature.TurntableFeature;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.OverlayTexture;
-import net.minecraft.client.render.RenderLayers;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.WorldRenderer;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
+import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.core.BlockPos;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 
 import java.util.ArrayList;
@@ -32,7 +32,7 @@ import java.util.Map;
  * TrackRendererが描く。設備の形は動かないので、同期で変化したときだけ作り直す。
  */
 public final class FeatureRenderer {
-	private static final Identifier TEXTURE = Identifier.of(RailwayVehicleAddon.MOD_ID, "textures/track/features.png");
+	private static final Identifier TEXTURE = Identifier.fromNamespaceAndPath(RailwayVehicleAddon.MOD_ID, "textures/track/features.png");
 	/** UV範囲: コンクリート / 鋼 / 赤 / 警戒色 */
 	private static final float[] CONCRETE = {0.0f, 0.0f, 0.25f, 1.0f};
 	private static final float[] STEEL = {0.25f, 0.0f, 0.5f, 1.0f};
@@ -49,7 +49,7 @@ public final class FeatureRenderer {
 	private record LocalQuad(double[][] v, float[] uv, double[] normal) {
 	}
 
-	private record Quad(Vec3d a, Vec3d b, Vec3d c, Vec3d d, float[] uv, Vec3d normal, BlockPos light) {
+	private record Quad(Vec3 a, Vec3 b, Vec3 c, Vec3 d, float[] uv, Vec3 normal, BlockPos light) {
 	}
 
 	private FeatureRenderer() {
@@ -113,26 +113,26 @@ public final class FeatureRenderer {
 		return out;
 	}
 
-	private static void renderDecks(WorldRenderContext context, TrackNetwork network, ClientWorld world, Vec3d camera, float tickDelta, double maxDistance) {
+	private static void renderDecks(WorldRenderContext context, TrackNetwork network, ClientLevel world, Vec3 camera, float tickDelta, double maxDistance) {
 		float gauge = ClientTrackData.config().gauge();
 		if (gauge != deckGauge) {
 			deckGauge = gauge;
 			DECK_CACHE.clear();
 		}
-		MatrixStack.Entry entry = context.matrices().peek();
-		Matrix4f pose = entry.getPositionMatrix();
+		PoseStack.Pose entry = context.matrices().last();
+		Matrix4f pose = entry.pose();
 		VertexConsumer consumer = null;
 		for (TrackFeature feature : network.features()) {
 			if (!(feature instanceof MovingDeckFeature deck)) {
 				continue;
 			}
 			double reach = maxDistance + feature.radius();
-			if (feature.center().squaredDistanceTo(camera) > reach * reach) {
+			if (feature.center().distanceToSqr(camera) > reach * reach) {
 				continue;
 			}
 			double param = ClientTrackData.deckRenderParam(deck, tickDelta);
-			Vec3d a = deck.endA(param);
-			Vec3d b = deck.endB(param);
+			Vec3 a = deck.endA(param);
+			Vec3 b = deck.endB(param);
 			double length = Math.hypot(b.x - a.x, b.z - a.z);
 			if (length < 1.0e-6) {
 				continue;
@@ -144,9 +144,9 @@ public final class FeatureRenderer {
 			double lz = -dx;
 			List<LocalQuad> quads = DECK_CACHE.computeIfAbsent(deck.id(), id -> buildDeck(length, gauge));
 			if (consumer == null) {
-				consumer = context.consumers().getBuffer(RenderLayers.entityCutoutNoCull(TrackRenderer.TEXTURE));
+				consumer = context.consumers().getBuffer(RenderTypes.entityCutoutNoCull(TrackRenderer.TEXTURE));
 			}
-			int light = WorldRenderer.getLightmapCoordinates(world, BlockPos.ofFloored(feature.center().x, feature.center().y + 0.5, feature.center().z));
+			int light = LevelRenderer.getLightColor(world, BlockPos.containing(feature.center().x, feature.center().y + 0.5, feature.center().z));
 			for (LocalQuad q : quads) {
 				// (u, l, h)の基底(A→B方向・横方向・上)は右手系なので、法線もそのまま世界座標へ移せる
 				double nu = q.normal()[0];
@@ -162,42 +162,42 @@ public final class FeatureRenderer {
 					double wz = a.z + dz * v[0] + lz * v[1];
 					float u = (corner == 1 || corner == 2) ? q.uv()[2] : q.uv()[0];
 					float t = (corner >= 2) ? q.uv()[3] : q.uv()[1];
-					consumer.vertex(pose, (float) (wx - camera.x), (float) (wy - camera.y), (float) (wz - camera.z))
-							.color(255, 255, 255, 255)
-							.texture(u, t)
-							.overlay(OverlayTexture.DEFAULT_UV)
-							.light(light)
-							.normal(entry, nx, ny, nz);
+					consumer.addVertex(pose, (float) (wx - camera.x), (float) (wy - camera.y), (float) (wz - camera.z))
+							.setColor(255, 255, 255, 255)
+							.setUv(u, t)
+							.setOverlay(OverlayTexture.NO_OVERLAY)
+							.setLight(light)
+							.setNormal(entry, nx, ny, nz);
 				}
 			}
 		}
 	}
 
-	private static void quad(List<Quad> out, Vec3d a, Vec3d b, Vec3d c, Vec3d d, float[] uv) {
-		Vec3d n = b.subtract(a).crossProduct(d.subtract(a));
+	private static void quad(List<Quad> out, Vec3 a, Vec3 b, Vec3 c, Vec3 d, float[] uv) {
+		Vec3 n = b.subtract(a).cross(d.subtract(a));
 		double len = n.length();
 		if (len < 1.0e-9) {
-			n = c.subtract(b).crossProduct(a.subtract(b));
+			n = c.subtract(b).cross(a.subtract(b));
 			len = n.length();
 			if (len < 1.0e-9) {
 				return;
 			}
 		}
-		Vec3d center = a.add(c).multiply(0.5);
-		out.add(new Quad(a, b, c, d, uv, n.multiply(1.0 / len), BlockPos.ofFloored(center.x, center.y + 0.3, center.z)));
+		Vec3 center = a.add(c).scale(0.5);
+		out.add(new Quad(a, b, c, d, uv, n.scale(1.0 / len), BlockPos.containing(center.x, center.y + 0.3, center.z)));
 	}
 
 	/** 中心(cx, y, cz)・向きの軸(ux, uz)と(vx, vz)で張る直方体。 */
-	private static void box(List<Quad> out, Vec3d c, double ux, double uz, double hu, double vx, double vz, double hv,
+	private static void box(List<Quad> out, Vec3 c, double ux, double uz, double hu, double vx, double vz, double hv,
 							double y0, double y1, float[] uv) {
-		Vec3d[] bottom = new Vec3d[4];
-		Vec3d[] top = new Vec3d[4];
+		Vec3[] bottom = new Vec3[4];
+		Vec3[] top = new Vec3[4];
 		double[][] k = {{-1, -1}, {1, -1}, {1, 1}, {-1, 1}};
 		for (int i = 0; i < 4; i++) {
 			double x = c.x + ux * hu * k[i][0] + vx * hv * k[i][1];
 			double z = c.z + uz * hu * k[i][0] + vz * hv * k[i][1];
-			bottom[i] = new Vec3d(x, y0, z);
-			top[i] = new Vec3d(x, y1, z);
+			bottom[i] = new Vec3(x, y0, z);
+			top[i] = new Vec3(x, y1, z);
 		}
 		quad(out, top[3], top[2], top[1], top[0], uv);
 		for (int i = 0; i < 4; i++) {
@@ -209,48 +209,48 @@ public final class FeatureRenderer {
 	private static List<Quad> build(TrackNetwork network, TrackFeature feature) {
 		List<Quad> out = new ArrayList<>();
 		if (feature instanceof TurntableFeature tt) {
-			Vec3d c = tt.center();
+			Vec3 c = tt.center();
 			double r = tt.radius();
 			int n = 48;
 			for (int i = 0; i < n; i++) {
 				double a0 = Math.PI * 2.0 * i / n;
 				double a1 = Math.PI * 2.0 * (i + 1) / n;
-				Vec3d p0 = new Vec3d(c.x + Math.cos(a0) * r, c.y - 0.02, c.z + Math.sin(a0) * r);
-				Vec3d p1 = new Vec3d(c.x + Math.cos(a1) * r, c.y - 0.02, c.z + Math.sin(a1) * r);
-				Vec3d center = new Vec3d(c.x, c.y - 0.02, c.z);
+				Vec3 p0 = new Vec3(c.x + Math.cos(a0) * r, c.y - 0.02, c.z + Math.sin(a0) * r);
+				Vec3 p1 = new Vec3(c.x + Math.cos(a1) * r, c.y - 0.02, c.z + Math.sin(a1) * r);
+				Vec3 center = new Vec3(c.x, c.y - 0.02, c.z);
 				// ピットの床(扇形を四角形で近似)
 				quad(out, center, p1, p0, p0, CONCRETE);
 				// 床の縁の周回レール
 				double ri = r - 0.35;
 				double ro = r - 0.2;
-				Vec3d i0 = new Vec3d(c.x + Math.cos(a0) * ri, c.y + 0.03, c.z + Math.sin(a0) * ri);
-				Vec3d i1 = new Vec3d(c.x + Math.cos(a1) * ri, c.y + 0.03, c.z + Math.sin(a1) * ri);
-				Vec3d o0 = new Vec3d(c.x + Math.cos(a0) * ro, c.y + 0.03, c.z + Math.sin(a0) * ro);
-				Vec3d o1 = new Vec3d(c.x + Math.cos(a1) * ro, c.y + 0.03, c.z + Math.sin(a1) * ro);
+				Vec3 i0 = new Vec3(c.x + Math.cos(a0) * ri, c.y + 0.03, c.z + Math.sin(a0) * ri);
+				Vec3 i1 = new Vec3(c.x + Math.cos(a1) * ri, c.y + 0.03, c.z + Math.sin(a1) * ri);
+				Vec3 o0 = new Vec3(c.x + Math.cos(a0) * ro, c.y + 0.03, c.z + Math.sin(a0) * ro);
+				Vec3 o1 = new Vec3(c.x + Math.cos(a1) * ro, c.y + 0.03, c.z + Math.sin(a1) * ro);
 				quad(out, i0, i1, o1, o0, STEEL);
 			}
 			// 中心の軸受
 			box(out, c, 1, 0, 0.4, 0, 1, 0.4, c.y - 0.02, c.y + 0.05, STEEL);
 		} else if (feature instanceof TraverserFeature tr) {
-			Vec3d a = tr.baseA();
-			Vec3d b = tr.baseB();
+			Vec3 a = tr.baseA();
+			Vec3 b = tr.baseB();
 			double min = tr.minParam() - 1.0;
 			double max = tr.maxParam() + 1.0;
 			double ax = tr.axisX();
 			double az = tr.axisZ();
 			double y = tr.y() - 0.02;
-			Vec3d c0 = new Vec3d(a.x + ax * min, y, a.z + az * min);
-			Vec3d c1 = new Vec3d(b.x + ax * min, y, b.z + az * min);
-			Vec3d c2 = new Vec3d(b.x + ax * max, y, b.z + az * max);
-			Vec3d c3 = new Vec3d(a.x + ax * max, y, a.z + az * max);
+			Vec3 c0 = new Vec3(a.x + ax * min, y, a.z + az * min);
+			Vec3 c1 = new Vec3(b.x + ax * min, y, b.z + az * min);
+			Vec3 c2 = new Vec3(b.x + ax * max, y, b.z + az * max);
+			Vec3 c3 = new Vec3(a.x + ax * max, y, a.z + az * max);
 			quad(out, c0, c3, c2, c1, CONCRETE);
 			// 桁を載せて走る横行レール(桁の両端寄り2本)
 			for (double t : new double[]{0.15, 0.85}) {
-				Vec3d base = a.add(b.subtract(a).multiply(t));
+				Vec3 base = a.add(b.subtract(a).scale(t));
 				double dx = b.x - a.x;
 				double dz = b.z - a.z;
 				double len = Math.hypot(dx, dz);
-				Vec3d mid = base.add(ax * (min + max) / 2.0, 0.0, az * (min + max) / 2.0);
+				Vec3 mid = base.add(ax * (min + max) / 2.0, 0.0, az * (min + max) / 2.0);
 				box(out, mid, ax, az, (max - min) / 2.0, dx / len, dz / len, 0.06, y, y + 0.08, STEEL);
 			}
 		} else if (feature instanceof BufferStopFeature bs) {
@@ -265,24 +265,24 @@ public final class FeatureRenderer {
 			double lz = -fx;
 			double y = node.y();
 			// 端から少し内側に、柱2本と赤い緩衝梁
-			Vec3d c = new Vec3d(node.x() - fx * 0.3, y, node.z() - fz * 0.3);
+			Vec3 c = new Vec3(node.x() - fx * 0.3, y, node.z() - fz * 0.3);
 			for (double side : new double[]{-0.6, 0.6}) {
-				Vec3d post = c.add(lx * side, 0.0, lz * side);
+				Vec3 post = c.add(lx * side, 0.0, lz * side);
 				box(out, post, fx, fz, 0.12, lx, lz, 0.12, y, y + 1.1, STEEL);
 			}
-			Vec3d beam = c.add(-fx * 0.15, 0.0, -fz * 0.15);
+			Vec3 beam = c.add(-fx * 0.15, 0.0, -fz * 0.15);
 			box(out, beam, fx, fz, 0.1, lx, lz, 0.95, y + 0.55, y + 0.9, RED);
 			// 梁の正面の警戒色
-			Vec3d face = beam.add(-fx * 0.11, 0.0, -fz * 0.11);
-			quad(out, new Vec3d(face.x - lx * 0.9, y + 0.6, face.z - lz * 0.9), new Vec3d(face.x + lx * 0.9, y + 0.6, face.z + lz * 0.9),
-					new Vec3d(face.x + lx * 0.9, y + 0.85, face.z + lz * 0.9), new Vec3d(face.x - lx * 0.9, y + 0.85, face.z - lz * 0.9), STRIPE);
+			Vec3 face = beam.add(-fx * 0.11, 0.0, -fz * 0.11);
+			quad(out, new Vec3(face.x - lx * 0.9, y + 0.6, face.z - lz * 0.9), new Vec3(face.x + lx * 0.9, y + 0.6, face.z + lz * 0.9),
+					new Vec3(face.x + lx * 0.9, y + 0.85, face.z + lz * 0.9), new Vec3(face.x - lx * 0.9, y + 0.85, face.z - lz * 0.9), STRIPE);
 		}
 		return out;
 	}
 
 	public static void render(WorldRenderContext context) {
-		MinecraftClient client = MinecraftClient.getInstance();
-		ClientWorld world = client.world;
+		Minecraft client = Minecraft.getInstance();
+		ClientLevel world = client.level;
 		if (world == null) {
 			return;
 		}
@@ -290,34 +290,34 @@ public final class FeatureRenderer {
 		if (network.features().isEmpty()) {
 			return;
 		}
-		Vec3d camera = context.worldState().cameraRenderState.pos;
-		double chunkRange = client.options.getClampedViewDistance() * 16.0;
+		Vec3 camera = context.worldState().cameraRenderState.pos;
+		double chunkRange = client.options.getEffectiveRenderDistance() * 16.0;
 		double configured = ClientTrackData.config().trackRenderDistance();
 		double maxDistance = configured > 0.0 ? Math.min(configured, chunkRange) : chunkRange;
 		// 桁(線路のテクスチャ)を先に描き、そのあと設備本体(設備のテクスチャ)を描く
-		renderDecks(context, network, world, camera, client.getRenderTickCounter().getTickProgress(true), maxDistance);
-		MatrixStack.Entry entry = context.matrices().peek();
-		Matrix4f pose = entry.getPositionMatrix();
-		VertexConsumer consumer = context.consumers().getBuffer(RenderLayers.entityCutoutNoCull(TEXTURE));
+		renderDecks(context, network, world, camera, client.getDeltaTracker().getGameTimeDeltaPartialTick(true), maxDistance);
+		PoseStack.Pose entry = context.matrices().last();
+		Matrix4f pose = entry.pose();
+		VertexConsumer consumer = context.consumers().getBuffer(RenderTypes.entityCutoutNoCull(TEXTURE));
 		for (TrackFeature feature : network.features()) {
-			Vec3d c = feature.center();
+			Vec3 c = feature.center();
 			double reach = maxDistance + feature.radius();
-			if (c.squaredDistanceTo(camera) > reach * reach) {
+			if (c.distanceToSqr(camera) > reach * reach) {
 				continue;
 			}
 			List<Quad> quads = CACHE.computeIfAbsent(feature.id(), id -> build(network, feature));
 			for (Quad q : quads) {
-				int light = WorldRenderer.getLightmapCoordinates(world, q.light());
-				Vec3d[] v = {q.a(), q.b(), q.c(), q.d()};
+				int light = LevelRenderer.getLightColor(world, q.light());
+				Vec3[] v = {q.a(), q.b(), q.c(), q.d()};
 				for (int corner = 0; corner < 4; corner++) {
 					float u = (corner == 1 || corner == 2) ? q.uv()[2] : q.uv()[0];
 					float t = (corner >= 2) ? q.uv()[3] : q.uv()[1];
-					consumer.vertex(pose, (float) (v[corner].x - camera.x), (float) (v[corner].y - camera.y), (float) (v[corner].z - camera.z))
-							.color(255, 255, 255, 255)
-							.texture(u, t)
-							.overlay(OverlayTexture.DEFAULT_UV)
-							.light(light)
-							.normal(entry, (float) q.normal().x, (float) q.normal().y, (float) q.normal().z);
+					consumer.addVertex(pose, (float) (v[corner].x - camera.x), (float) (v[corner].y - camera.y), (float) (v[corner].z - camera.z))
+							.setColor(255, 255, 255, 255)
+							.setUv(u, t)
+							.setOverlay(OverlayTexture.NO_OVERLAY)
+							.setLight(light)
+							.setNormal(entry, (float) q.normal().x, (float) q.normal().y, (float) q.normal().z);
 				}
 			}
 		}

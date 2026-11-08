@@ -5,11 +5,10 @@ import com.example.railwayvehicleaddon.track.HeightProfile;
 import com.example.railwayvehicleaddon.track.PlanCurve;
 import com.example.railwayvehicleaddon.track.RoutePlanner;
 import com.example.railwayvehicleaddon.track.TrackNetwork;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.List;
 import java.util.Set;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.Vec3;
 
 /** 転車台・遷車台の配置計画で共通に使う部品。 */
 final class MovingDeckPlans {
@@ -19,7 +18,7 @@ final class MovingDeckPlans {
 	private MovingDeckPlans() {
 	}
 
-	static RoutePlanner.PlannedSegment straight(Vec3d a, Vec3d b) {
+	static RoutePlanner.PlannedSegment straight(Vec3 a, Vec3 b) {
 		return new RoutePlanner.PlannedSegment(PlanCurve.straight(a.x, a.z, b.x, b.z), HeightProfile.flat(a.y));
 	}
 
@@ -30,8 +29,8 @@ final class MovingDeckPlans {
 	 *
 	 * @return 接続部のノード参照。既存の端の向きが合わなければnull(問題としてissuesに追加済み)
 	 */
-	static NodeRef connection(TrackNetwork network, SurveyPoint snapped, Vec3d at, double dirX, double dirZ,
-							  List<Vec3d> newNodes, List<LayoutPlan.Edge> edges, List<Integer> stubEdges,
+	static NodeRef connection(TrackNetwork network, SurveyPoint snapped, Vec3 at, double dirX, double dirZ,
+							  List<Vec3> newNodes, List<LayoutPlan.Edge> edges, List<Integer> stubEdges,
 							  List<RoutePlanner.Issue> issues) {
 		if (snapped != null && snapped.snapped()) {
 			double[] outward = network.outwardDirection(snapped.nodeId());
@@ -43,7 +42,7 @@ final class MovingDeckPlans {
 		}
 		NodeRef conn = NodeRef.created(newNodes.size());
 		newNodes.add(at);
-		Vec3d outer = at.add(dirX * STUB_LENGTH, 0.0, dirZ * STUB_LENGTH);
+		Vec3 outer = at.add(dirX * STUB_LENGTH, 0.0, dirZ * STUB_LENGTH);
 		NodeRef outerRef = NodeRef.created(newNodes.size());
 		newNodes.add(outer);
 		stubEdges.add(edges.size());

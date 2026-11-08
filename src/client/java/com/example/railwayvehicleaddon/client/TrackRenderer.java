@@ -9,20 +9,20 @@ import com.example.railwayvehicleaddon.track.BallastType;
 import com.example.railwayvehicleaddon.track.ElectrificationType;
 import com.example.railwayvehicleaddon.track.TrackSegment;
 import com.example.railwayvehicleaddon.track.feature.MovingDeckFeature;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.OverlayTexture;
-import net.minecraft.client.render.RenderLayers;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.WorldRenderer;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.util.shape.VoxelShape;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
+import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import org.joml.Matrix4f;
 
 import java.util.ArrayList;
@@ -41,7 +41,7 @@ import java.util.Map;
  * 地面の形はメッシュ作成時に調べるため、周囲のブロックの変化は定期的な作り直しで反映する。
  */
 public final class TrackRenderer {
-	static final Identifier TEXTURE = Identifier.of(RailwayVehicleAddon.MOD_ID, "textures/track/track.png");
+	static final Identifier TEXTURE = Identifier.fromNamespaceAndPath(RailwayVehicleAddon.MOD_ID, "textures/track/track.png");
 	static final double SLEEPER_TOP = 0.10;
 	private static final double BALLAST_TOP = 0.05;
 	static final double RAIL_HALF_WIDTH = 0.05;
@@ -99,11 +99,11 @@ public final class TrackRenderer {
 		final List<Long> lights = new ArrayList<>();
 		boolean incomplete;
 
-		void quad(Vec3d a, Vec3d b, Vec3d c, Vec3d d, float[] uv, Vec3d lightAt) {
-			Vec3d n = b.subtract(a).crossProduct(d.subtract(a));
+		void quad(Vec3 a, Vec3 b, Vec3 c, Vec3 d, float[] uv, Vec3 lightAt) {
+			Vec3 n = b.subtract(a).cross(d.subtract(a));
 			double len = n.length();
 			if (len < 1.0e-9) {
-				n = c.subtract(b).crossProduct(a.subtract(b));
+				n = c.subtract(b).cross(a.subtract(b));
 				len = n.length();
 				if (len < 1.0e-9) {
 					return;
@@ -112,7 +112,7 @@ public final class TrackRenderer {
 			this.quads.add(new double[]{a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z});
 			this.normals.add(new float[]{(float) (n.x / len), (float) (n.y / len), (float) (n.z / len)});
 			this.uvs.add(uv);
-			this.lights.add(BlockPos.ofFloored(lightAt.x, lightAt.y + 0.3, lightAt.z).asLong());
+			this.lights.add(BlockPos.containing(lightAt.x, lightAt.y + 0.3, lightAt.z).asLong());
 		}
 
 		Mesh build(long time) {
@@ -132,24 +132,24 @@ public final class TrackRenderer {
 	}
 
 	/** 断面座標(横方向lat、高さh)をワールド座標へ。カント角だけ線路中心まわりに回す。 */
-	private static Vec3d crossSection(TrackPoint p, double lat, double h) {
+	private static Vec3 crossSection(TrackPoint p, double lat, double h) {
 		double c = p.cantRad();
 		double cos = Math.cos(c);
 		double sin = Math.sin(c);
 		double l = lat * cos - h * sin;
 		double u = lat * sin + h * cos;
-		return new Vec3d(p.x() + p.lateralX() * l, p.y() + u, p.z() + p.lateralZ() * l);
+		return new Vec3(p.x() + p.lateralX() * l, p.y() + u, p.z() + p.lateralZ() * l);
 	}
 
 	/**
 	 * (x, z)の真下で、高さfromY以下にある最初の地面の高さ(当たり判定の上面)。
 	 * 見つからなければNaN、未ロードならnullの代わりにbuilder.incompleteを立ててNaN。
 	 */
-	private static double groundBelow(ClientWorld world, double x, double fromY, double z, MeshBuilder builder) {
-		BlockPos.Mutable pos = new BlockPos.Mutable();
+	private static double groundBelow(ClientLevel world, double x, double fromY, double z, MeshBuilder builder) {
+		BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
 		int bx = (int) Math.floor(x);
 		int bz = (int) Math.floor(z);
-		if (!world.isChunkLoaded(bx >> 4, bz >> 4)) {
+		if (!world.hasChunk(bx >> 4, bz >> 4)) {
 			builder.incomplete = true;
 			return Double.NaN;
 		}
@@ -165,7 +165,7 @@ public final class TrackRenderer {
 			if (shape.isEmpty()) {
 				continue;
 			}
-			double surface = y + shape.getMax(Direction.Axis.Y);
+			double surface = y + shape.max(Direction.Axis.Y);
 			if (surface <= fromY + 1.0e-3) {
 				return surface;
 			}
@@ -175,14 +175,14 @@ public final class TrackRenderer {
 	}
 
 	/** バラストの法面の下端(断面の片側)。 */
-	private static Vec3d ballastFoot(ClientWorld world, TrackPoint p, Vec3d topEdge, double side, double topHalf, MeshBuilder builder) {
+	private static Vec3 ballastFoot(ClientLevel world, TrackPoint p, Vec3 topEdge, double side, double topHalf, MeshBuilder builder) {
 		double ground = groundBelow(world, topEdge.x, topEdge.y, topEdge.z, builder);
 		double depth = Double.isNaN(ground) ? BALLAST_BRIDGE_DEPTH : Math.max(0.02, topEdge.y - ground);
 		double spread = Double.isNaN(ground) ? 0.0 : depth;
 		double lat = side * (topHalf + spread);
 		// 下端は水平に外へ広げ、高さは地面(または道床の厚さ分下)
-		Vec3d outward = new Vec3d(p.lateralX() * lat, 0.0, p.lateralZ() * lat);
-		return new Vec3d(p.x() + outward.x, topEdge.y - depth, p.z() + outward.z);
+		Vec3 outward = new Vec3(p.lateralX() * lat, 0.0, p.lateralZ() * lat);
+		return new Vec3(p.x() + outward.x, topEdge.y - depth, p.z() + outward.z);
 	}
 
 	/**
@@ -225,17 +225,17 @@ public final class TrackRenderer {
 	}
 
 	/** 直方体(中心c、水平の2軸と高さの範囲)。 */
-	private static void column(MeshBuilder builder, Vec3d c, double ax, double az, double half, double y0, double y1, float[] uv) {
+	private static void column(MeshBuilder builder, Vec3 c, double ax, double az, double half, double y0, double y1, float[] uv) {
 		double bx = az;
 		double bz = -ax;
-		Vec3d[] bottom = new Vec3d[4];
-		Vec3d[] top = new Vec3d[4];
+		Vec3[] bottom = new Vec3[4];
+		Vec3[] top = new Vec3[4];
 		double[][] k = {{-1, -1}, {1, -1}, {1, 1}, {-1, 1}};
 		for (int i = 0; i < 4; i++) {
 			double x = c.x + (ax * k[i][0] + bx * k[i][1]) * half;
 			double z = c.z + (az * k[i][0] + bz * k[i][1]) * half;
-			bottom[i] = new Vec3d(x, y0, z);
-			top[i] = new Vec3d(x, y1, z);
+			bottom[i] = new Vec3(x, y0, z);
+			top[i] = new Vec3(x, y1, z);
 		}
 		builder.quad(top[0], top[1], top[2], top[3], uv, c);
 		for (int i = 0; i < 4; i++) {
@@ -245,8 +245,8 @@ public final class TrackRenderer {
 	}
 
 	/** aからbへの細い棒(水平・垂直の2枚の帯で、どの向きから見ても線として見える)。 */
-	private static void wire(MeshBuilder builder, Vec3d a, Vec3d b, double half) {
-		Vec3d d = b.subtract(a);
+	private static void wire(MeshBuilder builder, Vec3 a, Vec3 b, double half) {
+		Vec3 d = b.subtract(a);
 		double len = Math.hypot(d.x, d.z);
 		double sx = len > 1.0e-6 ? -d.z / len * half : half;
 		double sz = len > 1.0e-6 ? d.x / len * half : 0.0;
@@ -318,7 +318,7 @@ public final class TrackRenderer {
 	}
 
 	/** 架線柱を立てる位置が他の線路(建築限界)にかかるか。 */
-	private static boolean blocksOtherTrack(TrackNetwork network, TrackSegment own, Vec3d base) {
+	private static boolean blocksOtherTrack(TrackNetwork network, TrackSegment own, Vec3 base) {
 		double keep = ClientTrackData.config().clearanceHalfWidth();
 		TrackNetwork.Nearest n = network.nearestPoint(base.x, base.y, base.z, keep);
 		return n != null && n.segmentId() != own.id();
@@ -334,7 +334,7 @@ public final class TrackRenderer {
 		for (int i = 1; i <= steps; i++) {
 			TrackPoint a = samples[i - 1];
 			TrackPoint b = samples[i];
-			wire(builder, new Vec3d(a.x(), a.y() + wire, a.z()), new Vec3d(b.x(), b.y() + wire, b.z()), 0.02);
+			wire(builder, new Vec3(a.x(), a.y() + wire, a.z()), new Vec3(b.x(), b.y() + wire, b.z()), 0.02);
 		}
 		double length = segment.length();
 		double lateral = mastLateral(gauge);
@@ -348,10 +348,10 @@ public final class TrackRenderer {
 			for (int k = 0; k < masts; k++) {
 				double s = from + (k + 0.5) * (to - from) / masts;
 				TrackPoint p = network.sample(segment, s);
-				Vec3d center = new Vec3d(p.x(), p.y(), p.z());
-				Vec3d base = null;
+				Vec3 center = new Vec3(p.x(), p.y(), p.z());
+				Vec3 base = null;
 				for (double side : new double[]{1.0, -1.0}) {
-					Vec3d candidate = center.add(p.lateralX() * lateral * side, 0.0, p.lateralZ() * lateral * side);
+					Vec3 candidate = center.add(p.lateralX() * lateral * side, 0.0, p.lateralZ() * lateral * side);
 					if (!blocksOtherTrack(network, segment, candidate)) {
 						base = candidate;
 						break;
@@ -362,11 +362,11 @@ public final class TrackRenderer {
 				}
 				column(builder, base, p.dirX(), p.dirZ(), 0.07, p.y(), p.y() + wire + 0.28, RAIL_UV);
 				// 腕金: 架線柱の上部から線路中心の上へ
-				Vec3d armStart = new Vec3d(base.x, p.y() + wire + 0.25, base.z);
-				Vec3d armEnd = new Vec3d(center.x, p.y() + wire + 0.25, center.z);
+				Vec3 armStart = new Vec3(base.x, p.y() + wire + 0.25, base.z);
+				Vec3 armEnd = new Vec3(center.x, p.y() + wire + 0.25, center.z);
 				wire(builder, armStart, armEnd, 0.035);
 				// ハンガー: 腕金からトロリ線へ
-				wire(builder, armEnd, new Vec3d(center.x, p.y() + wire, center.z), 0.015);
+				wire(builder, armEnd, new Vec3(center.x, p.y() + wire, center.z), 0.015);
 			}
 		}
 		for (long node : new long[]{segment.nodeA(), segment.nodeB()}) {
@@ -447,19 +447,19 @@ public final class TrackRenderer {
 		double cx = origin.x() + rx * along;
 		double cz = origin.z() + rz * along;
 		double beamY = y + wire + 0.28;
-		Vec3d left = new Vec3d(cx + lx * (maxLat + lateral), y, cz + lz * (maxLat + lateral));
-		Vec3d right = new Vec3d(cx + lx * (minLat - lateral), y, cz + lz * (minLat - lateral));
+		Vec3 left = new Vec3(cx + lx * (maxLat + lateral), y, cz + lz * (maxLat + lateral));
+		Vec3 right = new Vec3(cx + lx * (minLat - lateral), y, cz + lz * (minLat - lateral));
 		column(builder, left, rx, rz, 0.08, y, beamY + 0.05, RAIL_UV);
 		column(builder, right, rx, rz, 0.08, y, beamY + 0.05, RAIL_UV);
 		// 梁(上下2本の弦材)
-		wire(builder, new Vec3d(left.x, beamY, left.z), new Vec3d(right.x, beamY, right.z), 0.05);
-		wire(builder, new Vec3d(left.x, beamY - 0.2, left.z), new Vec3d(right.x, beamY - 0.2, right.z), 0.03);
+		wire(builder, new Vec3(left.x, beamY, left.z), new Vec3(right.x, beamY, right.z), 0.05);
+		wire(builder, new Vec3(left.x, beamY - 0.2, left.z), new Vec3(right.x, beamY - 0.2, right.z), 0.03);
 		// 各線路のトロリ線を梁から吊る
 		for (int i = 0; i < points.length; i++) {
 			TrackPoint p = points[i];
 			double lat = (p.x() - origin.x()) * lx + (p.z() - origin.z()) * lz;
-			Vec3d top = new Vec3d(cx + lx * lat, beamY - 0.2, cz + lz * lat);
-			wire(builder, top, new Vec3d(p.x(), p.y() + wireHeightOf(branches.get(i)), p.z()), 0.015);
+			Vec3 top = new Vec3(cx + lx * lat, beamY - 0.2, cz + lz * lat);
+			wire(builder, top, new Vec3(p.x(), p.y() + wireHeightOf(branches.get(i)), p.z()), 0.015);
 		}
 	}
 
@@ -478,7 +478,7 @@ public final class TrackRenderer {
 		for (int i = 1; i <= steps; i++) {
 			TrackPoint prev = samples[i - 1];
 			TrackPoint cur = samples[i];
-			Vec3d lightAt = new Vec3d(cur.x(), cur.y(), cur.z());
+			Vec3 lightAt = new Vec3(cur.x(), cur.y(), cur.z());
 			builder.quad(crossSection(prev, in, THIRD_RAIL_TOP), crossSection(prev, out, THIRD_RAIL_TOP),
 					crossSection(cur, out, THIRD_RAIL_TOP), crossSection(cur, in, THIRD_RAIL_TOP), RAIL_UV, lightAt);
 			builder.quad(crossSection(prev, out, 0.0), crossSection(cur, out, 0.0),
@@ -491,12 +491,12 @@ public final class TrackRenderer {
 		for (int k = 0; k < supports; k++) {
 			double s = (k + 0.5) * length / supports;
 			TrackPoint p = network.sample(segment, s);
-			Vec3d base = new Vec3d(p.x() + p.lateralX() * lat, p.y(), p.z() + p.lateralZ() * lat);
+			Vec3 base = new Vec3(p.x() + p.lateralX() * lat, p.y(), p.z() + p.lateralZ() * lat);
 			column(builder, base, p.dirX(), p.dirZ(), 0.05, p.y(), p.y() + THIRD_RAIL_TOP, RAIL_UV);
 		}
 	}
 
-	private static Mesh buildMesh(ClientWorld world, TrackNetwork network, TrackSegment segment, float gauge) {
+	private static Mesh buildMesh(ClientLevel world, TrackNetwork network, TrackSegment segment, float gauge) {
 		MeshBuilder builder = new MeshBuilder();
 		double length = segment.length();
 		double half = gauge / 2.0;
@@ -510,10 +510,10 @@ public final class TrackRenderer {
 
 		int steps = Math.max(1, (int) Math.ceil(length / RAIL_STEP));
 		TrackPoint[] samples = new TrackPoint[steps + 1];
-		Vec3d[] topL = new Vec3d[steps + 1];
-		Vec3d[] topR = new Vec3d[steps + 1];
-		Vec3d[] footL = new Vec3d[steps + 1];
-		Vec3d[] footR = new Vec3d[steps + 1];
+		Vec3[] topL = new Vec3[steps + 1];
+		Vec3[] topR = new Vec3[steps + 1];
+		Vec3[] footL = new Vec3[steps + 1];
+		Vec3[] footR = new Vec3[steps + 1];
 		for (int i = 0; i <= steps; i++) {
 			TrackPoint p = network.sample(segment, length * i / steps);
 			samples[i] = p;
@@ -528,7 +528,7 @@ public final class TrackRenderer {
 		for (int i = 1; i <= steps; i++) {
 			TrackPoint prev = samples[i - 1];
 			TrackPoint cur = samples[i];
-			Vec3d lightAt = new Vec3d(cur.x(), cur.y(), cur.z());
+			Vec3 lightAt = new Vec3(cur.x(), cur.y(), cur.z());
 			double s0 = length * (i - 1) / steps;
 			double s1 = length * i / steps;
 			// レール(左右それぞれ、上面と両側面)。分岐器で開通していない側の分岐部は描かない
@@ -554,9 +554,9 @@ public final class TrackRenderer {
 		}
 		if (hasBallast) {
 			// 道床の端面(区間の両端。接続先がある所では隠れる)
-			builder.quad(footR[0], footL[0], topL[0], topR[0], ballastUv, new Vec3d(samples[0].x(), samples[0].y(), samples[0].z()));
+			builder.quad(footR[0], footL[0], topL[0], topR[0], ballastUv, new Vec3(samples[0].x(), samples[0].y(), samples[0].z()));
 			builder.quad(footL[steps], footR[steps], topR[steps], topL[steps], ballastUv,
-					new Vec3d(samples[steps].x(), samples[steps].y(), samples[steps].z()));
+					new Vec3(samples[steps].x(), samples[steps].y(), samples[steps].z()));
 		}
 
 		switch (segment.electrificationType()) {
@@ -576,9 +576,9 @@ public final class TrackRenderer {
 			double fx = p.dirX() * SLEEPER_HALF_LENGTH;
 			double fz = p.dirZ() * SLEEPER_HALF_LENGTH;
 			double fy = p.grade() * SLEEPER_HALF_LENGTH;
-			Vec3d lightAt = new Vec3d(p.x(), p.y(), p.z());
-			Vec3d[] bottom = new Vec3d[4];
-			Vec3d[] top = new Vec3d[4];
+			Vec3 lightAt = new Vec3(p.x(), p.y(), p.z());
+			Vec3[] bottom = new Vec3[4];
+			Vec3[] top = new Vec3[4];
 			double[][] corners = {{-sleeperHalfLat, -1}, {sleeperHalfLat, -1}, {sleeperHalfLat, 1}, {-sleeperHalfLat, 1}};
 			for (int c = 0; c < 4; c++) {
 				double lat = corners[c][0];
@@ -592,12 +592,12 @@ public final class TrackRenderer {
 				builder.quad(bottom[n], bottom[c], top[c], top[n], SLEEPER_UV, lightAt);
 			}
 		}
-		return builder.build(world.getTime());
+		return builder.build(world.getGameTime());
 	}
 
 	public static void render(WorldRenderContext context) {
-		MinecraftClient client = MinecraftClient.getInstance();
-		ClientWorld world = client.world;
+		Minecraft client = Minecraft.getInstance();
+		ClientLevel world = client.level;
 		if (world == null) {
 			return;
 		}
@@ -607,18 +607,18 @@ public final class TrackRenderer {
 			cachedGauge = config.gauge();
 			CACHE.clear();
 		}
-		Vec3d camera = context.worldState().cameraRenderState.pos;
-		double chunkRange = client.options.getClampedViewDistance() * 16.0;
+		Vec3 camera = context.worldState().cameraRenderState.pos;
+		double chunkRange = client.options.getEffectiveRenderDistance() * 16.0;
 		double configured = config.trackRenderDistance();
 		double radius = configured > 0.0 ? Math.min(configured, chunkRange) : chunkRange;
-		long now = world.getTime();
+		long now = world.getGameTime();
 		int rebuilds = 0;
 
-		MatrixStack matrices = context.matrices();
-		MatrixStack.Entry entry = matrices.peek();
-		Matrix4f pose = entry.getPositionMatrix();
-		VertexConsumer consumer = context.consumers().getBuffer(RenderLayers.entityCutoutNoCull(TEXTURE));
-		BlockPos.Mutable lightPos = new BlockPos.Mutable();
+		PoseStack matrices = context.matrices();
+		PoseStack.Pose entry = matrices.last();
+		Matrix4f pose = entry.pose();
+		VertexConsumer consumer = context.consumers().getBuffer(RenderTypes.entityCutoutNoCull(TEXTURE));
+		BlockPos.MutableBlockPos lightPos = new BlockPos.MutableBlockPos();
 
 		for (long id : network.segmentsNear(camera.x, camera.z, radius)) {
 			TrackSegment segment = network.segment(id);
@@ -658,7 +658,7 @@ public final class TrackRenderer {
 				if (key != lastLightKey) {
 					lastLightKey = key;
 					lightPos.set(key);
-					light = WorldRenderer.getLightmapCoordinates(world, lightPos);
+					light = LevelRenderer.getLightColor(world, lightPos);
 				}
 				float[] uv = mesh.uv()[q];
 				float nx = n[q * 3];
@@ -668,18 +668,18 @@ public final class TrackRenderer {
 					int o = base + corner * 3;
 					float u = (corner == 1 || corner == 2) ? uv[2] : uv[0];
 					float t = (corner >= 2) ? uv[3] : uv[1];
-					consumer.vertex(pose, (float) (v[o] - camera.x), (float) (v[o + 1] - camera.y), (float) (v[o + 2] - camera.z))
-							.color(255, 255, 255, 255)
-							.texture(u, t)
-							.overlay(OverlayTexture.DEFAULT_UV)
-							.light(light)
-							.normal(entry, nx, ny, nz);
+					consumer.addVertex(pose, (float) (v[o] - camera.x), (float) (v[o + 1] - camera.y), (float) (v[o + 2] - camera.z))
+							.setColor(255, 255, 255, 255)
+							.setUv(u, t)
+							.setOverlay(OverlayTexture.NO_OVERLAY)
+							.setLight(light)
+							.setNormal(entry, nx, ny, nz);
 				}
 			}
 		}
 	}
 
-	private static double squaredHorizontalDistance(Mesh mesh, Vec3d camera) {
+	private static double squaredHorizontalDistance(Mesh mesh, Vec3 camera) {
 		double[] v = mesh.verts();
 		double dx = v[0] - camera.x;
 		double dz = v[2] - camera.z;

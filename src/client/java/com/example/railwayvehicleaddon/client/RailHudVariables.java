@@ -5,10 +5,9 @@ import com.example.railwayvehicleaddon.vehicle.RailVehicleParams;
 import com.example.railwayvehicleaddon.vehicle.RailVehicleParamsLoader;
 import com.example.tudursvehiclemod.client.hud.HudVariableProvider;
 import com.example.tudursvehiclemod.entity.AbstractVehicleEntity;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.entity.player.PlayerEntity;
-
 import java.util.Map;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.entity.player.Player;
 
 /**
  * 鉄道車両のHUD向けの変数を前提MODのHUDスクリプトへ公開する。
@@ -27,7 +26,7 @@ public final class RailHudVariables implements HudVariableProvider {
 	}
 
 	@Override
-	public void provideNumeric(MinecraftClient client, PlayerEntity player, AbstractVehicleEntity vehicle, Map<String, Double> vars) {
+	public void provideNumeric(Minecraft client, Player player, AbstractVehicleEntity vehicle, Map<String, Double> vars) {
 		if (!(vehicle instanceof RailVehicleEntity rail)) {
 			return;
 		}
@@ -53,7 +52,7 @@ public final class RailHudVariables implements HudVariableProvider {
 		vars.put("rail_coal_count", (double) coalCount);
 		// low_fuel(前提MOD本体)と同じ点滅(10tickごと)にそろえる
 		boolean lowCoal = fireSeconds <= 0.0f && coalCount <= 0;
-		boolean blinkOn = (vehicle.getEntityWorld().getTime() / 10L) % 2L == 0L;
+		boolean blinkOn = (vehicle.level().getGameTime() / 10L) % 2L == 0L;
 		vars.put("rail_low_coal", lowCoal && blinkOn ? 1.0 : 0.0);
 	}
 }

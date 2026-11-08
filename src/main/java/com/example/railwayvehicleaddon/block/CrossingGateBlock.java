@@ -1,25 +1,25 @@
 package com.example.railwayvehicleaddon.block;
 
 import com.mojang.serialization.MapCodec;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.BlockWithEntity;
-import net.minecraft.block.ShapeContext;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.BlockEntityTicker;
-import net.minecraft.block.entity.BlockEntityType;
-import net.minecraft.item.ItemPlacementContext;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.state.StateManager;
-import net.minecraft.state.property.BooleanProperty;
-import net.minecraft.state.property.EnumProperty;
-import net.minecraft.state.property.Properties;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.shape.VoxelShape;
-import net.minecraft.world.BlockView;
-import net.minecraft.world.World;
-import net.minecraft.world.block.WireOrientation;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.BaseEntityBlock;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityTicker;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.BooleanProperty;
+import net.minecraft.world.level.block.state.properties.EnumProperty;
+import net.minecraft.world.level.redstone.Orientation;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 /**
  * 踏切遮断機。レッドストーン入力がある間は遮断かんを下ろし、警報灯を交互に点滅させて警報音を鳴らす。
@@ -27,61 +27,61 @@ import net.minecraft.world.block.WireOrientation;
  * 遮断かんは(警報灯の方から見て)右側へ4ブロック伸びる。遮断かんと警報灯の点滅はクライアントの
  * 描画(DeviceOverlayRenderer)で動かす。
  */
-public class CrossingGateBlock extends BlockWithEntity {
-	public static final MapCodec<CrossingGateBlock> CODEC = createCodec(CrossingGateBlock::new);
-	public static final EnumProperty<Direction> FACING = Properties.HORIZONTAL_FACING;
-	public static final BooleanProperty POWERED = Properties.POWERED;
-	private static final VoxelShape SHAPE = Block.createCuboidShape(4.0, 0.0, 4.0, 12.0, 16.0, 12.0);
+public class CrossingGateBlock extends BaseEntityBlock {
+	public static final MapCodec<CrossingGateBlock> CODEC = simpleCodec(CrossingGateBlock::new);
+	public static final EnumProperty<Direction> FACING = BlockStateProperties.HORIZONTAL_FACING;
+	public static final BooleanProperty POWERED = BlockStateProperties.POWERED;
+	private static final VoxelShape SHAPE = Block.box(4.0, 0.0, 4.0, 12.0, 16.0, 12.0);
 
-	public CrossingGateBlock(Settings settings) {
+	public CrossingGateBlock(Properties settings) {
 		super(settings);
-		setDefaultState(getDefaultState().with(FACING, Direction.NORTH).with(POWERED, false));
+		registerDefaultState(defaultBlockState().setValue(FACING, Direction.NORTH).setValue(POWERED, false));
 	}
 
 	@Override
-	protected MapCodec<? extends BlockWithEntity> getCodec() {
+	protected MapCodec<? extends BaseEntityBlock> codec() {
 		return CODEC;
 	}
 
 	@Override
-	protected void appendProperties(StateManager.Builder<Block, BlockState> builder) {
+	protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
 		builder.add(FACING, POWERED);
 	}
 
 	@Override
-	protected net.minecraft.block.BlockRenderType getRenderType(BlockState state) {
-		return net.minecraft.block.BlockRenderType.MODEL;
+	protected net.minecraft.world.level.block.RenderShape getRenderShape(BlockState state) {
+		return net.minecraft.world.level.block.RenderShape.MODEL;
 	}
 
 	@Override
-	public BlockEntity createBlockEntity(BlockPos pos, BlockState state) {
+	public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
 		return new SignalDeviceBlockEntity(pos, state);
 	}
 
 	@Override
-	public <T extends BlockEntity> BlockEntityTicker<T> getTicker(World world, BlockState state, BlockEntityType<T> type) {
-		return world.isClient() ? null : validateTicker(type, ModBlocks.SIGNAL_DEVICE_ENTITY, SignalDeviceBlockEntity::tick);
+	public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level world, BlockState state, BlockEntityType<T> type) {
+		return world.isClientSide() ? null : createTickerHelper(type, ModBlocks.SIGNAL_DEVICE_ENTITY, SignalDeviceBlockEntity::tick);
 	}
 
 	@Override
-	protected VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+	protected VoxelShape getShape(BlockState state, BlockGetter world, BlockPos pos, CollisionContext context) {
 		return SHAPE;
 	}
 
 	@Override
-	public BlockState getPlacementState(ItemPlacementContext ctx) {
-		return getDefaultState().with(FACING, ctx.getHorizontalPlayerFacing().getOpposite())
-				.with(POWERED, ctx.getWorld().getReceivedRedstonePower(ctx.getBlockPos()) > 0);
+	public BlockState getStateForPlacement(BlockPlaceContext ctx) {
+		return defaultBlockState().setValue(FACING, ctx.getHorizontalDirection().getOpposite())
+				.setValue(POWERED, ctx.getLevel().getBestNeighborSignal(ctx.getClickedPos()) > 0);
 	}
 
 	@Override
-	protected void neighborUpdate(BlockState state, World world, BlockPos pos, Block sourceBlock,
-								  WireOrientation wireOrientation, boolean notify) {
-		super.neighborUpdate(state, world, pos, sourceBlock, wireOrientation, notify);
-		if (world instanceof ServerWorld) {
-			boolean powered = world.getReceivedRedstonePower(pos) > 0;
-			if (state.get(POWERED) != powered) {
-				world.setBlockState(pos, state.with(POWERED, powered), Block.NOTIFY_LISTENERS);
+	protected void neighborChanged(BlockState state, Level world, BlockPos pos, Block sourceBlock,
+								  Orientation wireOrientation, boolean notify) {
+		super.neighborChanged(state, world, pos, sourceBlock, wireOrientation, notify);
+		if (world instanceof ServerLevel) {
+			boolean powered = world.getBestNeighborSignal(pos) > 0;
+			if (state.getValue(POWERED) != powered) {
+				world.setBlock(pos, state.setValue(POWERED, powered), Block.UPDATE_CLIENTS);
 			}
 		}
 	}

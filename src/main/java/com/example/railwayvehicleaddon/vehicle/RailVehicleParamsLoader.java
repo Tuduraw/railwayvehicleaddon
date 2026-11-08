@@ -7,9 +7,9 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.serialization.JsonOps;
 import net.fabricmc.fabric.api.resource.SimpleSynchronousResourceReloadListener;
-import net.minecraft.resource.Resource;
-import net.minecraft.resource.ResourceManager;
-import net.minecraft.util.Identifier;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.packs.resources.Resource;
+import net.minecraft.server.packs.resources.ResourceManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,19 +40,19 @@ public final class RailVehicleParamsLoader implements SimpleSynchronousResourceR
 
 	@Override
 	public Identifier getFabricId() {
-		return Identifier.of(RailwayVehicleAddon.MOD_ID, "rail_vehicle_params");
+		return Identifier.fromNamespaceAndPath(RailwayVehicleAddon.MOD_ID, "rail_vehicle_params");
 	}
 
 	@Override
-	public void reload(ResourceManager manager) {
+	public void onResourceManagerReload(ResourceManager manager) {
 		Map<Identifier, RailVehicleParams> loaded = new HashMap<>();
 		for (Map.Entry<Identifier, Resource> entry :
-				manager.findResources(DIRECTORY, id -> id.getPath().endsWith(SUFFIX)).entrySet()) {
+				manager.listResources(DIRECTORY, id -> id.getPath().endsWith(SUFFIX)).entrySet()) {
 			Identifier fileId = entry.getKey();
 			String path = fileId.getPath();
-			Identifier vehicleId = Identifier.of(fileId.getNamespace(),
+			Identifier vehicleId = Identifier.fromNamespaceAndPath(fileId.getNamespace(),
 					path.substring(DIRECTORY.length() + 1, path.length() - SUFFIX.length()));
-			try (Reader reader = entry.getValue().getReader()) {
+			try (Reader reader = entry.getValue().openAsReader()) {
 				parse(vehicleId, JsonParser.parseReader(reader), loaded);
 			} catch (Exception e) {
 				LOGGER.error("Failed to read rail params of {}", vehicleId, e);
@@ -68,7 +68,7 @@ public final class RailVehicleParamsLoader implements SimpleSynchronousResourceR
 				try (var files = Files.walk(vehiclesDir)) {
 					for (Path jsonFile : (Iterable<Path>) files.filter(p -> p.toString().endsWith(SUFFIX))::iterator) {
 						String relative = vehiclesDir.relativize(jsonFile).toString().replace('\\', '/');
-						Identifier vehicleId = Identifier.of(namespace, relative.substring(0, relative.length() - SUFFIX.length()));
+						Identifier vehicleId = Identifier.fromNamespaceAndPath(namespace, relative.substring(0, relative.length() - SUFFIX.length()));
 						try (BufferedReader reader = Files.newBufferedReader(jsonFile, StandardCharsets.UTF_8)) {
 							parse(vehicleId, JsonParser.parseReader(reader), loaded);
 						} catch (Exception e) {

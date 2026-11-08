@@ -1,21 +1,21 @@
 package com.example.railwayvehicleaddon.network;
 
 import com.example.railwayvehicleaddon.RailwayVehicleAddon;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.util.Identifier;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.Identifier;
 
 /** クライアント→サーバー: 乗っている編成のATOを入れる・切る(ATOキー)。 */
-public record AtoTogglePayload() implements CustomPayload {
+public record AtoTogglePayload() implements CustomPacketPayload {
 
-	public static final CustomPayload.Id<AtoTogglePayload> ID =
-			new CustomPayload.Id<>(Identifier.of(RailwayVehicleAddon.MOD_ID, "ato_toggle"));
+	public static final CustomPacketPayload.Type<AtoTogglePayload> ID =
+			new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath(RailwayVehicleAddon.MOD_ID, "ato_toggle"));
 
-	public static final PacketCodec<RegistryByteBuf, AtoTogglePayload> CODEC = PacketCodec.unit(new AtoTogglePayload());
+	public static final StreamCodec<RegistryFriendlyByteBuf, AtoTogglePayload> CODEC = StreamCodec.unit(new AtoTogglePayload());
 
 	@Override
-	public Id<? extends CustomPayload> getId() {
+	public Type<? extends CustomPacketPayload> type() {
 		return ID;
 	}
 }

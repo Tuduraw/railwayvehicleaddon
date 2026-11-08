@@ -14,17 +14,16 @@ import com.example.railwayvehicleaddon.track.TrackSegment;
 import com.example.railwayvehicleaddon.track.feature.TrackFeature;
 import com.example.railwayvehicleaddon.survey.LayoutPlan;
 import com.example.railwayvehicleaddon.survey.SurveyModes;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.DrawStyle;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.debug.gizmo.GizmoDrawing;
-
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
+import net.minecraft.gizmos.GizmoStyle;
+import net.minecraft.gizmos.Gizmos;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * 測量プレビューの表示。前提MODのMortarMarkerRenderer等と同じく、毎tickギズモを
@@ -55,15 +54,15 @@ public final class SurveyPreviewRenderer {
 	private SurveyPreviewRenderer() {
 	}
 
-	public static void tick(MinecraftClient client) {
-		if (client.player == null || client.world == null || !SurveySession.isHoldingTool(client.player)) {
+	public static void tick(Minecraft client) {
+		if (client.player == null || client.level == null || !SurveySession.isHoldingTool(client.player)) {
 			return;
 		}
 		SurveySession session = SurveySession.INSTANCE;
 		RailwayConfig.Values config = ClientTrackData.config();
 		TrackNetwork network = ClientTrackData.network();
-		Vec3d eye = client.player.getEyePos();
-		try (var scope = client.newGizmoScope()) {
+		Vec3 eye = client.player.getEyePosition();
+		try (var scope = client.collectPerTickGizmos()) {
 			drawSwitches(network, session, eye, config);
 			drawDeviceLinks(client, network, session);
 
@@ -102,24 +101,24 @@ public final class SurveyPreviewRenderer {
 				int color = session.selection().contains(i) ? COLOR_SELECTED
 						: i == session.targetPoint() ? COLOR_TARGET
 						: p.snapped() ? COLOR_SNAPPED : COLOR_POINT;
-				Vec3d w = p.pos();
+				Vec3 w = p.pos();
 				double size = i == 0 ? 0.35 : 0.25;
-				GizmoDrawing.box(new Box(w.x - size, w.y, w.z - size, w.x + size, w.y + 0.5 + (i == 0 ? 0.25 : 0.0), w.z + size),
-						DrawStyle.stroked(color, LINE_WIDTH)).ignoreOcclusion();
+				Gizmos.cuboid(new AABB(w.x - size, w.y, w.z - size, w.x + size, w.y + 0.5 + (i == 0 ? 0.25 : 0.0), w.z + size),
+						GizmoStyle.stroke(color, LINE_WIDTH)).setAlwaysOnTop();
 			}
 
 			SurveyPreviewRenderer.drawPreview(session, config, eye, client);
 		}
 	}
 
-	private static void drawPreview(SurveySession session, RailwayConfig.Values config, Vec3d eye, MinecraftClient client) {
+	private static void drawPreview(SurveySession session, RailwayConfig.Values config, Vec3 eye, Minecraft client) {
 		SurveySession.Preview preview = session.preview();
 		List<SurveyPoint> points = session.points();
 		if (preview == null || (preview.segments().isEmpty() && preview.plan().features().isEmpty())) {
 			// 線形がまだ作れない(点が1つだけ等)ときは、最後の点からプレイヤー位置へ仮の線で方向を示す
 			if (!points.isEmpty()) {
-				Vec3d w = points.get(points.size() - 1).pos();
-				GizmoDrawing.line(w.add(0.0, 0.25, 0.0), client.player.getEntityPos().add(0.0, 0.25, 0.0), COLOR_POINT, 1.0f);
+				Vec3 w = points.get(points.size() - 1).pos();
+				Gizmos.line(w.add(0.0, 0.25, 0.0), client.player.position().add(0.0, 0.25, 0.0), COLOR_POINT, 1.0f);
 			}
 			return;
 		}
@@ -131,14 +130,14 @@ public final class SurveyPreviewRenderer {
 			drawRails(segment, config.gauge(), color);
 		}
 		for (LayoutPlan.FeatureSpec spec : preview.plan().features()) {
-			for (Vec3d[] line : spec.outline()) {
-				GizmoDrawing.line(line[0], line[1], color, LINE_WIDTH).ignoreOcclusion();
+			for (Vec3[] line : spec.outline()) {
+				Gizmos.line(line[0], line[1], color, LINE_WIDTH).setAlwaysOnTop();
 			}
 		}
 		for (RoutePlanner.Issue issue : issues) {
-			Vec3d p = issue.position();
-			GizmoDrawing.box(new Box(p.x - 0.5, p.y, p.z - 0.5, p.x + 0.5, p.y + 2.0, p.z + 0.5),
-					DrawStyle.stroked(COLOR_ISSUE, LINE_WIDTH)).ignoreOcclusion();
+			Vec3 p = issue.position();
+			Gizmos.cuboid(new AABB(p.x - 0.5, p.y, p.z - 0.5, p.x + 0.5, p.y + 2.0, p.z + 0.5),
+					GizmoStyle.stroke(COLOR_ISSUE, LINE_WIDTH)).setAlwaysOnTop();
 		}
 
 		// 警告対象のブロック(撤去不可=赤、設置物=黄)
@@ -149,21 +148,21 @@ public final class SurveyPreviewRenderer {
 			}
 		}
 		if (warned.size() > MAX_BLOCK_BOXES) {
-			warned.sort(Comparator.comparingDouble(e -> e.getKey().getSquaredDistance(eye)));
+			warned.sort(Comparator.comparingDouble(e -> e.getKey().distToCenterSqr(eye)));
 			warned = warned.subList(0, MAX_BLOCK_BOXES);
 		}
 		for (Map.Entry<BlockPos, BlockCategory> entry : warned) {
 			BlockCategory category = entry.getValue();
-			DrawStyle style;
+			GizmoStyle style;
 			if (category.blocksPlacement() && preview.force() && category != BlockCategory.UNLOADED) {
 				// 強制置換で撤去されるブロック(本来は撤去できない)
-				style = DrawStyle.filledAndStroked(COLOR_FORCE_STROKE, LINE_WIDTH, COLOR_FORCE_FILL);
+				style = GizmoStyle.strokeAndFill(COLOR_FORCE_STROKE, LINE_WIDTH, COLOR_FORCE_FILL);
 			} else if (category.blocksPlacement()) {
-				style = DrawStyle.filledAndStroked(COLOR_BLOCKED_STROKE, LINE_WIDTH, COLOR_BLOCKED_FILL);
+				style = GizmoStyle.strokeAndFill(COLOR_BLOCKED_STROKE, LINE_WIDTH, COLOR_BLOCKED_FILL);
 			} else {
-				style = DrawStyle.filledAndStroked(COLOR_PLAYER_STROKE, LINE_WIDTH, COLOR_PLAYER_FILL);
+				style = GizmoStyle.strokeAndFill(COLOR_PLAYER_STROKE, LINE_WIDTH, COLOR_PLAYER_FILL);
 			}
-			GizmoDrawing.box(entry.getKey(), style).ignoreOcclusion();
+			Gizmos.cuboid(entry.getKey(), style).setAlwaysOnTop();
 		}
 	}
 
@@ -171,28 +170,28 @@ public final class SurveyPreviewRenderer {
 	 * 近くの分岐器を表示する。ノード上の枠と、開通している分岐側の区間の最初の数ブロックを線で示す。
 	 * 狙っている分岐器はオレンジ(右クリックで切替)。
 	 */
-	private static void drawSwitches(TrackNetwork network, SurveySession session, Vec3d eye, RailwayConfig.Values config) {
+	private static void drawSwitches(TrackNetwork network, SurveySession session, Vec3 eye, RailwayConfig.Values config) {
 		for (TrackNode node : network.nodes()) {
-			if (eye.squaredDistanceTo(node.x(), node.y(), node.z()) > SWITCH_DISPLAY_RANGE * SWITCH_DISPLAY_RANGE
+			if (eye.distanceToSqr(node.x(), node.y(), node.z()) > SWITCH_DISPLAY_RANGE * SWITCH_DISPLAY_RANGE
 					|| !network.isSwitch(node.id())) {
 				continue;
 			}
 			int color = node.id() == session.targetSwitch() ? COLOR_TARGET : COLOR_SWITCH;
-			GizmoDrawing.box(new Box(node.x() - 0.4, node.y(), node.z() - 0.4, node.x() + 0.4, node.y() + 1.0, node.z() + 0.4),
-					DrawStyle.stroked(color, LINE_WIDTH)).ignoreOcclusion();
+			Gizmos.cuboid(new AABB(node.x() - 0.4, node.y(), node.z() - 0.4, node.x() + 0.4, node.y() + 1.0, node.z() + 0.4),
+					GizmoStyle.stroke(color, LINE_WIDTH)).setAlwaysOnTop();
 			TrackSegment active = network.segment(network.activeBranch(node.id()));
 			if (active == null) {
 				continue;
 			}
 			boolean fromA = active.nodeA() == node.id();
 			double length = Math.min(6.0, active.length());
-			Vec3d prev = null;
+			Vec3 prev = null;
 			for (int i = 0; i <= 12; i++) {
 				double s = length * i / 12.0;
 				TrackPoint p = active.sample(fromA ? s : active.length() - s);
-				Vec3d cur = new Vec3d(p.x(), p.y() + RailVehicleEntity.RAIL_TOP + 0.3, p.z());
+				Vec3 cur = new Vec3(p.x(), p.y() + RailVehicleEntity.RAIL_TOP + 0.3, p.z());
 				if (prev != null) {
-					GizmoDrawing.line(prev, cur, color, 3.0f).ignoreOcclusion();
+					Gizmos.line(prev, cur, color, 3.0f).setAlwaysOnTop();
 				}
 				prev = cur;
 			}
@@ -200,35 +199,35 @@ public final class SurveyPreviewRenderer {
 	}
 
 	/** 狙っている装置(と連結モードで選択中の装置)から連結先へ線を引く。 */
-	private static void drawDeviceLinks(MinecraftClient client, TrackNetwork network, SurveySession session) {
+	private static void drawDeviceLinks(Minecraft client, TrackNetwork network, SurveySession session) {
 		BlockPos looked = SurveySession.lookedAtDevice(client.player);
 		for (BlockPos pos : new BlockPos[]{looked, session.linkDevice()}) {
-			if (pos == null || !(client.world.getBlockEntity(pos) instanceof TrackLinkable entity)) {
+			if (pos == null || !(client.level.getBlockEntity(pos) instanceof TrackLinkable entity)) {
 				continue;
 			}
 			int color = pos.equals(session.linkDevice()) ? COLOR_SELECTED : COLOR_SWITCH;
-			GizmoDrawing.box(pos, DrawStyle.stroked(color, LINE_WIDTH)).ignoreOcclusion();
-			Vec3d target = DeviceLinks.targetPosition(network, entity.linkTarget(), entity.targetId());
+			Gizmos.cuboid(pos, GizmoStyle.stroke(color, LINE_WIDTH)).setAlwaysOnTop();
+			Vec3 target = DeviceLinks.targetPosition(network, entity.linkTarget(), entity.targetId());
 			if (target != null) {
-				GizmoDrawing.line(Vec3d.ofCenter(pos), target.add(0.0, 0.5, 0.0), color, LINE_WIDTH).ignoreOcclusion();
+				Gizmos.line(Vec3.atCenterOf(pos), target.add(0.0, 0.5, 0.0), color, LINE_WIDTH).setAlwaysOnTop();
 			}
 		}
 	}
 
 	/** 設備の範囲(中心から半径の円)を示す。 */
 	private static void drawFeatureMarker(TrackFeature feature, int color) {
-		Vec3d c = feature.center();
+		Vec3 c = feature.center();
 		double r = feature.radius();
-		Vec3d prev = null;
+		Vec3 prev = null;
 		for (int i = 0; i <= 32; i++) {
 			double a = Math.PI * 2.0 * i / 32.0;
-			Vec3d cur = new Vec3d(c.x + Math.cos(a) * r, c.y + 0.35, c.z + Math.sin(a) * r);
+			Vec3 cur = new Vec3(c.x + Math.cos(a) * r, c.y + 0.35, c.z + Math.sin(a) * r);
 			if (prev != null) {
-				GizmoDrawing.line(prev, cur, color, LINE_WIDTH).ignoreOcclusion();
+				Gizmos.line(prev, cur, color, LINE_WIDTH).setAlwaysOnTop();
 			}
 			prev = cur;
 		}
-		GizmoDrawing.line(c, c.add(0.0, 2.0, 0.0), color, LINE_WIDTH).ignoreOcclusion();
+		Gizmos.line(c, c.add(0.0, 2.0, 0.0), color, LINE_WIDTH).setAlwaysOnTop();
 	}
 
 	/** 左右のレール位置に線を引く(1ブロック間隔の折れ線)。 */
@@ -236,17 +235,17 @@ public final class SurveyPreviewRenderer {
 		double length = segment.length();
 		int steps = Math.max(1, (int) Math.ceil(length));
 		double half = gauge / 2.0;
-		Vec3d prevLeft = null;
-		Vec3d prevRight = null;
+		Vec3 prevLeft = null;
+		Vec3 prevRight = null;
 		for (int i = 0; i <= steps; i++) {
 			TrackPoint p = segment.sample(length * i / steps);
 			double rise = half * Math.sin(p.cantRad());
 			double y = p.y() + RailVehicleEntity.RAIL_TOP;
-			Vec3d left = new Vec3d(p.x() + p.lateralX() * half, y + rise, p.z() + p.lateralZ() * half);
-			Vec3d right = new Vec3d(p.x() - p.lateralX() * half, y - rise, p.z() - p.lateralZ() * half);
+			Vec3 left = new Vec3(p.x() + p.lateralX() * half, y + rise, p.z() + p.lateralZ() * half);
+			Vec3 right = new Vec3(p.x() - p.lateralX() * half, y - rise, p.z() - p.lateralZ() * half);
 			if (prevLeft != null) {
-				GizmoDrawing.line(prevLeft, left, color, LINE_WIDTH).ignoreOcclusion();
-				GizmoDrawing.line(prevRight, right, color, LINE_WIDTH).ignoreOcclusion();
+				Gizmos.line(prevLeft, left, color, LINE_WIDTH).setAlwaysOnTop();
+				Gizmos.line(prevRight, right, color, LINE_WIDTH).setAlwaysOnTop();
 			}
 			prevLeft = left;
 			prevRight = right;

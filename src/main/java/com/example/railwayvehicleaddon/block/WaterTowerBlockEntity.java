@@ -3,11 +3,11 @@ package com.example.railwayvehicleaddon.block;
 import com.example.railwayvehicleaddon.entity.RailVehicleEntity;
 import com.example.railwayvehicleaddon.vehicle.RailVehicleParams;
 import com.example.railwayvehicleaddon.vehicle.RailVehicleParamsLoader;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.world.World;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 
 /** 給水塔の動作。一定間隔で近くの停車中の蒸気機関車を探して水を足す。 */
 public class WaterTowerBlockEntity extends BlockEntity {
@@ -24,13 +24,13 @@ public class WaterTowerBlockEntity extends BlockEntity {
 		super(ModBlocks.WATER_TOWER_ENTITY, pos, state);
 	}
 
-	public static void tick(World world, BlockPos pos, BlockState state, WaterTowerBlockEntity entity) {
-		if (world.isClient() || ++entity.timer < INTERVAL) {
+	public static void tick(Level world, BlockPos pos, BlockState state, WaterTowerBlockEntity entity) {
+		if (world.isClientSide() || ++entity.timer < INTERVAL) {
 			return;
 		}
 		entity.timer = 0;
-		Box area = new Box(pos).expand(RANGE, 4.0, RANGE);
-		for (RailVehicleEntity vehicle : world.getEntitiesByClass(RailVehicleEntity.class, area, e -> true)) {
+		AABB area = new AABB(pos).inflate(RANGE, 4.0, RANGE);
+		for (RailVehicleEntity vehicle : world.getEntitiesOfClass(RailVehicleEntity.class, area, e -> true)) {
 			RailVehicleParams params = RailVehicleParamsLoader.get(vehicle.getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
 			if (!RailVehicleParams.STEAM.equals(params.powerSource()) || Math.abs(vehicle.getRailSpeed()) > STOPPED_SPEED) {
 				continue;

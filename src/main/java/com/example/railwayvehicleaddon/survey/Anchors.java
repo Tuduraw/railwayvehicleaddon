@@ -4,9 +4,8 @@ import com.example.railwayvehicleaddon.track.TrackNetwork;
 import com.example.railwayvehicleaddon.track.TrackNode;
 import com.example.railwayvehicleaddon.track.TrackPoint;
 import com.example.railwayvehicleaddon.track.TrackSegment;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.List;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * 既存線路上の点(ノードまたは区間の途中)を、配置計画で使える参照に解決する。
@@ -25,7 +24,7 @@ public final class Anchors {
 	 * @param tangent 線路の向き(水平単位ベクトル。向きの正負は不定なので使う側で揃える)
 	 * @param deadEnd 端点か(延伸・分岐元の判定用)
 	 */
-	public record Anchor(NodeRef ref, Vec3d pos, double[] tangent, boolean deadEnd, long segmentId) {
+	public record Anchor(NodeRef ref, Vec3 pos, double[] tangent, boolean deadEnd, long segmentId) {
 		/** 向きを基準ベクトル(dx, dz)と同じ側に揃えた接線。 */
 		public double[] tangentToward(double dx, double dz) {
 			return this.tangent[0] * dx + this.tangent[1] * dz >= 0.0 ? this.tangent
@@ -62,7 +61,7 @@ public final class Anchors {
 		}
 		splits.add(new LayoutPlan.Split(segment.id(), s));
 		TrackPoint p = segment.sample(s);
-		return new Anchor(NodeRef.split(splits.size() - 1), new Vec3d(p.x(), p.y(), p.z()),
+		return new Anchor(NodeRef.split(splits.size() - 1), new Vec3(p.x(), p.y(), p.z()),
 				new double[]{p.dirX(), p.dirZ()}, false, segment.id());
 	}
 
@@ -73,6 +72,6 @@ public final class Anchors {
 		if (tangent == null) {
 			return null;
 		}
-		return new Anchor(NodeRef.existing(node.id()), new Vec3d(node.x(), node.y(), node.z()), tangent, deadEnd, -1L);
+		return new Anchor(NodeRef.existing(node.id()), new Vec3(node.x(), node.y(), node.z()), tangent, deadEnd, -1L);
 	}
 }

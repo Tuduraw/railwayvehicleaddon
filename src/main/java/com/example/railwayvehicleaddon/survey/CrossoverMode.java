@@ -3,10 +3,9 @@ package com.example.railwayvehicleaddon.survey;
 import com.example.railwayvehicleaddon.RailwayConfig;
 import com.example.railwayvehicleaddon.track.RoutePlanner;
 import com.example.railwayvehicleaddon.track.TrackNetwork;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * 渡り線モード。並んだ2本の線路の上をそれぞれ1点ずつ指定すると、両方の線路を分割して
@@ -60,8 +59,8 @@ public final class CrossoverMode implements SurveyMode {
 		if (a.ref().equals(b.ref()) || (a.segmentId() >= 0 && a.segmentId() == b.segmentId())) {
 			return LayoutPlan.failed(new RoutePlanner.Issue("crossover_same_track", points.get(1).pos(), 0));
 		}
-		Vec3d pa = a.pos();
-		Vec3d pb = b.pos();
+		Vec3 pa = a.pos();
+		Vec3 pb = b.pos();
 		double[] ta = a.tangentToward(pb.x - pa.x, pb.z - pa.z);
 		double[] tb = b.tangentToward(ta[0], ta[1]);
 		if (ta[0] * tb[0] + ta[1] * tb[1] < MAX_ANGLE_COS) {

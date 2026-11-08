@@ -3,12 +3,11 @@ package com.example.railwayvehicleaddon.survey;
 import com.example.railwayvehicleaddon.RailwayConfig;
 import com.example.railwayvehicleaddon.track.RoutePlanner;
 import com.example.railwayvehicleaddon.track.TrackNetwork;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * 分岐生成モード。最初の点(分岐元)に分岐器を置き、2点目以降の各点へ1本ずつ線路を伸ばす。
@@ -52,20 +51,20 @@ public final class BranchMode implements SurveyMode {
 		if (points.size() < 2) {
 			return LayoutPlan.empty();
 		}
-		Vec3d o = anchor.pos();
-		Vec3d firstTarget = points.get(1).pos();
+		Vec3 o = anchor.pos();
+		Vec3 firstTarget = points.get(1).pos();
 		double[] tangent = anchor.deadEnd() ? anchor.tangent()
 				: anchor.tangentToward(firstTarget.x - o.x, firstTarget.z - o.z);
 		int required = anchor.deadEnd() ? 2 : 1;
 
 		List<RoutePlanner.Issue> issues = new ArrayList<>();
-		List<Vec3d> newNodes = new ArrayList<>();
+		List<Vec3> newNodes = new ArrayList<>();
 		List<LayoutPlan.Edge> edges = new ArrayList<>();
 		Set<Long> usedNodes = new HashSet<>();
 		double total = 0.0;
 		for (int k = 1; k < points.size(); k++) {
 			SurveyPoint target = points.get(k);
-			Vec3d t = target.pos();
+			Vec3 t = target.pos();
 			if ((t.x - o.x) * tangent[0] + (t.z - o.z) * tangent[1] <= 0.0) {
 				issues.add(new RoutePlanner.Issue("branch_direction", t, 0));
 				continue;

@@ -3,9 +3,8 @@ package com.example.railwayvehicleaddon.track.feature;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.List;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * 転車台。中心(cx, cz)・半径radiusの円形のピットに、直径いっぱいの桁が載って回転する。
@@ -63,23 +62,23 @@ public final class TurntableFeature extends MovingDeckFeature {
 	}
 
 	@Override
-	public Vec3d center() {
-		return new Vec3d(this.cx, this.y, this.cz);
+	public Vec3 center() {
+		return new Vec3(this.cx, this.y, this.cz);
 	}
 
 	/** 中心から角度angle(度)の方向、半径radiusの位置。 */
-	public Vec3d rim(double angle, double r) {
+	public Vec3 rim(double angle, double r) {
 		double rad = Math.toRadians(angle);
-		return new Vec3d(this.cx + Math.cos(rad) * r, this.y, this.cz + Math.sin(rad) * r);
+		return new Vec3(this.cx + Math.cos(rad) * r, this.y, this.cz + Math.sin(rad) * r);
 	}
 
 	@Override
-	public Vec3d endA(double param) {
+	public Vec3 endA(double param) {
 		return rim(param, this.radius);
 	}
 
 	@Override
-	public Vec3d endB(double param) {
+	public Vec3 endB(double param) {
 		return rim(param + 180.0, this.radius);
 	}
 

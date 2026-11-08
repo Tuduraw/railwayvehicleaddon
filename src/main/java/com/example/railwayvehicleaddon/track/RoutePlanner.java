@@ -1,10 +1,9 @@
 package com.example.railwayvehicleaddon.track;
 
 import com.example.railwayvehicleaddon.RailwayConfig;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * 経由点列から線路の線形を生成する。クライアントのプレビューとサーバーの確定処理で
@@ -26,7 +25,7 @@ public final class RoutePlanner {
 	private RoutePlanner() {
 	}
 
-	public static PlannedRoute plan(List<Vec3d> waypoints, double[] startTangent, double[] endTangent, RailwayConfig.Values config) {
+	public static PlannedRoute plan(List<Vec3> waypoints, double[] startTangent, double[] endTangent, RailwayConfig.Values config) {
 		return plan(waypoints, startTangent, endTangent, false, config);
 	}
 
@@ -36,7 +35,7 @@ public final class RoutePlanner {
 	 * @param endTangent   終点に到達するときの水平単位ベクトル(既存線路への接続時)。nullなら自然端
 	 * @param closed       環状線(最後の経由点から最初の経由点へ戻る区間も作る)
 	 */
-	public static PlannedRoute plan(List<Vec3d> waypoints, double[] startTangent, double[] endTangent,
+	public static PlannedRoute plan(List<Vec3> waypoints, double[] startTangent, double[] endTangent,
 									boolean closed, RailwayConfig.Values config) {
 		List<Issue> issues = new ArrayList<>();
 		List<PlannedSegment> segments = new ArrayList<>();
@@ -50,8 +49,8 @@ public final class RoutePlanner {
 		int intervals = closed ? n : n - 1;
 		double[] h = new double[intervals];
 		for (int i = 0; i < intervals; i++) {
-			Vec3d a = waypoints.get(i);
-			Vec3d b = waypoints.get((i + 1) % n);
+			Vec3 a = waypoints.get(i);
+			Vec3 b = waypoints.get((i + 1) % n);
 			h[i] = Math.hypot(b.x - a.x, b.z - a.z);
 			if (h[i] < MIN_WAYPOINT_SPACING) {
 				issues.add(new Issue("waypoints_too_close", b, MIN_WAYPOINT_SPACING));
@@ -66,8 +65,8 @@ public final class RoutePlanner {
 		List<PlanCurve> curves = new ArrayList<>(intervals);
 		for (int i = 0; i < intervals; i++) {
 			int j = (i + 1) % n;
-			Vec3d a = waypoints.get(i);
-			Vec3d b = waypoints.get(j);
+			Vec3 a = waypoints.get(i);
+			Vec3 b = waypoints.get(j);
 			double k = h[i] / 3.0;
 			curves.add(new PlanCurve(a.x, a.z, a.x + mx[i] * k, a.z + mz[i] * k,
 					b.x - mx[j] * k, b.z - mz[j] * k, b.x, b.z));
@@ -110,7 +109,7 @@ public final class RoutePlanner {
 		}
 		for (int i = 0; i < segments.size(); i++) {
 			if (Math.abs(grades[i]) > config.maxGrade() + 1.0e-6) {
-				Vec3d mid = waypoints.get(i).add(waypoints.get((i + 1) % n)).multiply(0.5);
+				Vec3 mid = waypoints.get(i).add(waypoints.get((i + 1) % n)).scale(0.5);
 				issues.add(new Issue("grade_too_steep", mid, Math.abs(grades[i]) * 1000.0));
 			}
 			checkRadius(segments.get(i), config, issues);
@@ -137,9 +136,9 @@ public final class RoutePlanner {
 			return;
 		}
 		double t = plan.tAt(bestS);
-		Vec3d at = new Vec3d(plan.x(t), segment.profile().y(bestS, length), plan.z(t));
+		Vec3 at = new Vec3(plan.x(t), segment.profile().y(bestS, length), plan.z(t));
 		for (Issue existing : issues) {
-			if (existing.key().equals("radius_too_small") && existing.position().squaredDistanceTo(at) < 4.0) {
+			if (existing.key().equals("radius_too_small") && existing.position().distanceToSqr(at) < 4.0) {
 				return;
 			}
 		}
@@ -151,7 +150,7 @@ public final class RoutePlanner {
 	 * h[i] m[i-1] + 2(h[i-1]+h[i]) m[i] + h[i-1] m[i+1] = 3(h[i] d[i-1] + h[i-1] d[i])
 	 * (d = 区間の平均の傾き)を、端では接線固定か自然端(2階微分0)を課す。
 	 */
-	private static void solveTangents(List<Vec3d> p, double[] h, boolean closed, double[] startTangent,
+	private static void solveTangents(List<Vec3> p, double[] h, boolean closed, double[] startTangent,
 									  double[] endTangent, double[] mx, double[] mz) {
 		int n = p.size();
 		double[] a = new double[n];
@@ -263,7 +262,7 @@ public final class RoutePlanner {
 	 * 線形上の問題。keyは翻訳キー message.railwayvehicleaddon.issue.<key> の末尾。
 	 * valueはメッセージに埋め込む数値(半径・勾配‰など)。
 	 */
-	public record Issue(String key, Vec3d position, double value) {
+	public record Issue(String key, Vec3 position, double value) {
 		/** メッセージ埋め込み用の表記(整数値は小数点なし)。 */
 		public String formattedValue() {
 			return this.value == Math.rint(this.value) ? String.format("%.0f", this.value) : String.format("%.1f", this.value);

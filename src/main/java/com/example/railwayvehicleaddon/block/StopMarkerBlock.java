@@ -2,16 +2,16 @@ package com.example.railwayvehicleaddon.block;
 
 import com.example.railwayvehicleaddon.operation.Timetable;
 import com.mojang.serialization.MapCodec;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.BlockWithEntity;
-import net.minecraft.block.ShapeContext;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.shape.VoxelShape;
-import net.minecraft.world.BlockView;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.block.BaseEntityBlock;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 /**
  * 停止位置目標。駅の停止位置(列車の先頭を合わせる位置)を表す。名前は「駅名 番線」(例: 「A駅 1」)。
@@ -20,21 +20,21 @@ import net.minecraft.world.BlockView;
  * 向きは問わない(どちら向きに進む列車にも効く)。
  */
 public class StopMarkerBlock extends WaysideBlock {
-	public static final MapCodec<StopMarkerBlock> CODEC = createCodec(StopMarkerBlock::new);
-	private static final VoxelShape SHAPE = Block.createCuboidShape(3.0, 0.0, 3.0, 13.0, 16.0, 13.0);
+	public static final MapCodec<StopMarkerBlock> CODEC = simpleCodec(StopMarkerBlock::new);
+	private static final VoxelShape SHAPE = Block.box(3.0, 0.0, 3.0, 13.0, 16.0, 13.0);
 
-	public StopMarkerBlock(Settings settings) {
+	public StopMarkerBlock(Properties settings) {
 		super(settings);
-		setDefaultState(getDefaultState().with(FACING, net.minecraft.util.math.Direction.NORTH));
+		registerDefaultState(defaultBlockState().setValue(FACING, net.minecraft.core.Direction.NORTH));
 	}
 
 	@Override
-	protected MapCodec<? extends BlockWithEntity> getCodec() {
+	protected MapCodec<? extends BaseEntityBlock> codec() {
 		return CODEC;
 	}
 
 	@Override
-	protected VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+	protected VoxelShape getShape(BlockState state, BlockGetter world, BlockPos pos, CollisionContext context) {
 		return SHAPE;
 	}
 
@@ -44,30 +44,30 @@ public class StopMarkerBlock extends WaysideBlock {
 	}
 
 	@Override
-	protected Text describe(ServerWorld world, WaysideBlockEntity entity) {
+	protected Component describe(ServerLevel world, WaysideBlockEntity entity) {
 		Timetable.Stop parsed = Timetable.parseMarkerName(entity.name());
-		Text name = parsed.station().isEmpty()
-				? Text.translatable("message.railwayvehicleaddon.stop_marker.unnamed")
-				: Text.translatable("message.railwayvehicleaddon.stop_marker.name", parsed.station(),
-				parsed.platform() > 0 ? Text.translatable("message.railwayvehicleaddon.stop_marker.platform", parsed.platform())
-						: Text.translatable("message.railwayvehicleaddon.stop_marker.any_platform"));
-		return Text.empty().append(name).append(" / ").append(entity.link().describe(world));
+		Component name = parsed.station().isEmpty()
+				? Component.translatable("message.railwayvehicleaddon.stop_marker.unnamed")
+				: Component.translatable("message.railwayvehicleaddon.stop_marker.name", parsed.station(),
+				parsed.platform() > 0 ? Component.translatable("message.railwayvehicleaddon.stop_marker.platform", parsed.platform())
+						: Component.translatable("message.railwayvehicleaddon.stop_marker.any_platform"));
+		return Component.empty().append(name).append(" / ").append(entity.link().describe(world));
 	}
 
 	/** 素手で右クリック: 名前の編集画面を開く。スニーク+右クリック: 名前と連結先を表示する。 */
 	@Override
-	protected void useEmptyHand(ServerWorld world, WaysideBlockEntity entity, PlayerEntity player, boolean sneaking) {
-		if (!sneaking && player instanceof net.minecraft.server.network.ServerPlayerEntity serverPlayer) {
+	protected void useEmptyHand(ServerLevel world, WaysideBlockEntity entity, Player player, boolean sneaking) {
+		if (!sneaking && player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
 			net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(serverPlayer,
-					new com.example.railwayvehicleaddon.network.StopMarkerEditPayload(entity.getPos(), entity.name()));
+					new com.example.railwayvehicleaddon.network.StopMarkerEditPayload(entity.getBlockPos(), entity.name()));
 			return;
 		}
-		player.sendMessage(describe(world, entity), true);
+		player.displayClientMessage(describe(world, entity), true);
 	}
 
 	/** 編集画面で決めた名前を付ける(サーバー側。プレイヤーが近く(8ブロック以内)にいて、そこが停止位置目標なら)。 */
-	public static void rename(net.minecraft.server.network.ServerPlayerEntity player, BlockPos pos, String name) {
-		if (!(player.getEntityWorld() instanceof ServerWorld world) || player.squaredDistanceTo(pos.toCenterPos()) > 8.0 * 8.0
+	public static void rename(net.minecraft.server.level.ServerPlayer player, BlockPos pos, String name) {
+		if (!(player.level() instanceof ServerLevel world) || player.distanceToSqr(pos.getCenter()) > 8.0 * 8.0
 				|| !(world.getBlockState(pos).getBlock() instanceof StopMarkerBlock)
 				|| !(world.getBlockEntity(pos) instanceof WaysideBlockEntity entity)) {
 			return;
@@ -77,6 +77,6 @@ public class StopMarkerBlock extends WaysideBlock {
 			clean = clean.substring(0, Timetable.MAX_NAME);
 		}
 		entity.setName(clean);
-		player.sendMessage(((StopMarkerBlock) world.getBlockState(pos).getBlock()).describe(world, entity), true);
+		player.displayClientMessage(((StopMarkerBlock) world.getBlockState(pos).getBlock()).describe(world, entity), true);
 	}
 }

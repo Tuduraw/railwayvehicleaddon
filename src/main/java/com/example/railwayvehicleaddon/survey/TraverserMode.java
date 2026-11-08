@@ -6,13 +6,12 @@ import com.example.railwayvehicleaddon.track.TrackNetwork;
 import com.example.railwayvehicleaddon.track.feature.MovingDeckFeature;
 import com.example.railwayvehicleaddon.track.feature.TrackFeature;
 import com.example.railwayvehicleaddon.track.feature.TraverserFeature;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * 遷車台(トラバーサー)モード。
@@ -71,8 +70,8 @@ public final class TraverserMode implements SurveyMode {
 		}
 		SurveyPoint first = points.get(0);
 		SurveyPoint second = points.get(1);
-		Vec3d p0 = first.pos();
-		Vec3d p1 = second.pos();
+		Vec3 p0 = first.pos();
+		Vec3 p1 = second.pos();
 		if (Math.abs(p0.y - p1.y) > 0.51) {
 			return LayoutPlan.failed(new RoutePlanner.Issue("deck_level", p1, 0));
 		}
@@ -95,7 +94,7 @@ public final class TraverserMode implements SurveyMode {
 		List<Double> offsets = new ArrayList<>();
 		offsets.add(0.0);
 		for (int k = 2; k < points.size(); k++) {
-			Vec3d p = points.get(k).pos();
+			Vec3 p = points.get(k).pos();
 			double o = Math.round(((p.x - midX) * axisX + (p.z - midZ) * axisZ) / step) * step;
 			boolean dup = false;
 			for (double existing : offsets) {
@@ -111,13 +110,13 @@ public final class TraverserMode implements SurveyMode {
 		if (offsets.size() < 2) {
 			issues.add(new RoutePlanner.Issue("traverser_need_stop", p1, 0));
 		}
-		List<Vec3d> newNodes = new ArrayList<>();
+		List<Vec3> newNodes = new ArrayList<>();
 		List<LayoutPlan.Edge> edges = new ArrayList<>();
 		List<Integer> stubEdges = new ArrayList<>();
 		List<NodeRef[]> connRefs = new ArrayList<>();
 		for (double o : offsets) {
-			Vec3d atA = new Vec3d(p0.x + axisX * o, y, p0.z + axisZ * o);
-			Vec3d atB = new Vec3d(p1.x + axisX * o, y, p1.z + axisZ * o);
+			Vec3 atA = new Vec3(p0.x + axisX * o, y, p0.z + axisZ * o);
+			Vec3 atB = new Vec3(p1.x + axisX * o, y, p1.z + axisZ * o);
 			boolean base = Math.abs(o) < 1.0e-3;
 			NodeRef a = MovingDeckPlans.connection(network, base ? first : null, atA, -dirX, -dirZ, newNodes, edges, stubEdges, issues);
 			NodeRef b = MovingDeckPlans.connection(network, base ? second : null, atB, dirX, dirZ, newNodes, edges, stubEdges, issues);
@@ -126,9 +125,9 @@ public final class TraverserMode implements SurveyMode {
 		NodeRef deckRefA = NodeRef.created(newNodes.size());
 		newNodes.add(p0);
 		NodeRef deckRefB = NodeRef.created(newNodes.size());
-		newNodes.add(new Vec3d(p1.x, y, p1.z));
+		newNodes.add(new Vec3(p1.x, y, p1.z));
 		int deckEdge = edges.size();
-		edges.add(new LayoutPlan.Edge(deckRefA, deckRefB, MovingDeckPlans.straight(p0, new Vec3d(p1.x, y, p1.z))));
+		edges.add(new LayoutPlan.Edge(deckRefA, deckRefB, MovingDeckPlans.straight(p0, new Vec3(p1.x, y, p1.z))));
 
 		double minO = offsets.get(0);
 		double maxO = offsets.get(offsets.size() - 1);
@@ -166,12 +165,12 @@ public final class TraverserMode implements SurveyMode {
 			}
 
 			@Override
-			public List<Vec3d[]> outline() {
-				Vec3d c0 = new Vec3d(p0.x + axisX * minO, y + 0.1, p0.z + axisZ * minO);
-				Vec3d c1 = new Vec3d(p1.x + axisX * minO, y + 0.1, p1.z + axisZ * minO);
-				Vec3d c2 = new Vec3d(p1.x + axisX * maxO, y + 0.1, p1.z + axisZ * maxO);
-				Vec3d c3 = new Vec3d(p0.x + axisX * maxO, y + 0.1, p0.z + axisZ * maxO);
-				return List.of(new Vec3d[]{c0, c1}, new Vec3d[]{c1, c2}, new Vec3d[]{c2, c3}, new Vec3d[]{c3, c0});
+			public List<Vec3[]> outline() {
+				Vec3 c0 = new Vec3(p0.x + axisX * minO, y + 0.1, p0.z + axisZ * minO);
+				Vec3 c1 = new Vec3(p1.x + axisX * minO, y + 0.1, p1.z + axisZ * minO);
+				Vec3 c2 = new Vec3(p1.x + axisX * maxO, y + 0.1, p1.z + axisZ * maxO);
+				Vec3 c3 = new Vec3(p0.x + axisX * maxO, y + 0.1, p0.z + axisZ * maxO);
+				return List.of(new Vec3[]{c0, c1}, new Vec3[]{c1, c2}, new Vec3[]{c2, c3}, new Vec3[]{c3, c0});
 			}
 		};
 		return new LayoutPlan(newNodes, List.of(), edges, List.of(), List.of(spec), issues,

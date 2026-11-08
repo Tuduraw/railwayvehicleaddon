@@ -5,15 +5,15 @@ import com.example.tudursvehiclemod.item.TieredVehicleSpawnerItem;
 import com.example.tudursvehiclemod.item.VehicleConverterTargets;
 import net.fabricmc.fabric.api.itemgroup.v1.FabricItemGroup;
 import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemGroup;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.Registry;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.item.CreativeModeTab;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 
 public final class ModItems {
 	public static final RailVehicleTarget RAIL_VEHICLE_TARGET = new RailVehicleTarget();
@@ -24,45 +24,45 @@ public final class ModItems {
 	/** 経路アイテム(運行表): 停止位置目標・列車番号検知器を右クリックして登録し、運行管理装置に入れて使う */
 	public static Item ROUTE_CARD;
 
-	public static final RegistryKey<ItemGroup> GROUP =
-			RegistryKey.of(RegistryKeys.ITEM_GROUP, Identifier.of(RailwayVehicleAddon.MOD_ID, "railway"));
+	public static final ResourceKey<CreativeModeTab> GROUP =
+			ResourceKey.create(Registries.CREATIVE_MODE_TAB, Identifier.fromNamespaceAndPath(RailwayVehicleAddon.MOD_ID, "railway"));
 
 	private ModItems() {
 	}
 
 	public static void register() {
-		RegistryKey<Item> surveyKey = RegistryKey.of(RegistryKeys.ITEM, Identifier.of(RailwayVehicleAddon.MOD_ID, "survey_tool"));
-		SURVEY_TOOL = Registry.register(Registries.ITEM, surveyKey,
-				new SurveyToolItem(new Item.Settings().registryKey(surveyKey).maxCount(1)));
-		RegistryKey<Item> leverKey = RegistryKey.of(RegistryKeys.ITEM, Identifier.of(RailwayVehicleAddon.MOD_ID, "coupling_lever"));
-		COUPLING_LEVER = Registry.register(Registries.ITEM, leverKey,
-				new Item(new Item.Settings().registryKey(leverKey).maxCount(1)));
-		RegistryKey<Item> routeKey = RegistryKey.of(RegistryKeys.ITEM, Identifier.of(RailwayVehicleAddon.MOD_ID, "route_card"));
-		ROUTE_CARD = Registry.register(Registries.ITEM, routeKey,
-				new RouteCardItem(new Item.Settings().registryKey(routeKey).maxCount(1)));
+		ResourceKey<Item> surveyKey = ResourceKey.create(Registries.ITEM, Identifier.fromNamespaceAndPath(RailwayVehicleAddon.MOD_ID, "survey_tool"));
+		SURVEY_TOOL = Registry.register(BuiltInRegistries.ITEM, surveyKey,
+				new SurveyToolItem(new Item.Properties().setId(surveyKey).stacksTo(1)));
+		ResourceKey<Item> leverKey = ResourceKey.create(Registries.ITEM, Identifier.fromNamespaceAndPath(RailwayVehicleAddon.MOD_ID, "coupling_lever"));
+		COUPLING_LEVER = Registry.register(BuiltInRegistries.ITEM, leverKey,
+				new Item(new Item.Properties().setId(leverKey).stacksTo(1)));
+		ResourceKey<Item> routeKey = ResourceKey.create(Registries.ITEM, Identifier.fromNamespaceAndPath(RailwayVehicleAddon.MOD_ID, "route_card"));
+		ROUTE_CARD = Registry.register(BuiltInRegistries.ITEM, routeKey,
+				new RouteCardItem(new Item.Properties().setId(routeKey).stacksTo(1)));
 
 		for (int tier = 1; tier <= 5; tier++) {
-			RegistryKey<Item> key = RegistryKey.of(RegistryKeys.ITEM,
-					Identifier.of(RailwayVehicleAddon.MOD_ID, "rail_vehicle_spawner_t" + tier));
-			RAIL_VEHICLE_SPAWNERS[tier - 1] = Registry.register(Registries.ITEM, key,
-					new TieredVehicleSpawnerItem(new Item.Settings().registryKey(key).maxCount(1), RAIL_VEHICLE_TARGET, tier));
+			ResourceKey<Item> key = ResourceKey.create(Registries.ITEM,
+					Identifier.fromNamespaceAndPath(RailwayVehicleAddon.MOD_ID, "rail_vehicle_spawner_t" + tier));
+			RAIL_VEHICLE_SPAWNERS[tier - 1] = Registry.register(BuiltInRegistries.ITEM, key,
+					new TieredVehicleSpawnerItem(new Item.Properties().setId(key).stacksTo(1), RAIL_VEHICLE_TARGET, tier));
 		}
 		// 前提MODの変換ブロック・車両回収にも対応させる(登録は初期化時のみ行うこと)
 		VehicleConverterTargets.register(RAIL_VEHICLE_TARGET);
 
-		Registry.register(Registries.ITEM_GROUP, GROUP, FabricItemGroup.builder()
+		Registry.register(BuiltInRegistries.CREATIVE_MODE_TAB, GROUP, FabricItemGroup.builder()
 				.icon(() -> new ItemStack(SURVEY_TOOL))
-				.displayName(Text.translatable("itemGroup.railwayvehicleaddon.railway"))
+				.title(Component.translatable("itemGroup.railwayvehicleaddon.railway"))
 				.build());
 		ItemGroupEvents.modifyEntriesEvent(GROUP).register(entries -> {
-			entries.add(SURVEY_TOOL);
-			entries.add(COUPLING_LEVER);
-			entries.add(ROUTE_CARD);
+			entries.accept(SURVEY_TOOL);
+			entries.accept(COUPLING_LEVER);
+			entries.accept(ROUTE_CARD);
 			for (Item item : RAIL_VEHICLE_SPAWNERS) {
-				entries.add(item);
+				entries.accept(item);
 			}
 			for (Item item : com.example.railwayvehicleaddon.block.ModBlocks.ITEMS) {
-				entries.add(item);
+				entries.accept(item);
 			}
 		});
 	}

@@ -32,10 +32,9 @@ import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
-import net.minecraft.entity.EntityType;
-import net.minecraft.resource.ResourceType;
-import net.minecraft.util.Identifier;
-
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.packs.PackType;
+import net.minecraft.world.entity.EntityType;
 import java.util.function.Supplier;
 
 public class RailwayVehicleAddon implements ModInitializer {
@@ -55,14 +54,14 @@ public class RailwayVehicleAddon implements ModInitializer {
 		RailwayConfig.load();
 
 		RAIL_VEHICLE = ModEntityTypes.registerAddonVehicleType(
-				Identifier.of(MOD_ID, "rail_vehicle"), RailVehicleEntity::new, 2.0f, 2.0f);
+				Identifier.fromNamespaceAndPath(MOD_ID, "rail_vehicle"), RailVehicleEntity::new, 2.0f, 2.0f);
 
 		com.example.railwayvehicleaddon.item.ModComponents.register();
 		ModScreenHandlers.register();
 		ModBlocks.register();
 		ModItems.register();
 
-		ResourceManagerHelper.get(ResourceType.SERVER_DATA).registerReloadListener(new RailVehicleParamsLoader());
+		ResourceManagerHelper.get(PackType.SERVER_DATA).registerReloadListener(new RailVehicleParamsLoader());
 
 		// モードの登録順を確定させる(サーバーとクライアントで同じ順序にするため初期化時に読み込む)
 		SurveyModes.all();
@@ -121,16 +120,16 @@ public class RailwayVehicleAddon implements ModInitializer {
 
 		ServerPlayNetworking.registerGlobalReceiver(BoardPayload.ID, (payload, context) ->
 				context.server().execute(() -> {
-					if (context.player().getEntityWorld().getEntityById(payload.entityId()) instanceof RailVehicleEntity vehicle) {
-						vehicle.boardNear(context.player(), new net.minecraft.util.math.Vec3d(payload.hx(), payload.hy(), payload.hz()));
+					if (context.player().level().getEntity(payload.entityId()) instanceof RailVehicleEntity vehicle) {
+						vehicle.boardNear(context.player(), new net.minecraft.world.phys.Vec3(payload.hx(), payload.hy(), payload.hz()));
 					}
 				}));
 
 		// 経路アイテムの設定画面で編集した運行表を、手に持っている経路アイテムへ保存する
 		ServerPlayNetworking.registerGlobalReceiver(com.example.railwayvehicleaddon.network.RouteCardUpdatePayload.ID, (payload, context) ->
 				context.server().execute(() -> {
-					net.minecraft.item.ItemStack stack = context.player().getStackInHand(
-							payload.mainHand() ? net.minecraft.util.Hand.MAIN_HAND : net.minecraft.util.Hand.OFF_HAND);
+					net.minecraft.world.item.ItemStack stack = context.player().getItemInHand(
+							payload.mainHand() ? net.minecraft.world.InteractionHand.MAIN_HAND : net.minecraft.world.InteractionHand.OFF_HAND);
 					if (stack.getItem() instanceof com.example.railwayvehicleaddon.item.RouteCardItem) {
 						com.example.railwayvehicleaddon.item.RouteCardItem.set(stack, payload.table().sanitized());
 					}

@@ -4,14 +4,13 @@ import com.example.railwayvehicleaddon.item.RouteCardItem;
 import com.example.railwayvehicleaddon.network.RouteCardUpdatePayload;
 import com.example.railwayvehicleaddon.operation.Timetable;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.item.ItemStack;
-import net.minecraft.text.Text;
-import net.minecraft.util.Hand;
-
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.ItemStack;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -33,7 +32,7 @@ public class RouteCardScreen extends Screen {
 	private static final int TEXT = 0xFFFFFFFF;
 	private static final int TEXT_DIM = 0xFFA0A0A0;
 
-	private final Hand hand;
+	private final InteractionHand hand;
 	private String trainNumber;
 	private int type;
 	private Timetable.EndMode endMode;
@@ -57,8 +56,8 @@ public class RouteCardScreen extends Screen {
 		String value;
 	}
 
-	public RouteCardScreen(Hand hand, ItemStack stack) {
-		super(Text.translatable("screen.railwayvehicleaddon.route_card.title"));
+	public RouteCardScreen(InteractionHand hand, ItemStack stack) {
+		super(Component.translatable("screen.railwayvehicleaddon.route_card.title"));
 		this.hand = hand;
 		Timetable table = RouteCardItem.get(stack);
 		this.trainNumber = table.trainNumber();
@@ -89,21 +88,21 @@ public class RouteCardScreen extends Screen {
 		int x = this.left;
 		int y = this.top + 14;
 
-		TextFieldWidget number = new TextFieldWidget(this.textRenderer, x + 50, y, 90, 18, Text.empty());
+		EditBox number = new EditBox(this.font, x + 50, y, 90, 18, Component.empty());
 		number.setMaxLength(Timetable.MAX_NAME);
-		number.setText(this.trainNumber);
-		number.setChangedListener(t -> this.trainNumber = t);
-		addDrawableChild(number);
-		TextFieldWidget typeField = new TextFieldWidget(this.textRenderer, x + 180, y, 30, 18, Text.empty());
+		number.setValue(this.trainNumber);
+		number.setResponder(t -> this.trainNumber = t);
+		addRenderableWidget(number);
+		EditBox typeField = new EditBox(this.font, x + 180, y, 30, 18, Component.empty());
 		typeField.setMaxLength(2);
-		typeField.setText(Integer.toString(this.type));
-		typeField.setTextPredicate(t -> t.isEmpty() || t.matches("\\d{1,2}"));
-		typeField.setChangedListener(t -> this.type = t.isEmpty() ? 0 : Math.min(15, Integer.parseInt(t)));
-		addDrawableChild(typeField);
-		addDrawableChild(ButtonWidget.builder(endModeText(), b -> {
+		typeField.setValue(Integer.toString(this.type));
+		typeField.setFilter(t -> t.isEmpty() || t.matches("\\d{1,2}"));
+		typeField.setResponder(t -> this.type = t.isEmpty() ? 0 : Math.min(15, Integer.parseInt(t)));
+		addRenderableWidget(typeField);
+		addRenderableWidget(Button.builder(endModeText(), b -> {
 			this.endMode = this.endMode.next();
 			b.setMessage(endModeText());
-		}).dimensions(x + 250, y, 130, 18).build());
+		}).bounds(x + 250, y, 130, 18).build());
 
 		// 駅の一覧
 		int listTop = y + 36;
@@ -112,39 +111,39 @@ public class RouteCardScreen extends Screen {
 			final int index = first + i;
 			MutableStop stop = this.stops.get(index);
 			int ry = listTop + i * ROW_H;
-			addDrawableChild(ButtonWidget.builder(passText(stop), b -> {
+			addRenderableWidget(Button.builder(passText(stop), b -> {
 				stop.pass = !stop.pass;
 				b.setMessage(passText(stop));
-			}).dimensions(x + 150, ry, 44, 18).build());
-			TextFieldWidget dwell = new TextFieldWidget(this.textRenderer, x + 198, ry, 36, 18, Text.empty());
+			}).bounds(x + 150, ry, 44, 18).build());
+			EditBox dwell = new EditBox(this.font, x + 198, ry, 36, 18, Component.empty());
 			dwell.setMaxLength(4);
-			dwell.setText(stop.dwell);
-			dwell.setTextPredicate(t -> t.isEmpty() || t.matches("\\d{1,4}"));
-			dwell.setChangedListener(t -> stop.dwell = t);
-			addDrawableChild(dwell);
-			TextFieldWidget depart = new TextFieldWidget(this.textRenderer, x + 252, ry, 46, 18, Text.empty());
+			dwell.setValue(stop.dwell);
+			dwell.setFilter(t -> t.isEmpty() || t.matches("\\d{1,4}"));
+			dwell.setResponder(t -> stop.dwell = t);
+			addRenderableWidget(dwell);
+			EditBox depart = new EditBox(this.font, x + 252, ry, 46, 18, Component.empty());
 			depart.setMaxLength(5);
-			depart.setText(stop.depart);
-			depart.setTextPredicate(t -> t.isEmpty() || t.matches("[0-9:：]{1,5}"));
-			depart.setChangedListener(t -> stop.depart = t);
-			addDrawableChild(depart);
-			addDrawableChild(ButtonWidget.builder(Text.literal("▲"), b -> moveStop(index, -1)).dimensions(x + 304, ry, 20, 18).build());
-			addDrawableChild(ButtonWidget.builder(Text.literal("▼"), b -> moveStop(index, 1)).dimensions(x + 326, ry, 20, 18).build());
-			addDrawableChild(ButtonWidget.builder(Text.literal("✕"), b -> {
+			depart.setValue(stop.depart);
+			depart.setFilter(t -> t.isEmpty() || t.matches("[0-9:：]{1,5}"));
+			depart.setResponder(t -> stop.depart = t);
+			addRenderableWidget(depart);
+			addRenderableWidget(Button.builder(Component.literal("▲"), b -> moveStop(index, -1)).bounds(x + 304, ry, 20, 18).build());
+			addRenderableWidget(Button.builder(Component.literal("▼"), b -> moveStop(index, 1)).bounds(x + 326, ry, 20, 18).build());
+			addRenderableWidget(Button.builder(Component.literal("✕"), b -> {
 				this.stops.remove(index);
 				this.stopPage = Math.min(this.stopPage, Math.max(0, (this.stops.size() - 1) / STOP_ROWS));
 				rebuild();
-			}).dimensions(x + 350, ry, 20, 18).build());
+			}).bounds(x + 350, ry, 20, 18).build());
 		}
 		int stopPagerY = listTop + STOP_ROWS * ROW_H;
-		addDrawableChild(ButtonWidget.builder(Text.literal("◀"), b -> {
+		addRenderableWidget(Button.builder(Component.literal("◀"), b -> {
 			this.stopPage = Math.max(0, this.stopPage - 1);
 			rebuild();
-		}).dimensions(x + 250, stopPagerY, 20, 16).build());
-		addDrawableChild(ButtonWidget.builder(Text.literal("▶"), b -> {
+		}).bounds(x + 250, stopPagerY, 20, 16).build());
+		addRenderableWidget(Button.builder(Component.literal("▶"), b -> {
 			this.stopPage = Math.min(stopPages() - 1, this.stopPage + 1);
 			rebuild();
-		}).dimensions(x + 350, stopPagerY, 20, 16).build());
+		}).bounds(x + 350, stopPagerY, 20, 16).build());
 
 		// 経路番号
 		int routeTop = stopPagerY + 34;
@@ -153,35 +152,35 @@ public class RouteCardScreen extends Screen {
 			final int index = firstRoute + i;
 			MutableRoute route = this.routes.get(index);
 			int ry = routeTop + i * ROW_H;
-			TextFieldWidget value = new TextFieldWidget(this.textRenderer, x + 198, ry, 36, 18, Text.empty());
+			EditBox value = new EditBox(this.font, x + 198, ry, 36, 18, Component.empty());
 			value.setMaxLength(2);
-			value.setText(route.value);
-			value.setTextPredicate(t -> t.isEmpty() || t.matches("\\d{1,2}"));
-			value.setChangedListener(t -> route.value = t);
-			addDrawableChild(value);
-			addDrawableChild(ButtonWidget.builder(Text.literal("✕"), b -> {
+			value.setValue(route.value);
+			value.setFilter(t -> t.isEmpty() || t.matches("\\d{1,2}"));
+			value.setResponder(t -> route.value = t);
+			addRenderableWidget(value);
+			addRenderableWidget(Button.builder(Component.literal("✕"), b -> {
 				this.routes.remove(index);
 				this.routePage = Math.min(this.routePage, Math.max(0, (this.routes.size() - 1) / ROUTE_ROWS));
 				rebuild();
-			}).dimensions(x + 240, ry, 20, 18).build());
+			}).bounds(x + 240, ry, 20, 18).build());
 		}
 		int routePagerY = routeTop + ROUTE_ROWS * ROW_H;
-		addDrawableChild(ButtonWidget.builder(Text.literal("◀"), b -> {
+		addRenderableWidget(Button.builder(Component.literal("◀"), b -> {
 			this.routePage = Math.max(0, this.routePage - 1);
 			rebuild();
-		}).dimensions(x + 250, routePagerY - 22, 20, 16).build());
-		addDrawableChild(ButtonWidget.builder(Text.literal("▶"), b -> {
+		}).bounds(x + 250, routePagerY - 22, 20, 16).build());
+		addRenderableWidget(Button.builder(Component.literal("▶"), b -> {
 			this.routePage = Math.min(routePages() - 1, this.routePage + 1);
 			rebuild();
-		}).dimensions(x + 350, routePagerY - 22, 20, 16).build());
+		}).bounds(x + 350, routePagerY - 22, 20, 16).build());
 
 		int buttonsY = routePagerY + 6;
-		addDrawableChild(ButtonWidget.builder(Text.translatable("screen.railwayvehicleaddon.route_card.save"), b -> {
+		addRenderableWidget(Button.builder(Component.translatable("screen.railwayvehicleaddon.route_card.save"), b -> {
 			save();
-			close();
-		}).dimensions(x + 100, buttonsY, 86, 20).build());
-		addDrawableChild(ButtonWidget.builder(Text.translatable("screen.railwayvehicleaddon.route_card.cancel"), b -> close())
-				.dimensions(x + 194, buttonsY, 86, 20).build());
+			onClose();
+		}).bounds(x + 100, buttonsY, 86, 20).build());
+		addRenderableWidget(Button.builder(Component.translatable("screen.railwayvehicleaddon.route_card.cancel"), b -> onClose())
+				.bounds(x + 194, buttonsY, 86, 20).build());
 	}
 
 	private int stopPages() {
@@ -193,7 +192,7 @@ public class RouteCardScreen extends Screen {
 	}
 
 	private void rebuild() {
-		clearChildren();
+		clearWidgets();
 		init();
 	}
 
@@ -208,12 +207,12 @@ public class RouteCardScreen extends Screen {
 		rebuild();
 	}
 
-	private Text endModeText() {
-		return Text.translatable("screen.railwayvehicleaddon.route_card.end." + this.endMode.asString());
+	private Component endModeText() {
+		return Component.translatable("screen.railwayvehicleaddon.route_card.end." + this.endMode.getSerializedName());
 	}
 
-	private static Text passText(MutableStop stop) {
-		return Text.translatable(stop.pass ? "screen.railwayvehicleaddon.route_card.pass" : "screen.railwayvehicleaddon.route_card.stop");
+	private static Component passText(MutableStop stop) {
+		return Component.translatable(stop.pass ? "screen.railwayvehicleaddon.route_card.pass" : "screen.railwayvehicleaddon.route_card.stop");
 	}
 
 	private void save() {
@@ -227,54 +226,54 @@ public class RouteCardScreen extends Screen {
 			outRoutes.put(r.name, r.value.isEmpty() ? 0 : Math.min(15, Integer.parseInt(r.value)));
 		}
 		Timetable table = new Timetable(this.trainNumber, this.type, outRoutes, out, this.endMode);
-		ClientPlayNetworking.send(new RouteCardUpdatePayload(this.hand == Hand.MAIN_HAND, table));
+		ClientPlayNetworking.send(new RouteCardUpdatePayload(this.hand == InteractionHand.MAIN_HAND, table));
 	}
 
 	@Override
-	public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+	public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
 		super.render(context, mouseX, mouseY, delta);
 		int x = this.left;
 		int y = this.top;
-		context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, y, TEXT);
+		context.drawCenteredString(this.font, this.title, this.width / 2, y, TEXT);
 		y += 14;
-		context.drawTextWithShadow(this.textRenderer, Text.translatable("screen.railwayvehicleaddon.route_card.train"), x, y + 5, TEXT);
-		context.drawTextWithShadow(this.textRenderer, Text.translatable("screen.railwayvehicleaddon.route_card.type"), x + 148, y + 5, TEXT);
-		context.drawTextWithShadow(this.textRenderer, Text.translatable("screen.railwayvehicleaddon.route_card.end"), x + 216, y + 5, TEXT);
+		context.drawString(this.font, Component.translatable("screen.railwayvehicleaddon.route_card.train"), x, y + 5, TEXT);
+		context.drawString(this.font, Component.translatable("screen.railwayvehicleaddon.route_card.type"), x + 148, y + 5, TEXT);
+		context.drawString(this.font, Component.translatable("screen.railwayvehicleaddon.route_card.end"), x + 216, y + 5, TEXT);
 
 		int listTop = y + 36;
-		context.drawTextWithShadow(this.textRenderer, Text.translatable("screen.railwayvehicleaddon.route_card.stops_header"), x, listTop - 12, TEXT_DIM);
-		context.drawTextWithShadow(this.textRenderer, Text.translatable("screen.railwayvehicleaddon.route_card.dwell"), x + 198, listTop - 12, TEXT_DIM);
-		context.drawTextWithShadow(this.textRenderer, Text.translatable("screen.railwayvehicleaddon.route_card.depart"), x + 252, listTop - 12, TEXT_DIM);
+		context.drawString(this.font, Component.translatable("screen.railwayvehicleaddon.route_card.stops_header"), x, listTop - 12, TEXT_DIM);
+		context.drawString(this.font, Component.translatable("screen.railwayvehicleaddon.route_card.dwell"), x + 198, listTop - 12, TEXT_DIM);
+		context.drawString(this.font, Component.translatable("screen.railwayvehicleaddon.route_card.depart"), x + 252, listTop - 12, TEXT_DIM);
 		int first = this.stopPage * STOP_ROWS;
 		if (this.stops.isEmpty()) {
-			context.drawTextWithShadow(this.textRenderer, Text.translatable("screen.railwayvehicleaddon.route_card.no_stops"), x, listTop + 5, TEXT_DIM);
+			context.drawString(this.font, Component.translatable("screen.railwayvehicleaddon.route_card.no_stops"), x, listTop + 5, TEXT_DIM);
 		}
 		for (int i = 0; i < STOP_ROWS && first + i < this.stops.size(); i++) {
 			MutableStop stop = this.stops.get(first + i);
 			String label = (first + i + 1) + ". " + stop.station + (stop.platform > 0 ? " " + stop.platform + "番線" : "");
-			context.drawTextWithShadow(this.textRenderer, Text.literal(this.textRenderer.trimToWidth(label, 145)), x, listTop + i * ROW_H + 5, TEXT);
-			context.drawTextWithShadow(this.textRenderer, Text.literal("秒"), x + 237, listTop + i * ROW_H + 5, TEXT_DIM);
+			context.drawString(this.font, Component.literal(this.font.plainSubstrByWidth(label, 145)), x, listTop + i * ROW_H + 5, TEXT);
+			context.drawString(this.font, Component.literal("秒"), x + 237, listTop + i * ROW_H + 5, TEXT_DIM);
 		}
 		int stopPagerY = listTop + STOP_ROWS * ROW_H;
-		context.drawCenteredTextWithShadow(this.textRenderer, Text.literal((this.stopPage + 1) + " / " + stopPages()),
+		context.drawCenteredString(this.font, Component.literal((this.stopPage + 1) + " / " + stopPages()),
 				x + 310, stopPagerY + 4, TEXT_DIM);
 
 		int routeTop = stopPagerY + 34;
-		context.drawTextWithShadow(this.textRenderer, Text.translatable("screen.railwayvehicleaddon.route_card.routes_header"), x, routeTop - 12, TEXT_DIM);
+		context.drawString(this.font, Component.translatable("screen.railwayvehicleaddon.route_card.routes_header"), x, routeTop - 12, TEXT_DIM);
 		int firstRoute = this.routePage * ROUTE_ROWS;
 		if (this.routes.isEmpty()) {
-			context.drawTextWithShadow(this.textRenderer, Text.translatable("screen.railwayvehicleaddon.route_card.no_routes"), x, routeTop + 5, TEXT_DIM);
+			context.drawString(this.font, Component.translatable("screen.railwayvehicleaddon.route_card.no_routes"), x, routeTop + 5, TEXT_DIM);
 		}
 		for (int i = 0; i < ROUTE_ROWS && firstRoute + i < this.routes.size(); i++) {
 			MutableRoute route = this.routes.get(firstRoute + i);
-			context.drawTextWithShadow(this.textRenderer, Text.literal(this.textRenderer.trimToWidth(route.name, 190)), x, routeTop + i * ROW_H + 5, TEXT);
+			context.drawString(this.font, Component.literal(this.font.plainSubstrByWidth(route.name, 190)), x, routeTop + i * ROW_H + 5, TEXT);
 		}
-		context.drawCenteredTextWithShadow(this.textRenderer, Text.literal((this.routePage + 1) + " / " + routePages()),
+		context.drawCenteredString(this.font, Component.literal((this.routePage + 1) + " / " + routePages()),
 				x + 310, routeTop + ROUTE_ROWS * ROW_H - 18, TEXT_DIM);
 	}
 
 	@Override
-	public boolean shouldPause() {
+	public boolean isPauseScreen() {
 		return false;
 	}
 }

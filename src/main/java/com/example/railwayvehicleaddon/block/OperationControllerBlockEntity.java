@@ -7,32 +7,31 @@ import com.example.railwayvehicleaddon.operation.Timetable;
 import com.example.railwayvehicleaddon.screen.OperationControllerScreenHandler;
 import com.example.tudursvehiclemod.ChunkForceTracker;
 import com.example.tudursvehiclemod.item.DroneControlStickItem;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.inventory.Inventories;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.screen.NamedScreenHandlerFactory;
-import net.minecraft.screen.PropertyDelegate;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.storage.ReadView;
-import net.minecraft.storage.WriteView;
-import net.minecraft.text.Text;
-import net.minecraft.util.ItemScatterer;
-import net.minecraft.util.collection.DefaultedList;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.world.World;
-
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.NonNullList;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.Container;
+import net.minecraft.world.ContainerHelper;
+import net.minecraft.world.Containers;
+import net.minecraft.world.MenuProvider;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerData;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 
 /**
  * 運行管理装置のブロックエンティティ。組(制御スティック・経路アイテム)ごとに、スティックに登録した車両を含む編成へ
@@ -47,7 +46,7 @@ import java.util.UUID;
  *       一時的に読み込んで探す(サーバーの再起動後など)</li>
  * </ul>
  */
-public class OperationControllerBlockEntity extends BlockEntity implements NamedScreenHandlerFactory {
+public class OperationControllerBlockEntity extends BlockEntity implements MenuProvider {
 	public static final int MAX_ROWS = 999;
 	/** 組を処理する間隔(tick) */
 	private static final int PROCESS_INTERVAL = 10;
@@ -65,7 +64,7 @@ public class OperationControllerBlockEntity extends BlockEntity implements Named
 	public static final int STATUS_RUNNING = 6;
 	public static final int STATUS_MANUAL = 7;
 
-	private DefaultedList<ItemStack> items = DefaultedList.ofSize(2, ItemStack.EMPTY);
+	private NonNullList<ItemStack> items = NonNullList.withSize(2, ItemStack.EMPTY);
 	private int rows = 1;
 	private int page;
 	private final List<Row> rowStates = new ArrayList<>();
@@ -110,7 +109,7 @@ public class OperationControllerBlockEntity extends BlockEntity implements Named
 		return Math.max(1, (this.rows + OperationControllerScreenHandler.PAGE_ROWS - 1) / OperationControllerScreenHandler.PAGE_ROWS);
 	}
 
-	public Inventory inventory() {
+	public Container inventory() {
 		return this.inventory;
 	}
 
@@ -179,16 +178,16 @@ public class OperationControllerBlockEntity extends BlockEntity implements Named
 				}
 			}
 		}
-		markDirty();
+		setChanged();
 		return true;
 	}
 
 	private RailVehicleEntity assignedCar(int row) {
-		if (!(this.world instanceof ServerWorld serverWorld) || row < 0 || row >= this.rows) {
+		if (!(this.level instanceof ServerLevel serverWorld) || row < 0 || row >= this.rows) {
 			return null;
 		}
 		UUID id = registeredVehicle(stick(row));
-		if (id != null && serverWorld.getEntity(id) instanceof RailVehicleEntity car && this.pos.equals(car.managedBy()) && car.managedRow() == row) {
+		if (id != null && serverWorld.getEntity(id) instanceof RailVehicleEntity car && this.worldPosition.equals(car.managedBy()) && car.managedRow() == row) {
 			return car;
 		}
 		return null;
@@ -200,15 +199,15 @@ public class OperationControllerBlockEntity extends BlockEntity implements Named
 		if (next == this.rows) {
 			return;
 		}
-		DefaultedList<ItemStack> resized = DefaultedList.ofSize(next * 2, ItemStack.EMPTY);
+		NonNullList<ItemStack> resized = NonNullList.withSize(next * 2, ItemStack.EMPTY);
 		for (int i = 0; i < this.items.size(); i++) {
 			if (i < resized.size()) {
 				resized.set(i, this.items.get(i));
-			} else if (!this.items.get(i).isEmpty() && this.world != null) {
-				ItemScatterer.spawn(this.world, this.pos.getX() + 0.5, this.pos.getY() + 1.0, this.pos.getZ() + 0.5, this.items.get(i));
+			} else if (!this.items.get(i).isEmpty() && this.level != null) {
+				Containers.dropItemStack(this.level, this.worldPosition.getX() + 0.5, this.worldPosition.getY() + 1.0, this.worldPosition.getZ() + 0.5, this.items.get(i));
 			}
 		}
-		if (this.world instanceof ServerWorld serverWorld) {
+		if (this.level instanceof ServerLevel serverWorld) {
 			for (int r = next; r < this.rows; r++) {
 				releaseRow(serverWorld, r);
 			}
@@ -221,14 +220,14 @@ public class OperationControllerBlockEntity extends BlockEntity implements Named
 
 	// ------------------------------------------------------------------ 処理
 
-	public static void tick(World world, BlockPos pos, BlockState state, OperationControllerBlockEntity entity) {
-		if (!(world instanceof ServerWorld serverWorld)) {
+	public static void tick(Level world, BlockPos pos, BlockState state, OperationControllerBlockEntity entity) {
+		if (!(world instanceof ServerLevel serverWorld)) {
 			return;
 		}
 		if (!entity.ownChunkRequested) {
 			entity.updateOwnChunk(true);
 		}
-		long now = serverWorld.getTime();
+		long now = serverWorld.getGameTime();
 		for (int r = 0; r < entity.rows; r++) {
 			if ((now + r) % PROCESS_INTERVAL == 0) {
 				entity.processRow(serverWorld, r, now);
@@ -236,7 +235,7 @@ public class OperationControllerBlockEntity extends BlockEntity implements Named
 		}
 	}
 
-	private void processRow(ServerWorld world, int r, long now) {
+	private void processRow(ServerLevel world, int r, long now) {
 		Row row = this.rowStates.get(r);
 		ItemStack stick = stick(r);
 		ItemStack card = card(r);
@@ -264,7 +263,7 @@ public class OperationControllerBlockEntity extends BlockEntity implements Named
 			row.status = STATUS_NOT_RAIL;
 			return;
 		}
-		if (car.isManaged() && !(this.pos.equals(car.managedBy()) && car.managedRow() == r) && otherStillAssigns(world, car)) {
+		if (car.isManaged() && !(this.worldPosition.equals(car.managedBy()) && car.managedRow() == r) && otherStillAssigns(world, car)) {
 			// ほかの運行管理装置(またはこの装置のほかの組)がすでに割り当てている: 先に割り当てた方を優先する
 			row.status = STATUS_DUPLICATE;
 			releaseChunks(world, r);
@@ -280,22 +279,22 @@ public class OperationControllerBlockEntity extends BlockEntity implements Named
 			}
 		}
 		int hash = table.hashCode();
-		if (!this.pos.equals(car.managedBy()) || car.managedRow() != r || car.managedHash() != hash || car.getTimetable() == null) {
+		if (!this.worldPosition.equals(car.managedBy()) || car.managedRow() != r || car.managedHash() != hash || car.getTimetable() == null) {
 			for (RailVehicleEntity other : consistCars) {
 				if (other != car && other.getTimetable() != null) {
 					other.clearTimetable();
 				}
 			}
-			car.assignTimetable(table, this.pos, r, hash);
+			car.assignTimetable(table, this.worldPosition, r, hash);
 		}
 
 		// チャンクの読み込み(編成の全車両の周りと、先読みの経路)
 		OperationState state = OperationState.get(world);
-		OperationState.Consist consist = state.consistOf(car.getUuid(), now);
+		OperationState.Consist consist = state.consistOf(car.getUUID(), now);
 		Set<ChunkPos> want = new HashSet<>(consist != null ? state.loadChunks(consist.key()) : Set.of());
 		List<ChunkPos> seen = new ArrayList<>();
 		for (RailVehicleEntity member : consistCars) {
-			ChunkPos c = member.getChunkPos();
+			ChunkPos c = member.chunkPosition();
 			seen.add(c);
 			for (int dx = -1; dx <= 1; dx++) {
 				for (int dz = -1; dz <= 1; dz++) {
@@ -317,7 +316,7 @@ public class OperationControllerBlockEntity extends BlockEntity implements Named
 		row.forced = want;
 		if (!seen.equals(row.lastKnown)) {
 			row.lastKnown = seen;
-			markDirty();
+			setChanged();
 		}
 		row.status = car.atoState().enabled ? STATUS_RUNNING : STATUS_MANUAL;
 		row.display = car.atoState().display.ordinal();
@@ -325,17 +324,17 @@ public class OperationControllerBlockEntity extends BlockEntity implements Named
 	}
 
 	/** 車両carを割り当てている装置が、今もcarを割り当てているか。 */
-	private static boolean otherStillAssigns(ServerWorld world, RailVehicleEntity car) {
+	private static boolean otherStillAssigns(ServerLevel world, RailVehicleEntity car) {
 		BlockPos other = car.managedBy();
-		if (other == null || !world.isChunkLoaded(other)) {
+		if (other == null || !world.hasChunkAt(other)) {
 			return other != null;
 		}
 		return world.getBlockEntity(other) instanceof OperationControllerBlockEntity controller
-				&& controller.assigns(car.managedRow(), car.getUuid());
+				&& controller.assigns(car.managedRow(), car.getUUID());
 	}
 
 	/** 見つからない編成を、最後に見えた場所を一時的に読み込んで探す。 */
-	private void search(ServerWorld world, int r) {
+	private void search(ServerLevel world, int r) {
 		Row row = this.rowStates.get(r);
 		if (row.lastKnown.isEmpty()) {
 			return;
@@ -353,7 +352,7 @@ public class OperationControllerBlockEntity extends BlockEntity implements Named
 		}
 	}
 
-	private void releaseSearch(ServerWorld world, int r) {
+	private void releaseSearch(ServerLevel world, int r) {
 		Row row = this.rowStates.get(r);
 		if (row.searchForced.isEmpty()) {
 			return;
@@ -365,7 +364,7 @@ public class OperationControllerBlockEntity extends BlockEntity implements Named
 		row.searchForced = List.of();
 	}
 
-	private void releaseChunks(ServerWorld world, int r) {
+	private void releaseChunks(ServerLevel world, int r) {
 		Row row = this.rowStates.get(r);
 		Object requester = rowRequester(r);
 		for (ChunkPos c : row.forced) {
@@ -375,10 +374,10 @@ public class OperationControllerBlockEntity extends BlockEntity implements Named
 	}
 
 	/** 組rの割り当て(読み込まれていれば車両の運行表)とチャンクの読み込みを外す。 */
-	private void releaseAssignment(ServerWorld world, int r) {
+	private void releaseAssignment(ServerLevel world, int r) {
 		Row row = this.rowStates.get(r);
 		if (row.vehicle != null && world.getEntity(row.vehicle) instanceof RailVehicleEntity car
-				&& this.pos.equals(car.managedBy()) && car.managedRow() == r) {
+				&& this.worldPosition.equals(car.managedBy()) && car.managedRow() == r) {
 			car.clearTimetable();
 		}
 		row.vehicle = null;
@@ -388,11 +387,11 @@ public class OperationControllerBlockEntity extends BlockEntity implements Named
 		releaseSearch(world, r);
 		if (!row.lastKnown.isEmpty()) {
 			row.lastKnown = List.of();
-			markDirty();
+			setChanged();
 		}
 	}
 
-	private void releaseRow(ServerWorld world, int r) {
+	private void releaseRow(ServerLevel world, int r) {
 		if (r < this.rowStates.size()) {
 			releaseAssignment(world, r);
 		}
@@ -408,8 +407,8 @@ public class OperationControllerBlockEntity extends BlockEntity implements Named
 
 	/** この装置のチャンクを読み込み続ける(BLOCK_ENTITY_LOAD・最初のtickで呼ぶ)。 */
 	public void updateOwnChunk(boolean forced) {
-		if (this.world instanceof ServerWorld serverWorld) {
-			ChunkPos own = new ChunkPos(this.pos);
+		if (this.level instanceof ServerLevel serverWorld) {
+			ChunkPos own = new ChunkPos(this.worldPosition);
 			if (forced) {
 				ChunkForceTracker.requestWithoutLoading(serverWorld, own, this);
 				this.ownChunkRequested = true;
@@ -422,23 +421,23 @@ public class OperationControllerBlockEntity extends BlockEntity implements Named
 
 	/** 壊された: 割り当てを外し、スロットの中身を落とし、読み込んでいたチャンクをすべて外す。 */
 	@Override
-	public void onBlockReplaced(BlockPos pos, BlockState oldState) {
-		if (this.world instanceof ServerWorld serverWorld) {
+	public void preRemoveSideEffects(BlockPos pos, BlockState oldState) {
+		if (this.level instanceof ServerLevel serverWorld) {
 			for (int r = 0; r < this.rows; r++) {
 				releaseAssignment(serverWorld, r);
 			}
-			ItemScatterer.spawn(serverWorld, pos, this.items);
+			Containers.dropContents(serverWorld, pos, this.items);
 			this.items.clear();
 			ChunkForceTracker.releaseAllOwnedBy(serverWorld, this);
 		}
-		super.onBlockReplaced(pos, oldState);
+		super.preRemoveSideEffects(pos, oldState);
 	}
 
 	/** チャンクの読み込みが外れた(サーバーの停止など): 読み込みの記録だけ忘れる(強制読み込みはワールドと一緒に保存される)。 */
 	@Override
-	public void markRemoved() {
-		super.markRemoved();
-		if (this.world instanceof ServerWorld serverWorld) {
+	public void setRemoved() {
+		super.setRemoved();
+		if (this.level instanceof ServerLevel serverWorld) {
 			ChunkForceTracker.forgetAllOwnedBy(serverWorld, this);
 		}
 	}
@@ -446,15 +445,15 @@ public class OperationControllerBlockEntity extends BlockEntity implements Named
 	// ------------------------------------------------------------------ 保存
 
 	@Override
-	protected void readData(ReadView view) {
-		super.readData(view);
-		this.rows = Math.max(1, Math.min(MAX_ROWS, view.getInt("Rows", 1)));
-		this.items = DefaultedList.ofSize(this.rows * 2, ItemStack.EMPTY);
-		Inventories.readData(view, this.items);
-		this.page = Math.max(0, Math.min(pageCount() - 1, view.getInt("Page", 0)));
+	protected void loadAdditional(ValueInput view) {
+		super.loadAdditional(view);
+		this.rows = Math.max(1, Math.min(MAX_ROWS, view.getIntOr("Rows", 1)));
+		this.items = NonNullList.withSize(this.rows * 2, ItemStack.EMPTY);
+		ContainerHelper.loadAllItems(view, this.items);
+		this.page = Math.max(0, Math.min(pageCount() - 1, view.getIntOr("Page", 0)));
 		this.rowStates.clear();
 		ensureRowStates();
-		int[] known = view.getOptionalIntArray("LastKnown").orElse(new int[0]);
+		int[] known = view.getIntArray("LastKnown").orElse(new int[0]);
 		int i = 0;
 		for (int r = 0; r < this.rows && i < known.length; r++) {
 			int count = known[i++];
@@ -468,11 +467,11 @@ public class OperationControllerBlockEntity extends BlockEntity implements Named
 	}
 
 	@Override
-	protected void writeData(WriteView view) {
-		super.writeData(view);
+	protected void saveAdditional(ValueOutput view) {
+		super.saveAdditional(view);
 		view.putInt("Rows", this.rows);
 		view.putInt("Page", this.page);
-		Inventories.writeData(view, this.items, true);
+		ContainerHelper.saveAllItems(view, this.items, true);
 		List<Integer> known = new ArrayList<>();
 		for (Row row : this.rowStates) {
 			known.add(row.lastKnown.size());
@@ -487,18 +486,18 @@ public class OperationControllerBlockEntity extends BlockEntity implements Named
 	// ------------------------------------------------------------------ 画面
 
 	@Override
-	public Text getDisplayName() {
-		return Text.translatable("container.railwayvehicleaddon.operation_controller");
+	public Component getDisplayName() {
+		return Component.translatable("container.railwayvehicleaddon.operation_controller");
 	}
 
 	@Override
-	public ScreenHandler createMenu(int syncId, PlayerInventory playerInventory, PlayerEntity player) {
+	public AbstractContainerMenu createMenu(int syncId, Inventory playerInventory, Player player) {
 		return new OperationControllerScreenHandler(syncId, playerInventory, this);
 	}
 
 	/** 画面へ同期する値(組の数・ページ・ページ内の各組の状態・ATOの状態・次の駅の番号)。 */
-	public PropertyDelegate properties() {
-		return new PropertyDelegate() {
+	public ContainerData properties() {
+		return new ContainerData() {
 			@Override
 			public int get(int index) {
 				if (index == 0) {
@@ -521,16 +520,16 @@ public class OperationControllerBlockEntity extends BlockEntity implements Named
 			}
 
 			@Override
-			public int size() {
+			public int getCount() {
 				return OperationControllerScreenHandler.PROPERTY_COUNT;
 			}
 		};
 	}
 
 	/** スロット全体(組r: 2r=スティック、2r+1=経路アイテム)。 */
-	public final class RowsInventory implements Inventory {
+	public final class RowsInventory implements Container {
 		@Override
-		public int size() {
+		public int getContainerSize() {
 			return OperationControllerBlockEntity.this.items.size();
 		}
 
@@ -545,61 +544,61 @@ public class OperationControllerBlockEntity extends BlockEntity implements Named
 		}
 
 		@Override
-		public ItemStack getStack(int slot) {
-			return slot >= 0 && slot < size() ? OperationControllerBlockEntity.this.items.get(slot) : ItemStack.EMPTY;
+		public ItemStack getItem(int slot) {
+			return slot >= 0 && slot < getContainerSize() ? OperationControllerBlockEntity.this.items.get(slot) : ItemStack.EMPTY;
 		}
 
 		@Override
-		public ItemStack removeStack(int slot, int amount) {
-			if (slot < 0 || slot >= size()) {
+		public ItemStack removeItem(int slot, int amount) {
+			if (slot < 0 || slot >= getContainerSize()) {
 				return ItemStack.EMPTY;
 			}
-			ItemStack result = Inventories.splitStack(OperationControllerBlockEntity.this.items, slot, amount);
+			ItemStack result = ContainerHelper.removeItem(OperationControllerBlockEntity.this.items, slot, amount);
 			if (!result.isEmpty()) {
-				markDirty();
+				setChanged();
 			}
 			return result;
 		}
 
 		@Override
-		public ItemStack removeStack(int slot) {
-			if (slot < 0 || slot >= size()) {
+		public ItemStack removeItemNoUpdate(int slot) {
+			if (slot < 0 || slot >= getContainerSize()) {
 				return ItemStack.EMPTY;
 			}
-			ItemStack result = Inventories.removeStack(OperationControllerBlockEntity.this.items, slot);
-			markDirty();
+			ItemStack result = ContainerHelper.takeItem(OperationControllerBlockEntity.this.items, slot);
+			setChanged();
 			return result;
 		}
 
 		@Override
-		public void setStack(int slot, ItemStack stack) {
-			if (slot >= 0 && slot < size()) {
+		public void setItem(int slot, ItemStack stack) {
+			if (slot >= 0 && slot < getContainerSize()) {
 				OperationControllerBlockEntity.this.items.set(slot, stack);
-				markDirty();
+				setChanged();
 			}
 		}
 
 		@Override
-		public int getMaxCountPerStack() {
+		public int getMaxStackSize() {
 			return 1;
 		}
 
 		@Override
-		public void markDirty() {
-			OperationControllerBlockEntity.this.markDirty();
+		public void setChanged() {
+			OperationControllerBlockEntity.this.setChanged();
 		}
 
 		@Override
-		public boolean canPlayerUse(PlayerEntity player) {
-			return OperationControllerBlockEntity.this.world != null
-					&& OperationControllerBlockEntity.this.world.getBlockEntity(OperationControllerBlockEntity.this.pos) == OperationControllerBlockEntity.this
-					&& player.squaredDistanceTo(OperationControllerBlockEntity.this.pos.toCenterPos()) <= 64.0;
+		public boolean stillValid(Player player) {
+			return OperationControllerBlockEntity.this.level != null
+					&& OperationControllerBlockEntity.this.level.getBlockEntity(OperationControllerBlockEntity.this.worldPosition) == OperationControllerBlockEntity.this
+					&& player.distanceToSqr(OperationControllerBlockEntity.this.worldPosition.getCenter()) <= 64.0;
 		}
 
 		@Override
-		public void clear() {
+		public void clearContent() {
 			OperationControllerBlockEntity.this.items.clear();
-			markDirty();
+			setChanged();
 		}
 	}
 }

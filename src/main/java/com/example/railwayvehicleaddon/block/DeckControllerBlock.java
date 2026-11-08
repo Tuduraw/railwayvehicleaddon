@@ -1,13 +1,13 @@
 package com.example.railwayvehicleaddon.block;
 
 import com.mojang.serialization.MapCodec;
-import net.minecraft.block.BlockWithEntity;
+import net.minecraft.world.level.block.BaseEntityBlock;
 
 /** 転車台・遷車台の制御器(レッドストーン)。動作はDeviceKind.REDSTONE_DECK参照。 */
 public class DeckControllerBlock extends TrackDeviceBlock {
-	public static final MapCodec<DeckControllerBlock> CODEC = createCodec(DeckControllerBlock::new);
+	public static final MapCodec<DeckControllerBlock> CODEC = simpleCodec(DeckControllerBlock::new);
 
-	public DeckControllerBlock(Settings settings) {
+	public DeckControllerBlock(Properties settings) {
 		super(settings);
 	}
 
@@ -17,7 +17,7 @@ public class DeckControllerBlock extends TrackDeviceBlock {
 	}
 
 	@Override
-	protected MapCodec<? extends BlockWithEntity> getCodec() {
+	protected MapCodec<? extends BaseEntityBlock> codec() {
 		return CODEC;
 	}
 }

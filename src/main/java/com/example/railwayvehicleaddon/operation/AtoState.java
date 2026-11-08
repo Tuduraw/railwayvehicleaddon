@@ -1,7 +1,7 @@
 package com.example.railwayvehicleaddon.operation;
 
-import net.minecraft.storage.ReadView;
-import net.minecraft.storage.WriteView;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 
 /**
  * 運行表を持つ車両(編成の運転を決める車両)のATOの状態。車両に保存する。
@@ -47,15 +47,15 @@ public final class AtoState {
 		this.held = 0;
 	}
 
-	public void read(ReadView view) {
-		this.enabled = view.getBoolean("AtoEnabled", false);
-		int p = view.getInt("AtoPhase", 0);
+	public void read(ValueInput view) {
+		this.enabled = view.getBooleanOr("AtoEnabled", false);
+		int p = view.getIntOr("AtoPhase", 0);
 		this.phase = Phase.values()[Math.max(0, Math.min(Phase.values().length - 1, p))];
-		this.dir = Integer.signum(view.getInt("AtoDir", 0));
-		this.dwellUntil = view.getLong("AtoDwellUntil", -1L);
+		this.dir = Integer.signum(view.getIntOr("AtoDir", 0));
+		this.dwellUntil = view.getLongOr("AtoDwellUntil", -1L);
 	}
 
-	public void write(WriteView view) {
+	public void write(ValueOutput view) {
 		view.putBoolean("AtoEnabled", this.enabled);
 		view.putInt("AtoPhase", this.phase.ordinal());
 		view.putInt("AtoDir", this.dir);

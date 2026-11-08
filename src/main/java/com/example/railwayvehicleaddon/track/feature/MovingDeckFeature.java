@@ -7,11 +7,10 @@ import com.example.railwayvehicleaddon.track.TrackNode;
 import com.example.railwayvehicleaddon.track.TrackSegment;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * 可動桁を持つ設備(転車台・遷車台)の共通部分。
@@ -64,10 +63,10 @@ public abstract class MovingDeckFeature implements TrackFeature {
 	}
 
 	/** 桁のA端の位置(param時)。 */
-	public abstract Vec3d endA(double param);
+	public abstract Vec3 endA(double param);
 
 	/** 桁のB端の位置(param時)。 */
-	public abstract Vec3d endB(double param);
+	public abstract Vec3 endB(double param);
 
 	/** 描画用: 2つの位置の間をtで補間する(転車台は角度として近い向きに補間)。 */
 	public double interpolate(double from, double to, double t) {
@@ -181,8 +180,8 @@ public abstract class MovingDeckFeature implements TrackFeature {
 	/** 桁の区間・端ノードを現在位置に合わせ、停止位置にそろっていれば接続ノードとリンクする。 */
 	@Override
 	public void apply(TrackNetwork network) {
-		Vec3d a = endA(this.param);
-		Vec3d b = endB(this.param);
+		Vec3 a = endA(this.param);
+		Vec3 b = endB(this.param);
 		network.putNode(new TrackNode(this.deckNodeA, a.x, a.y, a.z));
 		network.putNode(new TrackNode(this.deckNodeB, b.x, b.y, b.z));
 		network.putSegment(new TrackSegment(this.deckSegment, this.deckNodeA, this.deckNodeB,

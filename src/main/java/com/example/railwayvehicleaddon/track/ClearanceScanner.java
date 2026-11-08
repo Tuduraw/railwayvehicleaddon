@@ -2,19 +2,18 @@ package com.example.railwayvehicleaddon.track;
 
 import com.example.railwayvehicleaddon.RailwayConfig;
 import com.example.railwayvehicleaddon.RailwayVehicleAddon;
-import net.minecraft.block.BlockState;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.registry.tag.TagKey;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
-
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.tags.TagKey;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
 
 /**
  * 線路の建築限界(線路中心から左右clearance_half_width、線路基面からclearance_heightまで)に
@@ -31,8 +30,8 @@ import java.util.Set;
  * 自然地形の判定をデータタグにしているのは、利用者がデータパックで調整できるようにするため。
  */
 public final class ClearanceScanner {
-	public static final TagKey<net.minecraft.block.Block> NATURAL_TERRAIN =
-			TagKey.of(RegistryKeys.BLOCK, Identifier.of(RailwayVehicleAddon.MOD_ID, "natural_terrain"));
+	public static final TagKey<net.minecraft.world.level.block.Block> NATURAL_TERRAIN =
+			TagKey.create(Registries.BLOCK, Identifier.fromNamespaceAndPath(RailwayVehicleAddon.MOD_ID, "natural_terrain"));
 
 	private static final double ALONG_STEP = 0.5;
 	private static final double CROSS_STEP = 0.5;
@@ -62,7 +61,7 @@ public final class ClearanceScanner {
 					double z = p.z() + p.lateralZ() * lateral;
 					for (int u = 0; u <= upSteps; u++) {
 						double up = BASE_EPSILON + (height - 2.0 * BASE_EPSILON) * u / upSteps;
-						result.add(BlockPos.ofFloored(x, p.y() + up, z));
+						result.add(BlockPos.containing(x, p.y() + up, z));
 					}
 				}
 			}
@@ -70,8 +69,8 @@ public final class ClearanceScanner {
 		return result;
 	}
 
-	public static BlockCategory classify(World world, BlockPos pos, RailwayConfig.Values config, boolean treatUnloadedAsBlocked) {
-		if (!world.isChunkLoaded(pos.getX() >> 4, pos.getZ() >> 4)) {
+	public static BlockCategory classify(Level world, BlockPos pos, RailwayConfig.Values config, boolean treatUnloadedAsBlocked) {
+		if (!world.hasChunk(pos.getX() >> 4, pos.getZ() >> 4)) {
 			return treatUnloadedAsBlocked ? BlockCategory.UNLOADED : null;
 		}
 		BlockState state = world.getBlockState(pos);
@@ -81,11 +80,11 @@ public final class ClearanceScanner {
 		if (!state.getFluidState().isEmpty()) {
 			return BlockCategory.BLOCKED_FLUID;
 		}
-		float hardness = state.getHardness(world, pos);
+		float hardness = state.getDestroySpeed(world, pos);
 		if (hardness < 0.0f || hardness >= config.unbreakableHardness()) {
 			return BlockCategory.BLOCKED_HARD;
 		}
-		if (state.isIn(NATURAL_TERRAIN) || state.isReplaceable()) {
+		if (state.is(NATURAL_TERRAIN) || state.canBeReplaced()) {
 			return BlockCategory.NATURAL;
 		}
 		return BlockCategory.PLAYER_PLACED;
@@ -115,12 +114,12 @@ public final class ClearanceScanner {
 		}
 	}
 
-	public static ScanResult scan(World world, List<TrackSegment> segments, RailwayConfig.Values config, boolean treatUnloadedAsBlocked) {
+	public static ScanResult scan(Level world, List<TrackSegment> segments, RailwayConfig.Values config, boolean treatUnloadedAsBlocked) {
 		return scan(world, segments, Set.of(), config, treatUnloadedAsBlocked);
 	}
 
 	/** 区間の建築限界に加えて、extra(転車台のピットなど)の範囲も判定する。 */
-	public static ScanResult scan(World world, List<TrackSegment> segments, Set<BlockPos> extra, RailwayConfig.Values config,
+	public static ScanResult scan(Level world, List<TrackSegment> segments, Set<BlockPos> extra, RailwayConfig.Values config,
 								  boolean treatUnloadedAsBlocked) {
 		Map<BlockPos, BlockCategory> blocks = new LinkedHashMap<>();
 		Map<BlockCategory, Integer> counts = new EnumMap<>(BlockCategory.class);

@@ -1,21 +1,21 @@
 package com.example.railwayvehicleaddon.network;
 
 import com.example.railwayvehicleaddon.RailwayVehicleAddon;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.util.Identifier;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.Identifier;
 
 /** クライアント→サーバー: 乗車中の鉄道車両の連結を外す(連結解放キー)。どちらの端を外すかはサーバーが決める。 */
-public record UncouplePayload() implements CustomPayload {
+public record UncouplePayload() implements CustomPacketPayload {
 
-	public static final CustomPayload.Id<UncouplePayload> ID =
-			new CustomPayload.Id<>(Identifier.of(RailwayVehicleAddon.MOD_ID, "uncouple"));
+	public static final CustomPacketPayload.Type<UncouplePayload> ID =
+			new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath(RailwayVehicleAddon.MOD_ID, "uncouple"));
 
-	public static final PacketCodec<RegistryByteBuf, UncouplePayload> CODEC = PacketCodec.unit(new UncouplePayload());
+	public static final StreamCodec<RegistryFriendlyByteBuf, UncouplePayload> CODEC = StreamCodec.unit(new UncouplePayload());
 
 	@Override
-	public Id<? extends CustomPayload> getId() {
+	public Type<? extends CustomPacketPayload> type() {
 		return ID;
 	}
 }

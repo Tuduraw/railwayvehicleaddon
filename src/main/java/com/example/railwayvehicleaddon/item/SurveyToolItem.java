@@ -1,11 +1,11 @@
 package com.example.railwayvehicleaddon.item;
 
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemUsageContext;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.world.World;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.context.UseOnContext;
+import net.minecraft.world.level.Level;
 
 /**
  * 測量ツール。操作状態(モード・点・選択)とプレビューはクライアント側(SurveySession)で扱い、
@@ -22,24 +22,24 @@ public class SurveyToolItem extends Item {
 
 	public static ClientHandler clientHandler;
 
-	public SurveyToolItem(Settings settings) {
+	public SurveyToolItem(Properties settings) {
 		super(settings);
 	}
 
 	@Override
-	public ActionResult useOnBlock(ItemUsageContext context) {
-		PlayerEntity player = context.getPlayer();
-		if (context.getWorld().isClient() && clientHandler != null && player != null) {
-			clientHandler.onUse(player.isSneaking());
+	public InteractionResult useOn(UseOnContext context) {
+		Player player = context.getPlayer();
+		if (context.getLevel().isClientSide() && clientHandler != null && player != null) {
+			clientHandler.onUse(player.isShiftKeyDown());
 		}
-		return ActionResult.SUCCESS;
+		return InteractionResult.SUCCESS;
 	}
 
 	@Override
-	public ActionResult use(World world, PlayerEntity user, Hand hand) {
-		if (world.isClient() && clientHandler != null) {
-			clientHandler.onUse(user.isSneaking());
+	public InteractionResult use(Level world, Player user, InteractionHand hand) {
+		if (world.isClientSide() && clientHandler != null) {
+			clientHandler.onUse(user.isShiftKeyDown());
 		}
-		return ActionResult.SUCCESS;
+		return InteractionResult.SUCCESS;
 	}
 }

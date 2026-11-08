@@ -8,11 +8,11 @@ import com.example.railwayvehicleaddon.track.TrackPoint;
 import com.example.railwayvehicleaddon.track.TrackSegment;
 import com.example.railwayvehicleaddon.track.feature.MovingDeckFeature;
 import com.example.railwayvehicleaddon.track.feature.TrackFeature;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.phys.Vec3;
 
 /** 線路装置と対象(分岐器・転車台/遷車台・区間)の連結。 */
 public final class DeviceLinks {
@@ -27,11 +27,11 @@ public final class DeviceLinks {
 	}
 
 	/** 対象の位置(表示・距離判定用)。対象が無ければnull。 */
-	public static Vec3d targetPosition(TrackNetwork network, DeviceKind.TargetType type, long id) {
+	public static Vec3 targetPosition(TrackNetwork network, DeviceKind.TargetType type, long id) {
 		switch (type) {
 			case SWITCH -> {
 				TrackNode node = network.node(id);
-				return node == null || !network.isSwitch(id) ? null : new Vec3d(node.x(), node.y(), node.z());
+				return node == null || !network.isSwitch(id) ? null : new Vec3(node.x(), node.y(), node.z());
 			}
 			case DECK -> {
 				TrackFeature feature = network.feature(id);
@@ -43,7 +43,7 @@ public final class DeviceLinks {
 					return null;
 				}
 				TrackPoint p = segment.sample(segment.length() / 2.0);
-				return new Vec3d(p.x(), p.y(), p.z());
+				return new Vec3(p.x(), p.y(), p.z());
 			}
 			default -> {
 				return null;
@@ -52,15 +52,15 @@ public final class DeviceLinks {
 	}
 
 	/** 装置の近くで最も近い対象。無ければ-1。 */
-	public static long findNearest(ServerWorld world, BlockPos pos, DeviceKind.TargetType type) {
+	public static long findNearest(ServerLevel world, BlockPos pos, DeviceKind.TargetType type) {
 		TrackNetwork network = TrackManager.network(world);
-		Vec3d center = Vec3d.ofCenter(pos);
+		Vec3 center = Vec3.atCenterOf(pos);
 		long best = -1L;
 		double bestDist = Double.MAX_VALUE;
 		switch (type) {
 			case SWITCH -> {
 				for (TrackNode node : network.nodes()) {
-					double d = center.squaredDistanceTo(node.x(), node.y(), node.z());
+					double d = center.distanceToSqr(node.x(), node.y(), node.z());
 					if (d < bestDist && d <= AUTO_LINK_RANGE * AUTO_LINK_RANGE && network.isSwitch(node.id())) {
 						bestDist = d;
 						best = node.id();
@@ -72,7 +72,7 @@ public final class DeviceLinks {
 					if (!(feature instanceof MovingDeckFeature)) {
 						continue;
 					}
-					double d = Math.max(0.0, Math.sqrt(center.squaredDistanceTo(feature.center())) - feature.radius());
+					double d = Math.max(0.0, Math.sqrt(center.distanceToSqr(feature.center())) - feature.radius());
 					if (d < bestDist && d <= AUTO_LINK_RANGE) {
 						bestDist = d;
 						best = feature.id();
@@ -91,36 +91,36 @@ public final class DeviceLinks {
 		return best;
 	}
 
-	public static Text describe(ServerWorld world, DeviceKind.TargetType type, long id) {
-		Vec3d p = targetPosition(TrackManager.network(world), type, id);
+	public static Component describe(ServerLevel world, DeviceKind.TargetType type, long id) {
+		Vec3 p = targetPosition(TrackManager.network(world), type, id);
 		if (p == null) {
-			return Text.translatable("message.railwayvehicleaddon.device.no_target");
+			return Component.translatable("message.railwayvehicleaddon.device.no_target");
 		}
-		return Text.translatable("message.railwayvehicleaddon.device.linked." + type.name().toLowerCase(java.util.Locale.ROOT),
+		return Component.translatable("message.railwayvehicleaddon.device.linked." + type.name().toLowerCase(java.util.Locale.ROOT),
 				(int) Math.floor(p.x), (int) Math.floor(p.y), (int) Math.floor(p.z));
 	}
 
 	/** 測量ツールの連結モードでの付け替え。 */
-	public static void linkFromTool(ServerPlayerEntity player, BlockPos pos, long targetId) {
-		if (!player.getMainHandStack().isOf(ModItems.SURVEY_TOOL)) {
+	public static void linkFromTool(ServerPlayer player, BlockPos pos, long targetId) {
+		if (!player.getMainHandItem().is(ModItems.SURVEY_TOOL)) {
 			return;
 		}
-		ServerWorld world = (ServerWorld) player.getEntityWorld();
-		if (player.getEyePos().squaredDistanceTo(Vec3d.ofCenter(pos)) > PLAYER_REACH * PLAYER_REACH
+		ServerLevel world = (ServerLevel) player.level();
+		if (player.getEyePosition().distanceToSqr(Vec3.atCenterOf(pos)) > PLAYER_REACH * PLAYER_REACH
 				|| !(world.getBlockEntity(pos) instanceof TrackLinkable entity)) {
 			return;
 		}
 		DeviceKind.TargetType type = entity.linkTarget();
-		Vec3d target = targetPosition(TrackManager.network(world), type, targetId);
+		Vec3 target = targetPosition(TrackManager.network(world), type, targetId);
 		if (target == null) {
-			player.sendMessage(Text.translatable("message.railwayvehicleaddon.device.wrong_target"), true);
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.device.wrong_target"), true);
 			return;
 		}
-		if (target.squaredDistanceTo(Vec3d.ofCenter(pos)) > MAX_LINK_RANGE * MAX_LINK_RANGE) {
-			player.sendMessage(Text.translatable("message.railwayvehicleaddon.device.too_far", (int) MAX_LINK_RANGE), true);
+		if (target.distanceToSqr(Vec3.atCenterOf(pos)) > MAX_LINK_RANGE * MAX_LINK_RANGE) {
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.device.too_far", (int) MAX_LINK_RANGE), true);
 			return;
 		}
 		entity.setTargetId(targetId);
-		player.sendMessage(describe(world, type, targetId), true);
+		player.displayClientMessage(describe(world, type, targetId), true);
 	}
 }

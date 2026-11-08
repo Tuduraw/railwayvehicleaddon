@@ -1,79 +1,79 @@
 package com.example.railwayvehicleaddon.block;
 
 import com.example.railwayvehicleaddon.item.ModItems;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.BlockWithEntity;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.BlockEntityTicker;
-import net.minecraft.block.entity.BlockEntityType;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemPlacementContext;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.state.StateManager;
-import net.minecraft.state.property.EnumProperty;
-import net.minecraft.state.property.Properties;
-import net.minecraft.text.Text;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.world.World;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.BaseEntityBlock;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityTicker;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.EnumProperty;
+import net.minecraft.world.phys.BlockHitResult;
 
 /**
  * 線路の位置に連結する地上子ブロック(停止位置目標・列車番号検知器)の共通部分。
  * 正面(FACING)は設置したプレイヤーの方を向き、正面に向かって進んでくる列車に効く。
  * 名前(駅名・検知器の名前)は、金床で名前を付けたブロックを置くか、名前を付けた名札で右クリックして設定する。
  */
-public abstract class WaysideBlock extends BlockWithEntity {
-	public static final EnumProperty<Direction> FACING = Properties.HORIZONTAL_FACING;
+public abstract class WaysideBlock extends BaseEntityBlock {
+	public static final EnumProperty<Direction> FACING = BlockStateProperties.HORIZONTAL_FACING;
 
-	protected WaysideBlock(Settings settings) {
+	protected WaysideBlock(Properties settings) {
 		super(settings);
 	}
 
 	@Override
-	protected void appendProperties(StateManager.Builder<Block, BlockState> builder) {
+	protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
 		builder.add(FACING);
 	}
 
 	@Override
-	protected net.minecraft.block.BlockRenderType getRenderType(BlockState state) {
-		return net.minecraft.block.BlockRenderType.MODEL;
+	protected net.minecraft.world.level.block.RenderShape getRenderShape(BlockState state) {
+		return net.minecraft.world.level.block.RenderShape.MODEL;
 	}
 
 	@Override
-	public BlockState getPlacementState(ItemPlacementContext ctx) {
-		return getDefaultState().with(FACING, ctx.getHorizontalPlayerFacing().getOpposite());
+	public BlockState getStateForPlacement(BlockPlaceContext ctx) {
+		return defaultBlockState().setValue(FACING, ctx.getHorizontalDirection().getOpposite());
 	}
 
 	@Override
-	public BlockEntity createBlockEntity(BlockPos pos, BlockState state) {
+	public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
 		return new WaysideBlockEntity(pos, state);
 	}
 
 	@Override
-	public <T extends BlockEntity> BlockEntityTicker<T> getTicker(World world, BlockState state, BlockEntityType<T> type) {
-		return world.isClient() ? null : validateTicker(type, ModBlocks.WAYSIDE_ENTITY, WaysideBlockEntity::tick);
+	public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level world, BlockState state, BlockEntityType<T> type) {
+		return world.isClientSide() ? null : createTickerHelper(type, ModBlocks.WAYSIDE_ENTITY, WaysideBlockEntity::tick);
 	}
 
 	@Override
-	public void onPlaced(World world, BlockPos pos, BlockState state, LivingEntity placer, ItemStack itemStack) {
-		super.onPlaced(world, pos, state, placer, itemStack);
-		if (world instanceof ServerWorld serverWorld && world.getBlockEntity(pos) instanceof WaysideBlockEntity entity) {
-			Text custom = itemStack.getCustomName();
+	public void setPlacedBy(Level world, BlockPos pos, BlockState state, LivingEntity placer, ItemStack itemStack) {
+		super.setPlacedBy(world, pos, state, placer, itemStack);
+		if (world instanceof ServerLevel serverWorld && world.getBlockEntity(pos) instanceof WaysideBlockEntity entity) {
+			Component custom = itemStack.getCustomName();
 			if (custom != null) {
 				entity.setName(custom.getString());
 			}
 			entity.relink(serverWorld);
-			if (placer instanceof PlayerEntity player) {
-				player.sendMessage(describe(serverWorld, entity), false);
-				if (usesDirection() && entity.link().ambiguous(serverWorld, state.get(FACING))) {
-					player.sendMessage(Text.translatable("message.railwayvehicleaddon.wayside.ambiguous"), false);
+			if (placer instanceof Player player) {
+				player.displayClientMessage(describe(serverWorld, entity), false);
+				if (usesDirection() && entity.link().ambiguous(serverWorld, state.getValue(FACING))) {
+					player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.wayside.ambiguous"), false);
 				}
 			}
 		}
@@ -85,34 +85,34 @@ public abstract class WaysideBlock extends BlockWithEntity {
 	}
 
 	/** 設置時・右クリック時に表示する説明。 */
-	protected abstract Text describe(ServerWorld world, WaysideBlockEntity entity);
+	protected abstract Component describe(ServerLevel world, WaysideBlockEntity entity);
 
 	/** 素手での右クリック(スニークの有無)。設定の切り替えなど。 */
-	protected abstract void useEmptyHand(ServerWorld world, WaysideBlockEntity entity, PlayerEntity player, boolean sneaking);
+	protected abstract void useEmptyHand(ServerLevel world, WaysideBlockEntity entity, Player player, boolean sneaking);
 
 	@Override
-	protected ActionResult onUseWithItem(ItemStack stack, BlockState state, World world, BlockPos pos, PlayerEntity player,
-										 Hand hand, BlockHitResult hit) {
-		if (stack.isOf(ModItems.SURVEY_TOOL) || stack.getItem() instanceof com.example.railwayvehicleaddon.item.RouteCardItem) {
+	protected InteractionResult useItemOn(ItemStack stack, BlockState state, Level world, BlockPos pos, Player player,
+										 InteractionHand hand, BlockHitResult hit) {
+		if (stack.is(ModItems.SURVEY_TOOL) || stack.getItem() instanceof com.example.railwayvehicleaddon.item.RouteCardItem) {
 			// 測量ツール(連結モード)・経路アイテム(駅・検知器の登録)の操作を優先する
-			return ActionResult.PASS;
+			return InteractionResult.PASS;
 		}
-		if (stack.isOf(Items.NAME_TAG) && stack.getCustomName() != null) {
+		if (stack.is(Items.NAME_TAG) && stack.getCustomName() != null) {
 			// 名前を付けた名札で右クリック: 名前を設定する(名札は減らない)
-			if (world instanceof ServerWorld serverWorld && world.getBlockEntity(pos) instanceof WaysideBlockEntity entity) {
+			if (world instanceof ServerLevel serverWorld && world.getBlockEntity(pos) instanceof WaysideBlockEntity entity) {
 				entity.setName(stack.getCustomName().getString());
-				player.sendMessage(describe(serverWorld, entity), true);
+				player.displayClientMessage(describe(serverWorld, entity), true);
 			}
-			return ActionResult.SUCCESS;
+			return InteractionResult.SUCCESS;
 		}
-		return ActionResult.PASS_TO_DEFAULT_BLOCK_ACTION;
+		return InteractionResult.TRY_WITH_EMPTY_HAND;
 	}
 
 	@Override
-	protected ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player, BlockHitResult hit) {
-		if (world instanceof ServerWorld serverWorld && world.getBlockEntity(pos) instanceof WaysideBlockEntity entity) {
-			useEmptyHand(serverWorld, entity, player, player.isSneaking());
+	protected InteractionResult useWithoutItem(BlockState state, Level world, BlockPos pos, Player player, BlockHitResult hit) {
+		if (world instanceof ServerLevel serverWorld && world.getBlockEntity(pos) instanceof WaysideBlockEntity entity) {
+			useEmptyHand(serverWorld, entity, player, player.isShiftKeyDown());
 		}
-		return ActionResult.SUCCESS;
+		return InteractionResult.SUCCESS;
 	}
 }

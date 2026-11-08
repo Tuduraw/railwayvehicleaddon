@@ -1,18 +1,18 @@
 package com.example.railwayvehicleaddon.block;
 
 import com.example.railwayvehicleaddon.track.TrackManager;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.network.listener.ClientPlayPacketListener;
-import net.minecraft.network.packet.Packet;
-import net.minecraft.network.packet.s2c.play.BlockEntityUpdateS2CPacket;
-import net.minecraft.registry.RegistryWrapper;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.storage.ReadView;
-import net.minecraft.storage.WriteView;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ClientGamePacketListener;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 
 /**
  * 線路装置の状態。連結先(分岐器ノード・転車台/遷車台・区間のID)と、レッドストーン入力の前回値を持つ。
@@ -33,7 +33,7 @@ public class TrackDeviceBlockEntity extends BlockEntity implements TrackLinkable
 	}
 
 	public DeviceKind kind() {
-		return getCachedState().getBlock() instanceof TrackDeviceBlock block ? block.kind() : DeviceKind.MANUAL_SWITCH;
+		return getBlockState().getBlock() instanceof TrackDeviceBlock block ? block.kind() : DeviceKind.MANUAL_SWITCH;
 	}
 
 	@Override
@@ -49,10 +49,10 @@ public class TrackDeviceBlockEntity extends BlockEntity implements TrackLinkable
 	@Override
 	public void setTargetId(long targetId) {
 		this.targetId = targetId;
-		markDirty();
-		if (this.world != null) {
-			BlockState state = getCachedState();
-			this.world.updateListeners(this.pos, state, state, 3);
+		setChanged();
+		if (this.level != null) {
+			BlockState state = getBlockState();
+			this.level.sendBlockUpdated(this.worldPosition, state, state, 3);
 		}
 	}
 
@@ -63,7 +63,7 @@ public class TrackDeviceBlockEntity extends BlockEntity implements TrackLinkable
 	public void setLastPower(int power) {
 		if (this.lastPower != power) {
 			this.lastPower = power;
-			markDirty();
+			setChanged();
 		}
 	}
 
@@ -75,8 +75,8 @@ public class TrackDeviceBlockEntity extends BlockEntity implements TrackLinkable
 	 * 在線検知器: 一定間隔で連結区間の在線を調べ、出力(POWERED)を更新する。
 	 * 分岐器の装置: 一定間隔で分岐器の鎖錠を調べ、変わったらコンパレーターへ知らせる。
 	 */
-	public static void tick(World world, BlockPos pos, BlockState state, TrackDeviceBlockEntity entity) {
-		if (!(world instanceof ServerWorld serverWorld)) {
+	public static void tick(Level world, BlockPos pos, BlockState state, TrackDeviceBlockEntity entity) {
+		if (!(world instanceof ServerLevel serverWorld)) {
 			return;
 		}
 		if (++entity.detectTimer < DETECT_INTERVAL) {
@@ -88,7 +88,7 @@ public class TrackDeviceBlockEntity extends BlockEntity implements TrackLinkable
 					&& TrackManager.isSwitchLocked(serverWorld, entity.targetId);
 			if (locked != entity.switchLocked) {
 				entity.switchLocked = locked;
-				world.updateComparators(pos, state.getBlock());
+				world.updateNeighbourForOutputSignal(pos, state.getBlock());
 			}
 			return;
 		}
@@ -96,33 +96,33 @@ public class TrackDeviceBlockEntity extends BlockEntity implements TrackLinkable
 			return;
 		}
 		boolean occupied = entity.targetId >= 0 && TrackManager.isOccupied(serverWorld, entity.targetId);
-		if (state.get(TrackDeviceBlock.POWERED) != occupied) {
+		if (state.getValue(TrackDeviceBlock.POWERED) != occupied) {
 			// NOTIFY_ALLで周囲のブロック(レッドストーンダスト等)にも出力の変化を伝える
-			world.setBlockState(pos, state.with(TrackDeviceBlock.POWERED, occupied), 3);
+			world.setBlock(pos, state.setValue(TrackDeviceBlock.POWERED, occupied), 3);
 		}
 	}
 
 	@Override
-	protected void readData(ReadView view) {
-		super.readData(view);
-		this.targetId = view.getLong("Target", -1L);
-		this.lastPower = view.getInt("LastPower", 0);
+	protected void loadAdditional(ValueInput view) {
+		super.loadAdditional(view);
+		this.targetId = view.getLongOr("Target", -1L);
+		this.lastPower = view.getIntOr("LastPower", 0);
 	}
 
 	@Override
-	protected void writeData(WriteView view) {
-		super.writeData(view);
+	protected void saveAdditional(ValueOutput view) {
+		super.saveAdditional(view);
 		view.putLong("Target", this.targetId);
 		view.putInt("LastPower", this.lastPower);
 	}
 
 	@Override
-	public Packet<ClientPlayPacketListener> toUpdatePacket() {
-		return BlockEntityUpdateS2CPacket.create(this);
+	public Packet<ClientGamePacketListener> getUpdatePacket() {
+		return ClientboundBlockEntityDataPacket.create(this);
 	}
 
 	@Override
-	public NbtCompound toInitialChunkDataNbt(RegistryWrapper.WrapperLookup registries) {
-		return createNbt(registries);
+	public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
+		return saveWithoutMetadata(registries);
 	}
 }

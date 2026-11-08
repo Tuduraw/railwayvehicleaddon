@@ -1,19 +1,19 @@
 package com.example.railwayvehicleaddon.block;
 
 import com.mojang.serialization.MapCodec;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.BlockWithEntity;
-import net.minecraft.block.ShapeContext;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.state.StateManager;
-import net.minecraft.state.property.IntProperty;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.shape.VoxelShape;
-import net.minecraft.world.BlockView;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.block.BaseEntityBlock;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.IntegerProperty;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 /**
  * 速度制限標識。線路に連結し、正面に向かって進む列車に効く。その標識から、同じ向きの次の標識まで
@@ -28,34 +28,34 @@ import net.minecraft.world.BlockView;
  * </ul>
  */
 public class SpeedLimitSignBlock extends WaysideBlock {
-	public static final MapCodec<SpeedLimitSignBlock> CODEC = createCodec(SpeedLimitSignBlock::new);
+	public static final MapCodec<SpeedLimitSignBlock> CODEC = simpleCodec(SpeedLimitSignBlock::new);
 	/** 制限速度÷5(0は制限解除) */
-	public static final IntProperty SPEED = IntProperty.of("speed", 0, 60);
-	private static final VoxelShape SHAPE = Block.createCuboidShape(2.0, 0.0, 6.0, 14.0, 16.0, 10.0);
+	public static final IntegerProperty SPEED = IntegerProperty.create("speed", 0, 60);
+	private static final VoxelShape SHAPE = Block.box(2.0, 0.0, 6.0, 14.0, 16.0, 10.0);
 
-	public SpeedLimitSignBlock(Settings settings) {
+	public SpeedLimitSignBlock(Properties settings) {
 		super(settings);
-		setDefaultState(getDefaultState().with(FACING, Direction.NORTH).with(SPEED, 12));
+		registerDefaultState(defaultBlockState().setValue(FACING, Direction.NORTH).setValue(SPEED, 12));
 	}
 
 	/** 制限速度(km/h。0は制限解除)。 */
 	public static int kmh(BlockState state) {
-		return state.getBlock() instanceof SpeedLimitSignBlock ? state.get(SPEED) * 5 : 0;
+		return state.getBlock() instanceof SpeedLimitSignBlock ? state.getValue(SPEED) * 5 : 0;
 	}
 
 	@Override
-	protected MapCodec<? extends BlockWithEntity> getCodec() {
+	protected MapCodec<? extends BaseEntityBlock> codec() {
 		return CODEC;
 	}
 
 	@Override
-	protected void appendProperties(StateManager.Builder<Block, BlockState> builder) {
-		super.appendProperties(builder);
+	protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+		super.createBlockStateDefinition(builder);
 		builder.add(SPEED);
 	}
 
 	@Override
-	protected VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+	protected VoxelShape getShape(BlockState state, BlockGetter world, BlockPos pos, CollisionContext context) {
 		return SHAPE;
 	}
 
@@ -65,17 +65,17 @@ public class SpeedLimitSignBlock extends WaysideBlock {
 	}
 
 	@Override
-	public void onPlaced(net.minecraft.world.World world, BlockPos pos, BlockState state, net.minecraft.entity.LivingEntity placer,
-						 net.minecraft.item.ItemStack itemStack) {
-		Text custom = itemStack.getCustomName();
-		if (custom != null && world instanceof ServerWorld) {
+	public void setPlacedBy(net.minecraft.world.level.Level world, BlockPos pos, BlockState state, net.minecraft.world.entity.LivingEntity placer,
+						 net.minecraft.world.item.ItemStack itemStack) {
+		Component custom = itemStack.getCustomName();
+		if (custom != null && world instanceof ServerLevel) {
 			int value = parseKmh(custom.getString());
 			if (value >= 0) {
-				state = state.with(SPEED, value / 5);
-				world.setBlockState(pos, state, Block.NOTIFY_ALL);
+				state = state.setValue(SPEED, value / 5);
+				world.setBlock(pos, state, Block.UPDATE_ALL);
 			}
 		}
-		super.onPlaced(world, pos, state, placer, itemStack);
+		super.setPlacedBy(world, pos, state, placer, itemStack);
 	}
 
 	/** 名前(「60」「60km/h」「解除」)から制限速度。読めなければ-1。 */
@@ -104,21 +104,21 @@ public class SpeedLimitSignBlock extends WaysideBlock {
 	}
 
 	@Override
-	protected Text describe(ServerWorld world, WaysideBlockEntity entity) {
-		int value = kmh(entity.getCachedState());
-		Text speed = value > 0 ? Text.translatable("message.railwayvehicleaddon.speed_limit.value", value)
-				: Text.translatable("message.railwayvehicleaddon.speed_limit.release");
-		return Text.empty().append(speed).append(" / ").append(entity.link().describe(world));
+	protected Component describe(ServerLevel world, WaysideBlockEntity entity) {
+		int value = kmh(entity.getBlockState());
+		Component speed = value > 0 ? Component.translatable("message.railwayvehicleaddon.speed_limit.value", value)
+				: Component.translatable("message.railwayvehicleaddon.speed_limit.release");
+		return Component.empty().append(speed).append(" / ").append(entity.link().describe(world));
 	}
 
 	@Override
-	protected void useEmptyHand(ServerWorld world, WaysideBlockEntity entity, PlayerEntity player, boolean sneaking) {
-		BlockState state = entity.getCachedState();
-		int step = state.get(SPEED) + (sneaking ? -1 : 1);
+	protected void useEmptyHand(ServerLevel world, WaysideBlockEntity entity, Player player, boolean sneaking) {
+		BlockState state = entity.getBlockState();
+		int step = state.getValue(SPEED) + (sneaking ? -1 : 1);
 		step = Math.floorMod(step, 61);
-		BlockState next = state.with(SPEED, step);
-		world.setBlockState(entity.getPos(), next, Block.NOTIFY_ALL);
+		BlockState next = state.setValue(SPEED, step);
+		world.setBlock(entity.getBlockPos(), next, Block.UPDATE_ALL);
 		entity.refresh(world);
-		player.sendMessage(describe(world, entity), true);
+		player.displayClientMessage(describe(world, entity), true);
 	}
 }

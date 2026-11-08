@@ -1,6 +1,6 @@
 package com.example.railwayvehicleaddon.survey;
 
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * 測量ツールで指定した1点。
@@ -10,9 +10,9 @@ import net.minecraft.util.math.Vec3d;
  * @param segmentId 線路の途中を指定した場合の区間(無ければ-1)
  * @param s         segmentId上の距離
  */
-public record SurveyPoint(Vec3d pos, long nodeId, long segmentId, double s) {
+public record SurveyPoint(Vec3 pos, long nodeId, long segmentId, double s) {
 
-	public SurveyPoint(Vec3d pos, long nodeId) {
+	public SurveyPoint(Vec3 pos, long nodeId) {
 		this(pos, nodeId, -1L, 0.0);
 	}
 

@@ -6,9 +6,8 @@ import com.example.railwayvehicleaddon.track.TrackNetwork;
 import com.example.railwayvehicleaddon.track.TrackNode;
 import com.example.railwayvehicleaddon.track.feature.BufferStopFeature;
 import com.example.railwayvehicleaddon.track.feature.TrackFeature;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.List;
+import net.minecraft.world.phys.Vec3;
 
 /** 車止めモード。線路の端を指定して車止めを置く。 */
 public final class BufferStopMode implements SurveyMode {
@@ -38,7 +37,7 @@ public final class BufferStopMode implements SurveyMode {
 		}
 		double[] outward = network.outwardDirection(node.id());
 		long nodeId = node.id();
-		Vec3d pos = new Vec3d(node.x(), node.y(), node.z());
+		Vec3 pos = new Vec3(node.x(), node.y(), node.z());
 		LayoutPlan.FeatureSpec spec = new LayoutPlan.FeatureSpec() {
 			@Override
 			public TrackFeature create(long featureId, LayoutPlan.IdResolver ids) {
@@ -46,15 +45,15 @@ public final class BufferStopMode implements SurveyMode {
 			}
 
 			@Override
-			public List<Vec3d[]> outline() {
+			public List<Vec3[]> outline() {
 				// 止まる位置を示す線(線路と直角)
 				double m = BufferStopFeature.DEFAULT_MARGIN;
 				double cx = pos.x - outward[0] * m;
 				double cz = pos.z - outward[1] * m;
 				double lx = outward[1] * 1.2;
 				double lz = -outward[0] * 1.2;
-				return List.of(new Vec3d[]{new Vec3d(cx - lx, pos.y + 0.3, cz - lz), new Vec3d(cx + lx, pos.y + 0.3, cz + lz)},
-						new Vec3d[]{new Vec3d(pos.x, pos.y, pos.z), new Vec3d(pos.x, pos.y + 1.2, pos.z)});
+				return List.of(new Vec3[]{new Vec3(cx - lx, pos.y + 0.3, cz - lz), new Vec3(cx + lx, pos.y + 0.3, cz + lz)},
+						new Vec3[]{new Vec3(pos.x, pos.y, pos.z), new Vec3(pos.x, pos.y + 1.2, pos.z)});
 			}
 		};
 		return new LayoutPlan(List.of(), List.of(), List.of(), List.of(), List.of(spec), List.of(), 0.0);

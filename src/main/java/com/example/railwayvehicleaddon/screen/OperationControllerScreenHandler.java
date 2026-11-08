@@ -3,22 +3,22 @@ package com.example.railwayvehicleaddon.screen;
 import com.example.railwayvehicleaddon.block.OperationControllerBlockEntity;
 import com.example.railwayvehicleaddon.item.RouteCardItem;
 import com.example.tudursvehiclemod.item.DroneControlStickItem;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.inventory.SimpleInventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.screen.ArrayPropertyDelegate;
-import net.minecraft.screen.PropertyDelegate;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.slot.Slot;
+import net.minecraft.world.Container;
+import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerData;
+import net.minecraft.world.inventory.SimpleContainerData;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.ItemStack;
 
 /**
  * 運行管理装置の画面。1ページにPAGE_ROWS組(制御スティック・経路アイテム)を表示し、ページで切り替える
  * (前提MODのドローン制御ブロックの編隊スロットと同じく、スロットは固定で、見ている組の範囲だけを変える)。
  * 組の数・ページ・各組の状態はPropertyDelegateで同期する。
  */
-public class OperationControllerScreenHandler extends ScreenHandler {
+public class OperationControllerScreenHandler extends AbstractContainerMenu {
 	public static final int PAGE_ROWS = 5;
 	public static final int PROPERTY_COUNT = 2 + PAGE_ROWS * 3;
 	/** スロットの位置(画面内) */
@@ -33,14 +33,14 @@ public class OperationControllerScreenHandler extends ScreenHandler {
 
 	private final OperationControllerBlockEntity blockEntity;
 	private final PagedView view;
-	private final PropertyDelegate properties;
+	private final ContainerData properties;
 
 	/** ページの中の組だけを見せるスロットの裏側(スロットは固定で、見ている範囲 offset だけを変える)。 */
-	private static final class PagedView implements Inventory {
-		private final Inventory backing;
+	private static final class PagedView implements Container {
+		private final Container backing;
 		private final OperationControllerBlockEntity blockEntity;
 
-		private PagedView(Inventory backing, OperationControllerBlockEntity blockEntity) {
+		private PagedView(Container backing, OperationControllerBlockEntity blockEntity) {
 			this.backing = backing;
 			this.blockEntity = blockEntity;
 		}
@@ -50,18 +50,18 @@ public class OperationControllerScreenHandler extends ScreenHandler {
 		}
 
 		boolean inRange(int index) {
-			return this.blockEntity == null || offset() + index < this.backing.size();
+			return this.blockEntity == null || offset() + index < this.backing.getContainerSize();
 		}
 
 		@Override
-		public int size() {
+		public int getContainerSize() {
 			return PAGE_ROWS * 2;
 		}
 
 		@Override
 		public boolean isEmpty() {
-			for (int i = 0; i < size(); i++) {
-				if (!getStack(i).isEmpty()) {
+			for (int i = 0; i < getContainerSize(); i++) {
+				if (!getItem(i).isEmpty()) {
 					return false;
 				}
 			}
@@ -69,96 +69,96 @@ public class OperationControllerScreenHandler extends ScreenHandler {
 		}
 
 		@Override
-		public ItemStack getStack(int index) {
+		public ItemStack getItem(int index) {
 			if (this.blockEntity == null) {
-				return this.backing.getStack(index);
+				return this.backing.getItem(index);
 			}
-			return inRange(index) ? this.backing.getStack(offset() + index) : ItemStack.EMPTY;
+			return inRange(index) ? this.backing.getItem(offset() + index) : ItemStack.EMPTY;
 		}
 
 		@Override
-		public ItemStack removeStack(int index, int amount) {
+		public ItemStack removeItem(int index, int amount) {
 			if (this.blockEntity == null) {
-				return this.backing.removeStack(index, amount);
+				return this.backing.removeItem(index, amount);
 			}
-			return inRange(index) ? this.backing.removeStack(offset() + index, amount) : ItemStack.EMPTY;
+			return inRange(index) ? this.backing.removeItem(offset() + index, amount) : ItemStack.EMPTY;
 		}
 
 		@Override
-		public ItemStack removeStack(int index) {
+		public ItemStack removeItemNoUpdate(int index) {
 			if (this.blockEntity == null) {
-				return this.backing.removeStack(index);
+				return this.backing.removeItemNoUpdate(index);
 			}
-			return inRange(index) ? this.backing.removeStack(offset() + index) : ItemStack.EMPTY;
+			return inRange(index) ? this.backing.removeItemNoUpdate(offset() + index) : ItemStack.EMPTY;
 		}
 
 		@Override
-		public void setStack(int index, ItemStack stack) {
+		public void setItem(int index, ItemStack stack) {
 			if (this.blockEntity == null) {
-				this.backing.setStack(index, stack);
+				this.backing.setItem(index, stack);
 			} else if (inRange(index)) {
-				this.backing.setStack(offset() + index, stack);
+				this.backing.setItem(offset() + index, stack);
 			}
 		}
 
 		@Override
-		public int getMaxCountPerStack() {
+		public int getMaxStackSize() {
 			return 1;
 		}
 
 		@Override
-		public void markDirty() {
-			this.backing.markDirty();
+		public void setChanged() {
+			this.backing.setChanged();
 		}
 
 		@Override
-		public boolean canPlayerUse(PlayerEntity player) {
-			return this.backing.canPlayerUse(player);
+		public boolean stillValid(Player player) {
+			return this.backing.stillValid(player);
 		}
 
 		@Override
-		public void clear() {
-			for (int i = 0; i < size(); i++) {
-				removeStack(i);
+		public void clearContent() {
+			for (int i = 0; i < getContainerSize(); i++) {
+				removeItemNoUpdate(i);
 			}
 		}
 	}
 
 	/** クライアント側(実データはサーバーから同期される)。 */
-	public OperationControllerScreenHandler(int syncId, PlayerInventory playerInventory) {
+	public OperationControllerScreenHandler(int syncId, Inventory playerInventory) {
 		this(syncId, playerInventory, null);
 	}
 
-	public OperationControllerScreenHandler(int syncId, PlayerInventory playerInventory, OperationControllerBlockEntity blockEntity) {
+	public OperationControllerScreenHandler(int syncId, Inventory playerInventory, OperationControllerBlockEntity blockEntity) {
 		super(ModScreenHandlers.OPERATION_CONTROLLER, syncId);
 		this.blockEntity = blockEntity;
-		Inventory backing = blockEntity != null ? blockEntity.inventory() : new SimpleInventory(PAGE_ROWS * 2);
+		Container backing = blockEntity != null ? blockEntity.inventory() : new SimpleContainer(PAGE_ROWS * 2);
 		this.view = new PagedView(backing, blockEntity);
-		this.properties = blockEntity != null ? blockEntity.properties() : new ArrayPropertyDelegate(PROPERTY_COUNT);
-		this.addProperties(this.properties);
+		this.properties = blockEntity != null ? blockEntity.properties() : new SimpleContainerData(PROPERTY_COUNT);
+		this.addDataSlots(this.properties);
 
 		for (int i = 0; i < PAGE_ROWS; i++) {
 			int y = ROW_Y + i * ROW_HEIGHT + 2;
 			final int viewRow = i;
 			this.addSlot(new Slot(this.view, i * 2, STICK_X, y) {
 				@Override
-				public boolean canInsert(ItemStack stack) {
+				public boolean mayPlace(ItemStack stack) {
 					return stack.getItem() instanceof DroneControlStickItem && rowExists(viewRow);
 				}
 
 				@Override
-				public int getMaxItemCount() {
+				public int getMaxStackSize() {
 					return 1;
 				}
 			});
 			this.addSlot(new Slot(this.view, i * 2 + 1, CARD_X, y) {
 				@Override
-				public boolean canInsert(ItemStack stack) {
+				public boolean mayPlace(ItemStack stack) {
 					return stack.getItem() instanceof RouteCardItem && rowExists(viewRow);
 				}
 
 				@Override
-				public int getMaxItemCount() {
+				public int getMaxStackSize() {
 					return 1;
 				}
 			});
@@ -203,41 +203,41 @@ public class OperationControllerScreenHandler extends ScreenHandler {
 	}
 
 	@Override
-	public boolean onButtonClick(PlayerEntity player, int id) {
+	public boolean clickMenuButton(Player player, int id) {
 		if (this.blockEntity == null) {
 			return false;
 		}
 		boolean handled = this.blockEntity.handleButton(id);
 		if (handled) {
-			sendContentUpdates();
+			broadcastChanges();
 		}
 		return handled;
 	}
 
 	@Override
-	public boolean canUse(PlayerEntity player) {
-		return this.view.canPlayerUse(player);
+	public boolean stillValid(Player player) {
+		return this.view.stillValid(player);
 	}
 
 	@Override
-	public ItemStack quickMove(PlayerEntity player, int index) {
+	public ItemStack quickMoveStack(Player player, int index) {
 		Slot slot = this.slots.get(index);
-		if (slot == null || !slot.hasStack()) {
+		if (slot == null || !slot.hasItem()) {
 			return ItemStack.EMPTY;
 		}
-		ItemStack original = slot.getStack();
+		ItemStack original = slot.getItem();
 		ItemStack result = original.copy();
 		int rowSlots = PAGE_ROWS * 2;
 		if (index < rowSlots) {
-			if (!this.insertItem(original, rowSlots, this.slots.size(), true)) {
+			if (!this.moveItemStackTo(original, rowSlots, this.slots.size(), true)) {
 				return ItemStack.EMPTY;
 			}
 		} else {
 			boolean moved = false;
 			for (int i = 0; i < rowSlots && !moved; i++) {
 				Slot target = this.slots.get(i);
-				if (!target.hasStack() && target.canInsert(original)) {
-					target.setStack(original.split(1));
+				if (!target.hasItem() && target.mayPlace(original)) {
+					target.setByPlayer(original.split(1));
 					moved = true;
 				}
 			}
@@ -246,9 +246,9 @@ public class OperationControllerScreenHandler extends ScreenHandler {
 			}
 		}
 		if (original.isEmpty()) {
-			slot.setStack(ItemStack.EMPTY);
+			slot.setByPlayer(ItemStack.EMPTY);
 		} else {
-			slot.markDirty();
+			slot.setChanged();
 		}
 		return result;
 	}

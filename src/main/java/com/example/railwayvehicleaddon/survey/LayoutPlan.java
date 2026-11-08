@@ -4,12 +4,11 @@ import com.example.railwayvehicleaddon.RailwayConfig;
 import com.example.railwayvehicleaddon.track.RoutePlanner;
 import com.example.railwayvehicleaddon.track.TrackSegment;
 import com.example.railwayvehicleaddon.track.feature.TrackFeature;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * モードが作る配置計画。サーバーはこれを検証(問題点・建築限界)して、そのまま線路グラフへ登録する。
@@ -23,7 +22,7 @@ import java.util.Set;
  * @param issues         問題点。1つでもあれば配置しない
  * @param totalLength    延長(表示用)
  */
-public record LayoutPlan(List<Vec3d> newNodes, List<Split> splits, List<Edge> edges, List<SwitchDefault> switchDefaults,
+public record LayoutPlan(List<Vec3> newNodes, List<Split> splits, List<Edge> edges, List<SwitchDefault> switchDefaults,
 						 List<FeatureSpec> features, List<RoutePlanner.Issue> issues, double totalLength) {
 
 	public record Edge(NodeRef a, NodeRef b, RoutePlanner.PlannedSegment geometry) {
@@ -53,12 +52,12 @@ public record LayoutPlan(List<Vec3d> newNodes, List<Split> splits, List<Edge> ed
 		}
 
 		/** プレビューで描く線(始点・終点の組)。 */
-		default List<Vec3d[]> outline() {
+		default List<Vec3[]> outline() {
 			return List.of();
 		}
 	}
 
-	public static LayoutPlan of(List<Vec3d> newNodes, List<Edge> edges, List<SwitchDefault> switchDefaults,
+	public static LayoutPlan of(List<Vec3> newNodes, List<Edge> edges, List<SwitchDefault> switchDefaults,
 								List<RoutePlanner.Issue> issues, double totalLength) {
 		return new LayoutPlan(newNodes, List.of(), edges, switchDefaults, List.of(), issues, totalLength);
 	}
