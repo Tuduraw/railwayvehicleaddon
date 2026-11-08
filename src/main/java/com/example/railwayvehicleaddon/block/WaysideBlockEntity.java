@@ -49,7 +49,7 @@ public class WaysideBlockEntity extends BlockEntity {
 	/** 列車番号検知器: 列車が去った後も、次の列車が来るまで最後の値を出し続ける */
 	private boolean hold;
 	private int timer;
-	private int registerTimer;
+	private int registerTimer = 19;
 
 	public WaysideBlockEntity(BlockPos pos, BlockState state) {
 		super(ModBlocks.WAYSIDE_ENTITY, pos, state);
@@ -98,6 +98,16 @@ public class WaysideBlockEntity extends BlockEntity {
 		return getCachedState().getBlock() instanceof TrainNumberDetectorBlock;
 	}
 
+	private boolean isSpeedLimit() {
+		return getCachedState().getBlock() instanceof SpeedLimitSignBlock;
+	}
+
+	/** 標識の状態が変わった(制限速度を変えた)ときに、地上子の索引へすぐ登録し直す。 */
+	public void refresh(ServerWorld world) {
+		markDirty();
+		register(world);
+	}
+
 	private void changed() {
 		markDirty();
 		if (this.world instanceof ServerWorld serverWorld) {
@@ -113,14 +123,38 @@ public class WaysideBlockEntity extends BlockEntity {
 		register(world);
 	}
 
-	/** 停止位置目標を地上子の索引へ登録する(列車番号検知器は在線表を見るだけなので登録しない)。 */
+	/**
+	 * 停止位置目標を地上子の索引へ登録する(列車番号検知器は在線表を見るだけなので登録しない)。
+	 * 線路が撤去されて連結先が無くなっても、保存してある登録は消さない(線路が敷き直されたら連結し直す)。
+	 * 登録を消すのはブロックが壊されたときだけ。
+	 */
 	private void register(ServerWorld world) {
 		OperationState state = OperationState.get(world);
-		if (isDetector() || !this.link.linked()) {
+		if (isDetector()) {
 			state.removeWayside(this.pos);
 			return;
 		}
+		if (isSpeedLimit()) {
+			// 速度制限標識: 保存はしない(読み込まれている間、定期的に登録し直す。古い登録は索引から外れる)
+			if (!this.link.linked()) {
+				state.unloadWayside(this.pos);
+				return;
+			}
+			state.putWayside(new OperationState.Wayside(this.pos.toImmutable(), OperationState.WaysideKind.SPEED_LIMIT,
+					this.link.segmentId(), this.link.s(), this.link.dir(), "",
+					SpeedLimitSignBlock.kmh(getCachedState()), world.getTime()));
+			return;
+		}
 		Timetable.Stop parsed = Timetable.parseMarkerName(this.name);
+		if (!this.link.linked()) {
+			// 連結先が無い間は、保存してある連結先のまま名前だけ反映する
+			OperationState.Wayside old = state.waysideAt(this.pos);
+			if (old != null && (!old.name().equals(parsed.station()) || old.platform() != parsed.platform())) {
+				state.putWayside(new OperationState.Wayside(old.pos(), old.kind(), old.segmentId(), old.s(), old.dir(),
+						parsed.station(), parsed.platform(), old.seen()));
+			}
+			return;
+		}
 		state.putWayside(new OperationState.Wayside(this.pos.toImmutable(), OperationState.WaysideKind.STOP_MARKER,
 				this.link.segmentId(), this.link.s(), this.link.dir(), parsed.station(), parsed.platform(), world.getTime()));
 	}

@@ -81,14 +81,47 @@ public class SignalBlock extends BlockWithEntity {
 	public void onPlaced(World world, BlockPos pos, BlockState state, LivingEntity placer, ItemStack itemStack) {
 		super.onPlaced(world, pos, state, placer, itemStack);
 		if (world instanceof ServerWorld serverWorld && world.getBlockEntity(pos) instanceof SignalDeviceBlockEntity entity) {
+			entity.setAutoBlock(true);
 			entity.relink(serverWorld);
 			if (placer instanceof PlayerEntity player) {
 				player.sendMessage(Text.translatable("message.railwayvehicleaddon.signal.placed", entity.link().describe(serverWorld)), false);
+				player.sendMessage(Text.translatable("message.railwayvehicleaddon.signal.mode_auto"), false);
 				if (entity.link().ambiguous(serverWorld, state.get(FACING))) {
 					player.sendMessage(Text.translatable("message.railwayvehicleaddon.wayside.ambiguous"), false);
 				}
 			}
 		}
+	}
+
+	@Override
+	protected net.minecraft.util.ActionResult onUseWithItem(ItemStack stack, BlockState state, World world, BlockPos pos,
+															PlayerEntity player, net.minecraft.util.Hand hand,
+															net.minecraft.util.hit.BlockHitResult hit) {
+		if (stack.isOf(com.example.railwayvehicleaddon.item.ModItems.SURVEY_TOOL)) {
+			return net.minecraft.util.ActionResult.PASS;
+		}
+		return super.onUseWithItem(stack, state, world, pos, player, hand, hit);
+	}
+
+	/**
+	 * 素手で右クリック: 今の方式(自動閉塞 / レッドストーン)を表示する。スニーク+右クリック: 方式を切り替える。
+	 * 自動閉塞でも、レッドストーンの入力があれば、入力の現示と厳しい方になる。
+	 */
+	@Override
+	protected net.minecraft.util.ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player,
+													net.minecraft.util.hit.BlockHitResult hit) {
+		if (world instanceof ServerWorld serverWorld && world.getBlockEntity(pos) instanceof SignalDeviceBlockEntity entity) {
+			if (player.isSneaking()) {
+				entity.setAutoBlock(!entity.isAutoBlock());
+				int aspect = aspectFor(serverWorld.getReceivedRedstonePower(pos));
+				if (state.get(ASPECT) != aspect) {
+					serverWorld.setBlockState(pos, state.with(ASPECT, aspect), Block.NOTIFY_LISTENERS);
+				}
+			}
+			player.sendMessage(Text.translatable(entity.isAutoBlock()
+					? "message.railwayvehicleaddon.signal.mode_auto" : "message.railwayvehicleaddon.signal.mode_redstone"), true);
+		}
+		return net.minecraft.util.ActionResult.SUCCESS;
 	}
 
 	@Override
@@ -113,6 +146,10 @@ public class SignalBlock extends BlockWithEntity {
 		super.neighborUpdate(state, world, pos, sourceBlock, wireOrientation, notify);
 		if (world instanceof ServerWorld) {
 			int aspect = aspectFor(world.getReceivedRedstonePower(pos));
+			if (world.getBlockEntity(pos) instanceof SignalDeviceBlockEntity entity) {
+				// 自動閉塞: 在線で決めた現示とレッドストーンの入力の、厳しい方
+				aspect = Math.max(aspect, entity.autoAspect());
+			}
 			if (state.get(ASPECT) != aspect) {
 				world.setBlockState(pos, state.with(ASPECT, aspect), Block.NOTIFY_LISTENERS);
 			}

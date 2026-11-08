@@ -21,6 +21,8 @@ public final class ModItems {
 	public static Item SURVEY_TOOL;
 	/** 連結てこ: 車両を右クリックして、近い方の端の連結・連結解除を行う */
 	public static Item COUPLING_LEVER;
+	/** 経路アイテム(運行表): 停止位置目標・列車番号検知器を右クリックして登録し、運行管理装置に入れて使う */
+	public static Item ROUTE_CARD;
 
 	public static final RegistryKey<ItemGroup> GROUP =
 			RegistryKey.of(RegistryKeys.ITEM_GROUP, Identifier.of(RailwayVehicleAddon.MOD_ID, "railway"));
@@ -35,6 +37,9 @@ public final class ModItems {
 		RegistryKey<Item> leverKey = RegistryKey.of(RegistryKeys.ITEM, Identifier.of(RailwayVehicleAddon.MOD_ID, "coupling_lever"));
 		COUPLING_LEVER = Registry.register(Registries.ITEM, leverKey,
 				new Item(new Item.Settings().registryKey(leverKey).maxCount(1)));
+		RegistryKey<Item> routeKey = RegistryKey.of(RegistryKeys.ITEM, Identifier.of(RailwayVehicleAddon.MOD_ID, "route_card"));
+		ROUTE_CARD = Registry.register(Registries.ITEM, routeKey,
+				new RouteCardItem(new Item.Settings().registryKey(routeKey).maxCount(1)));
 
 		for (int tier = 1; tier <= 5; tier++) {
 			RegistryKey<Item> key = RegistryKey.of(RegistryKeys.ITEM,
@@ -52,6 +57,7 @@ public final class ModItems {
 		ItemGroupEvents.modifyEntriesEvent(GROUP).register(entries -> {
 			entries.add(SURVEY_TOOL);
 			entries.add(COUPLING_LEVER);
+			entries.add(ROUTE_CARD);
 			for (Item item : RAIL_VEHICLE_SPAWNERS) {
 				entries.add(item);
 			}

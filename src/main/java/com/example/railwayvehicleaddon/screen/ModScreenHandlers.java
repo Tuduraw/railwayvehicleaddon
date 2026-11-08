@@ -9,6 +9,7 @@ import net.minecraft.util.Identifier;
 
 public final class ModScreenHandlers {
 	public static ScreenHandlerType<SubstationScreenHandler> SUBSTATION;
+	public static ScreenHandlerType<OperationControllerScreenHandler> OPERATION_CONTROLLER;
 
 	private ModScreenHandlers() {
 	}
@@ -17,5 +18,8 @@ public final class ModScreenHandlers {
 		SUBSTATION = Registry.register(Registries.SCREEN_HANDLER,
 				Identifier.of(RailwayVehicleAddon.MOD_ID, "substation"),
 				new ScreenHandlerType<>(SubstationScreenHandler::new, FeatureSet.empty()));
+		OPERATION_CONTROLLER = Registry.register(Registries.SCREEN_HANDLER,
+				Identifier.of(RailwayVehicleAddon.MOD_ID, "operation_controller"),
+				new ScreenHandlerType<>(OperationControllerScreenHandler::new, FeatureSet.empty()));
 	}
 }

@@ -33,6 +33,9 @@ public final class ModBlocks {
 	public static Block SUBSTATION;
 	public static Block STOP_MARKER;
 	public static Block TRAIN_NUMBER_DETECTOR;
+	public static Block SPEED_LIMIT_SIGN;
+	public static Block OPERATION_CONTROLLER;
+	public static BlockEntityType<OperationControllerBlockEntity> OPERATION_CONTROLLER_ENTITY;
 	public static BlockEntityType<WaysideBlockEntity> WAYSIDE_ENTITY;
 	public static BlockEntityType<SubstationBlockEntity> SUBSTATION_ENTITY;
 	/** クリエイティブタブに並べる順 */
@@ -58,9 +61,14 @@ public final class ModBlocks {
 				FabricBlockEntityTypeBuilder.create(SignalDeviceBlockEntity::new, SIGNAL, CROSSING_GATE).build());
 		STOP_MARKER = register("stop_marker", StopMarkerBlock::new, true);
 		TRAIN_NUMBER_DETECTOR = register("train_number_detector", TrainNumberDetectorBlock::new);
+		SPEED_LIMIT_SIGN = register("speed_limit_sign", SpeedLimitSignBlock::new, true);
 		WAYSIDE_ENTITY = Registry.register(Registries.BLOCK_ENTITY_TYPE,
 				Identifier.of(RailwayVehicleAddon.MOD_ID, "wayside"),
-				FabricBlockEntityTypeBuilder.create(WaysideBlockEntity::new, STOP_MARKER, TRAIN_NUMBER_DETECTOR).build());
+				FabricBlockEntityTypeBuilder.create(WaysideBlockEntity::new, STOP_MARKER, TRAIN_NUMBER_DETECTOR, SPEED_LIMIT_SIGN).build());
+		OPERATION_CONTROLLER = register("operation_controller", OperationControllerBlock::new);
+		OPERATION_CONTROLLER_ENTITY = Registry.register(Registries.BLOCK_ENTITY_TYPE,
+				Identifier.of(RailwayVehicleAddon.MOD_ID, "operation_controller"),
+				FabricBlockEntityTypeBuilder.create(OperationControllerBlockEntity::new, OPERATION_CONTROLLER).build());
 		WATER_TOWER = register("water_tower", WaterTowerBlock::new);
 		WATER_TOWER_ENTITY = Registry.register(Registries.BLOCK_ENTITY_TYPE,
 				Identifier.of(RailwayVehicleAddon.MOD_ID, "water_tower"),

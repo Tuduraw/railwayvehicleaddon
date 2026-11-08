@@ -1,0 +1,32 @@
+{
+  "parent": "minecraft:block/block",
+  "textures": {
+    "particle": "railwayvehicleaddon:block/speed_limit_board",
+    "d": "railwayvehicleaddon:block/speed_limit_digit_5"
+  },
+  "elements": [
+    {
+      "from": [
+        6.5,
+        9,
+        6.95
+      ],
+      "to": [
+        9.5,
+        14,
+        7
+      ],
+      "faces": {
+        "north": {
+          "texture": "#d",
+          "uv": [
+            0,
+            0,
+            6,
+            10
+          ]
+        }
+      }
+    }
+  ]
+}

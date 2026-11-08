@@ -70,6 +70,8 @@ public final class RailwayConfig {
 	public float ats_caution_speed_kmh = 45.0f;
 	/** 進路の自動設定で、前方の分岐器を切り替える(予約する)距離(ブロック。ブレーキ距離+32の方が長ければそちら) */
 	public float route_request_distance = 160.0f;
+	/** 経路アイテムに駅を追加したときの停車時間の既定値(秒。設定画面で駅ごとに変えられる) */
+	public int ato_default_dwell_seconds = 20;
 
 	private static RailwayConfig instance = new RailwayConfig();
 

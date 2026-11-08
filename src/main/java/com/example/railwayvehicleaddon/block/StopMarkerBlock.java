@@ -17,6 +17,7 @@ import net.minecraft.world.BlockView;
  * 停止位置目標。駅の停止位置(列車の先頭を合わせる位置)を表す。名前は「駅名 番線」(例: 「A駅 1」)。
  * 進路の自動設定では、運行表の次の駅に合う停止位置目標へ向かう進路を開通させる。
  * 列車の先頭が目標の3ブロック手前まで来たら、運行表の次の駅へ進む。
+ * 向きは問わない(どちら向きに進む列車にも効く)。
  */
 public class StopMarkerBlock extends WaysideBlock {
 	public static final MapCodec<StopMarkerBlock> CODEC = createCodec(StopMarkerBlock::new);
@@ -35,6 +36,11 @@ public class StopMarkerBlock extends WaysideBlock {
 	@Override
 	protected VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
 		return SHAPE;
+	}
+
+	@Override
+	protected boolean usesDirection() {
+		return false;
 	}
 
 	@Override

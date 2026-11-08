@@ -1,6 +1,7 @@
 package com.example.railwayvehicleaddon.entity;
 
 import com.example.railwayvehicleaddon.RailwayVehicleAddon;
+import com.example.railwayvehicleaddon.operation.AtoState;
 import com.example.railwayvehicleaddon.operation.Timetable;
 import com.example.railwayvehicleaddon.operation.TrainOperation;
 import com.example.railwayvehicleaddon.track.TrackManager;
@@ -106,6 +107,13 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			DataTracker.registerData(RailVehicleEntity.class, TrackedDataHandlerRegistry.FLOAT);
 	private static final TrackedData<Integer> COAL_COUNT_SYNC =
 			DataTracker.registerData(RailVehicleEntity.class, TrackedDataHandlerRegistry.INTEGER);
+	/** ATOの表示用(HudVariableProviderで"rail_ato_state"・"rail_speed_limit"・"rail_next_stop_distance"として公開) */
+	private static final TrackedData<Integer> ATO_DISPLAY =
+			DataTracker.registerData(RailVehicleEntity.class, TrackedDataHandlerRegistry.INTEGER);
+	private static final TrackedData<Float> ATO_LIMIT =
+			DataTracker.registerData(RailVehicleEntity.class, TrackedDataHandlerRegistry.FLOAT);
+	private static final TrackedData<Float> ATO_NEXT =
+			DataTracker.registerData(RailVehicleEntity.class, TrackedDataHandlerRegistry.FLOAT);
 
 	// サーバー側
 	private TrackPos trackPos;
@@ -117,10 +125,17 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	/** 蒸気機関車: 火室に残っている燃焼時間(tick、出力100%で1ずつ減る) */
 	private double fireTicks;
 	private int powerWarningCooldown;
-	/** 運行表(本から読み込む)と、次の駅の番号・たどる向き(折り返しで-1) */
+	/** 運行表(運行管理装置が経路アイテムから割り当てる)と、次の駅の番号・たどる向き(折り返しで-1) */
 	private Timetable timetable;
 	private int stopIndex;
 	private int stopStep = 1;
+	/** ATOの状態(運行表を持つ車両だけが使う) */
+	private final AtoState atoState = new AtoState();
+	/** 割り当てた運行管理装置の位置・組の番号・経路アイテムの内容(割り当てられていなければnull) */
+	private net.minecraft.util.math.BlockPos managedBy;
+	private int managedRow = -1;
+	private int managedHash;
+	private int managedCheckCooldown = 20;
 	/** 最後に動いた向き(この車の前方なら+1)。停車中の編成の進行方向に使う */
 	private int lastTravelSign = 1;
 
@@ -211,6 +226,9 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	protected void initDataTracker(DataTracker.Builder builder) {
 		super.initDataTracker(builder);
 		builder.add(TRACK_SEGMENT, -1L);
+		builder.add(ATO_DISPLAY, 0);
+		builder.add(ATO_LIMIT, -1f);
+		builder.add(ATO_NEXT, -1f);
 		builder.add(TRACK_S, 0f);
 		builder.add(TRACK_FACING, (byte) 1);
 		builder.add(RAIL_SPEED, 0f);
@@ -276,6 +294,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		if (this.hornCooldown > 0) {
 			this.hornCooldown--;
 		}
+		checkManagement(world);
 		if (this.consistHandledTick == world.getTime()) {
 			// この編成の位置は、今tickすでに先頭車がまとめて更新済み
 			return;
@@ -335,6 +354,20 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 
 		float throttle = updateOwnThrottleAndNotch(def, params);
 		boolean braking = isOwnBraking();
+		double maxSpeed = this.tudursvehiclemod$getEffectiveMaxSpeed();
+
+		// 在線表への登録・進路の自動設定・ATS・ATO(単独の車両も1両の編成として扱う)。
+		// ATOで運転しているときは、ATOのハンドルとブレーキの強さを使う(運転者がノッチ・ブレーキを操作したら手動に戻る)
+		boolean override = drivingPlayer() != null && (braking || this.getSyncedThrottleInput() != 0f);
+		TrainOperation.Result operation = TrainOperation.update(world, network, this, this.trackPos,
+				List.of(new TrainOperation.Car(this, 0.0, 1, couplerOffset(true), couplerOffset(false))),
+				this.speed, throttle, params.brake(), maxSpeed, maxSpeed, override);
+		if (operation.ato()) {
+			throttle = operation.handle();
+			this.notch = 0;
+			this.setThrottleDirect(throttle);
+		}
+		double brakeStrength = Math.max(braking ? 1.0 : 0.0, operation.brake());
 		// 動力が得られなければ(石炭が無い・架線や給電が無い)力行できない。ハンドル(表示)はそのまま動かせる。
 		// 架線の給電が混雑しているときは、0より大きく1未満の割合で力行が弱まる
 		float powerFactor = 1f;
@@ -351,18 +384,12 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			}
 		}
 
-		// 在線表への登録・進路の自動設定・ATS(単独の車両も1両の編成として扱う)
-		TrainOperation.Result operation = TrainOperation.update(world, network, this, this.trackPos,
-				List.of(new TrainOperation.Car(this, 0.0, 1, couplerOffset(true), couplerOffset(false))),
-				this.speed, throttle, params.brake());
 		if (operation.cutPower()) {
 			powerFactor = 0f;
 		}
-		braking |= operation.brake();
 
 		TrackPoint center = network.pointAt(this.trackPos);
 		double grade = center != null ? center.grade() * this.trackPos.facing() : 0.0;
-		double maxSpeed = this.tudursvehiclemod$getEffectiveMaxSpeed();
 		// 前提MODの車と同じく、スロットルに応じた目標速度へacceleration(追従度)で近づく。
 		// ノッチを下げた・切にしたときは減速させず惰行する(走行抵抗で少しずつ落ちる)
 		double acceleration = def.acceleration();
@@ -374,13 +401,13 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			v += (target - v) * acceleration;
 		}
 		v -= params.gradeGravity() * grade / Math.sqrt(1.0 + grade * grade);
-		double decel = (powering ? 0.0 : params.resistance()) + (braking ? params.brake() : 0.0);
+		double decel = (powering ? 0.0 : params.resistance()) + params.brake() * brakeStrength;
 		if (Math.abs(v) <= decel) {
 			v = 0.0;
 		} else {
 			v -= Math.copySign(decel, v);
 		}
-		if (drivingPlayer() == null && Math.abs(v) < 1.0e-3) {
+		if (drivingPlayer() == null && !operation.ato() && Math.abs(v) < 1.0e-3) {
 			v = 0.0;
 		}
 		v = MathHelper.clamp(v, -maxSpeed, maxSpeed);
@@ -659,15 +686,6 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	 */
 	@Override
 	public ActionResult interact(PlayerEntity player, Hand hand) {
-		String bookText = bookText(player.getStackInHand(hand));
-		Timetable read = bookText == null ? null : Timetable.parse(bookText);
-		if (read != null) {
-			// 運行表を書いた本: この車両に運行表を読み込む(中身の無い運行表なら消す)
-			if (this.getEntityWorld() instanceof ServerWorld) {
-				loadTimetable(read, player);
-			}
-			return ActionResult.SUCCESS;
-		}
 		if (player.getStackInHand(hand).isOf(com.example.railwayvehicleaddon.item.ModItems.COUPLING_LEVER)) {
 			if (this.getEntityWorld() instanceof ServerWorld serverWorld) {
 				useCouplingLever(player, serverWorld, TrackManager.network(serverWorld));
@@ -679,38 +697,159 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 
 	// ------------------------------------------------------------------ 運行表
 
-	/** 本と羽根ペン・署名した本の本文(ページを改行でつないだもの)。本でなければnull。 */
-	private static String bookText(ItemStack stack) {
-		net.minecraft.component.type.WritableBookContentComponent writable =
-				stack.get(net.minecraft.component.DataComponentTypes.WRITABLE_BOOK_CONTENT);
-		if (writable != null) {
-			return String.join("\n", writable.stream(false).toList());
-		}
-		net.minecraft.component.type.WrittenBookContentComponent written =
-				stack.get(net.minecraft.component.DataComponentTypes.WRITTEN_BOOK_CONTENT);
-		if (written != null) {
-			StringBuilder sb = new StringBuilder();
-			for (net.minecraft.text.Text page : written.getPages(false)) {
-				sb.append(page.getString()).append('\n');
-			}
-			return sb.toString();
-		}
-		return null;
-	}
-
-	private void loadTimetable(Timetable read, PlayerEntity player) {
-		if (read.isEmpty()) {
-			this.timetable = null;
-			player.sendMessage(net.minecraft.text.Text.translatable("message.railwayvehicleaddon.timetable.cleared"), false);
-			return;
-		}
-		this.timetable = read;
+	/**
+	 * 運行管理装置(pos、組の番号row)から運行表を割り当てる。最初の駅からたどり直し、ATOを入れる。
+	 * hashは割り当てた経路アイテムの内容(変わったら割り当て直すため)。
+	 */
+	public void assignTimetable(Timetable table, net.minecraft.util.math.BlockPos by, int row, int hash) {
+		this.timetable = table;
 		this.stopIndex = 0;
 		this.stopStep = 1;
-		Timetable.Stop next = nextStop();
-		player.sendMessage(net.minecraft.text.Text.translatable("message.railwayvehicleaddon.timetable.loaded",
-				read.trainNumber().isEmpty() ? "-" : read.trainNumber(), read.stops().size(),
-				next == null ? "-" : next.describe()), false);
+		this.managedBy = by == null ? null : by.toImmutable();
+		this.managedRow = row;
+		this.managedHash = hash;
+		this.atoState.enabled = true;
+		this.atoState.restart();
+	}
+
+	/** 運行管理装置の割り当てを外す(運行表を消し、ATOを切る)。 */
+	public void clearTimetable() {
+		this.timetable = null;
+		this.stopIndex = 0;
+		this.stopStep = 1;
+		this.managedBy = null;
+		this.managedRow = -1;
+		this.managedHash = 0;
+		this.atoState.enabled = false;
+		this.atoState.restart();
+		this.atoState.display = AtoState.Display.OFF;
+		setAtoDisplay(AtoState.Display.OFF.ordinal(), -1f, -1f);
+	}
+
+	/** 運行管理装置から割り当てられているか。 */
+	public boolean isManaged() {
+		return this.managedBy != null;
+	}
+
+	public net.minecraft.util.math.BlockPos managedBy() {
+		return this.managedBy;
+	}
+
+	public int managedRow() {
+		return this.managedRow;
+	}
+
+	public int managedHash() {
+		return this.managedHash;
+	}
+
+	public AtoState atoState() {
+		return this.atoState;
+	}
+
+	/** 最初の駅からたどり直す(運行管理装置の「最初の駅から」)。 */
+	public void restartTimetable() {
+		this.stopIndex = 0;
+		this.stopStep = 1;
+		this.atoState.restart();
+	}
+
+	/** 次の駅の番号(0始まり。表示用)。 */
+	public int stopIndex() {
+		return this.stopIndex;
+	}
+
+	/** HUD・運行管理装置の表示用のATOの状態を同期する(変わったときだけ)。 */
+	public void setAtoDisplay(int display, float limitKmh, float nextDistance) {
+		if (this.dataTracker.get(ATO_DISPLAY) != display) {
+			this.dataTracker.set(ATO_DISPLAY, display);
+		}
+		float limit = Math.round(limitKmh);
+		if (this.dataTracker.get(ATO_LIMIT) != limit) {
+			this.dataTracker.set(ATO_LIMIT, limit);
+		}
+		float next = nextDistance < 0f ? -1f : Math.round(nextDistance);
+		if (this.dataTracker.get(ATO_NEXT) != next) {
+			this.dataTracker.set(ATO_NEXT, next);
+		}
+	}
+
+	/** HUD用: ATOの状態(AtoState.Displayの番号)。 */
+	public int getAtoDisplay() {
+		return this.dataTracker.get(ATO_DISPLAY);
+	}
+
+	/** HUD用: 今の制限速度(km/h。制限なしは-1)。 */
+	public float getAtoLimit() {
+		return this.dataTracker.get(ATO_LIMIT);
+	}
+
+	/** HUD用: 次の停車駅の停止位置目標までの道のり(ブロック。先読みの範囲に無ければ-1)。 */
+	public float getAtoNextDistance() {
+		return this.dataTracker.get(ATO_NEXT);
+	}
+
+	/**
+	 * ATOの入切キー: 乗っている編成の、運行表を持つ車両のATOを切り替える。入れたときは、今の位置から
+	 * 次の駅へ向かう向きを決め直す。
+	 */
+	public void toggleAtoByKey(PlayerEntity player) {
+		if (!(this.getEntityWorld() instanceof ServerWorld world)) {
+			return;
+		}
+		RailVehicleEntity controller = null;
+		for (ConsistMember m : buildConsist(world)) {
+			if (m.entity().getTimetable() != null) {
+				controller = m.entity();
+				if (m.entity() == this) {
+					break;
+				}
+			}
+		}
+		if (controller == null) {
+			player.sendMessage(net.minecraft.text.Text.translatable("message.railwayvehicleaddon.ato.no_timetable"), true);
+			return;
+		}
+		AtoState ato = controller.atoState;
+		ato.enabled = !ato.enabled;
+		if (ato.enabled) {
+			if (ato.phase != AtoState.Phase.DWELL && ato.phase != AtoState.Phase.WAIT_DEPART) {
+				ato.phase = AtoState.Phase.RUN;
+			}
+			ato.dir = 0;
+		}
+		player.sendMessage(net.minecraft.text.Text.translatable(ato.enabled
+				? "message.railwayvehicleaddon.ato.on" : "message.railwayvehicleaddon.ato.off"), true);
+	}
+
+	/** 編成の車両(この車両を含む)。運行管理装置が、ほかの車両の運行表を外すのに使う。 */
+	public List<RailVehicleEntity> consistCars() {
+		if (!(this.getEntityWorld() instanceof ServerWorld world)) {
+			return List.of(this);
+		}
+		List<RailVehicleEntity> cars = new ArrayList<>();
+		for (ConsistMember m : buildConsist(world)) {
+			cars.add(m.entity());
+		}
+		return cars;
+	}
+
+	/**
+	 * 割り当ててくれた運行管理装置が、まだこの車両を割り当てているかを確かめる(運行管理装置のチャンクは
+	 * 常に読み込まれている)。装置が壊された・組から外されたなら運行表を外す。
+	 */
+	private void checkManagement(ServerWorld world) {
+		if (this.managedBy == null || --this.managedCheckCooldown > 0) {
+			return;
+		}
+		this.managedCheckCooldown = 100;
+		if (!world.isChunkLoaded(this.managedBy)) {
+			return;
+		}
+		if (!(world.getBlockEntity(this.managedBy) instanceof com.example.railwayvehicleaddon.block.OperationControllerBlockEntity controller)
+				|| !controller.assigns(this.managedRow, this.getUuid())) {
+			clearTimetable();
+		}
 	}
 
 	/** この車両の運行表。無ければnull。 */
@@ -1099,6 +1238,51 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		RailVehicleParams leaderParams = RailVehicleParamsLoader.get(this.getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
 		float handle = this.updateOwnThrottleAndNotch(this.getDefinition(), leaderParams);
 		boolean braking = this.isOwnBraking();
+
+		// 編成のブレーキ・走行抵抗(質量で重み付けした平均)と最高速度。ATOの指令に使う
+		double meanBrake = 0.0;
+		double meanResistance = 0.0;
+		double massSum = 0.0;
+		double maxNum = 0.0;
+		double maxDen = 0.0;
+		double capSpeed = Double.MAX_VALUE;
+		boolean override = this.drivingPlayer() != null && (braking || this.getSyncedThrottleInput() != 0f);
+		for (ConsistMember m : members) {
+			RailVehicleEntity car = m.entity();
+			RailVehicleParams carParams = RailVehicleParamsLoader.get(car.getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
+			meanBrake += carParams.brake() * carParams.mass();
+			meanResistance += carParams.resistance() * carParams.mass();
+			massSum += carParams.mass();
+			double carMax = car.tudursvehiclemod$getEffectiveMaxSpeed();
+			capSpeed = Math.min(capSpeed, carMax);
+			if (car.isPowerUnit(carParams)) {
+				double accelMass = car.getDefinition().acceleration() * carParams.mass();
+				maxNum += accelMass * carMax;
+				maxDen += accelMass;
+			}
+			if (car != this && car.drivingPlayer() != null && car.isOwnBraking()) {
+				override = true;
+			}
+		}
+		if (massSum > 1.0e-9) {
+			meanBrake /= massSum;
+			meanResistance /= massSum;
+		}
+		// 在線表への登録・進路の自動設定・ATS・ATO(編成ごとに1回)。ATOで運転しているときは、ATOのハンドルを
+		// 総括制御で全動力車へ伝える(運転者がノッチ・ブレーキを操作したら手動に戻る)
+		List<TrainOperation.Car> operationCars = new ArrayList<>(members.size());
+		for (ConsistMember m : members) {
+			operationCars.add(new TrainOperation.Car(m.entity(), m.offset(), m.sign(),
+					m.entity().couplerOffset(true), m.entity().couplerOffset(false)));
+		}
+		TrainOperation.Result operation = TrainOperation.update(world, network, this, this.trackPos, operationCars,
+				this.speed, handle, meanBrake, maxDen > 1.0e-9 ? maxNum / maxDen : this.tudursvehiclemod$getEffectiveMaxSpeed(),
+				capSpeed, override);
+		if (operation.ato()) {
+			handle = operation.handle();
+			this.notch = 0;
+			this.setThrottleDirect(handle);
+		}
 		int powerUnits = 0;
 		int poweredUnits = 0;
 		for (ConsistMember m : members) {
@@ -1151,29 +1335,10 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		double effAcceleration = weightedAccelMass > 1.0e-9 ? weightedAccelMass / totalMass : 0.0;
 		double target = weightedAccelMass > 1.0e-9 ? weightedTargetNum / weightedAccelMass : 0.0;
 		double meanGrade = totalMass > 1.0e-9 ? weightedGradeMass / totalMass : 0.0;
-		double meanBrake = 0.0;
-		double meanResistance = 0.0;
-		for (ConsistMember m : members) {
-			RailVehicleParams carParams = RailVehicleParamsLoader.get(m.entity().getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
-			meanBrake += carParams.brake() * carParams.mass();
-			meanResistance += carParams.resistance() * carParams.mass();
-		}
-		if (totalMass > 1.0e-9) {
-			meanBrake /= totalMass;
-			meanResistance /= totalMass;
-		}
-		// 在線表への登録・進路の自動設定・ATS(編成ごとに1回)
-		List<TrainOperation.Car> operationCars = new ArrayList<>(members.size());
-		for (ConsistMember m : members) {
-			operationCars.add(new TrainOperation.Car(m.entity(), m.offset(), m.sign(),
-					m.entity().couplerOffset(true), m.entity().couplerOffset(false)));
-		}
-		TrainOperation.Result operation = TrainOperation.update(world, network, this, this.trackPos, operationCars,
-				this.speed, handle, meanBrake);
 		if (operation.cutPower()) {
 			target = 0.0;
 		}
-		braking |= operation.brake();
+		double brakeStrength = Math.max(braking ? 1.0 : 0.0, operation.brake());
 
 		double v = this.speed;
 		boolean powering = target > 0 ? target > v : target < 0 && target < v;
@@ -1181,7 +1346,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			v += (target - v) * effAcceleration;
 		}
 		v -= meanGrade;
-		double decel = (powering ? 0.0 : meanResistance) + (braking ? meanBrake : 0.0);
+		double decel = (powering ? 0.0 : meanResistance) + meanBrake * brakeStrength;
 		if (Math.abs(v) <= decel) {
 			v = 0.0;
 		} else {
@@ -2162,9 +2327,15 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		this.uncoupledA.ifPresent(id -> view.putString("UncoupledA", id.toString()));
 		this.uncoupledB.ifPresent(id -> view.putString("UncoupledB", id.toString()));
 		if (this.timetable != null) {
-			view.putString("Timetable", this.timetable.source());
+			view.put("TimetableData", Timetable.CODEC, this.timetable);
 			view.putInt("TimetableIndex", this.stopIndex);
 			view.putInt("TimetableStep", this.stopStep);
+			this.atoState.write(view);
+			if (this.managedBy != null) {
+				view.putLong("ManagedBy", this.managedBy.asLong());
+				view.putInt("ManagedRow", this.managedRow);
+				view.putInt("ManagedHash", this.managedHash);
+			}
 		}
 	}
 
@@ -2185,10 +2356,17 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		this.couplingBReversed = view.getBoolean("CouplingBReversed", false);
 		this.uncoupledA = parseUuid(view.getString("UncoupledA", ""));
 		this.uncoupledB = parseUuid(view.getString("UncoupledB", ""));
-		String source = view.getString("Timetable", "");
-		this.timetable = source.isEmpty() ? null : Timetable.parse(source);
+		// 以前の版の本の運行表("Timetable"の文字列)は読まない(経路アイテムと運行管理装置に一本化した)
+		this.timetable = view.read("TimetableData", Timetable.CODEC).orElse(null);
 		this.stopIndex = view.getInt("TimetableIndex", 0);
 		this.stopStep = view.getInt("TimetableStep", 1) >= 0 ? 1 : -1;
+		if (this.timetable != null) {
+			this.atoState.read(view);
+			long managed = view.getLong("ManagedBy", Long.MIN_VALUE);
+			this.managedBy = managed == Long.MIN_VALUE ? null : net.minecraft.util.math.BlockPos.fromLong(managed);
+			this.managedRow = view.getInt("ManagedRow", -1);
+			this.managedHash = view.getInt("ManagedHash", 0);
+		}
 	}
 
 	private static Optional<UUID> parseUuid(String value) {

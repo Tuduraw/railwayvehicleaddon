@@ -40,6 +40,8 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 	private static KeyBinding uncoupleKey;
 	/** 警笛・汽笛キー(運転中) */
 	private static KeyBinding hornKey;
+	/** ATOの入切キー(乗車中) */
+	private static KeyBinding atoKey;
 	/**
 	 * 敷設時の調整キー(架線の高さ↑↓・曲線半径のしきい値→←・リセットR)。既定のキーは本体MODの操作と重なるため、
 	 * キー入力の配信(KeyBindingの押下状態)には頼らず、割り当てたキーの物理的な状態を直接読む。測量ツールを持ち、
@@ -56,6 +58,13 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 		EntityRendererRegistry.register(RailwayVehicleAddon.RAIL_VEHICLE, VehicleEntityRenderer::new);
 
 		HandledScreens.register(ModScreenHandlers.SUBSTATION, SubstationScreen::new);
+		HandledScreens.register(ModScreenHandlers.OPERATION_CONTROLLER, OperationControllerScreen::new);
+		com.example.railwayvehicleaddon.item.RouteCardItem.clientOpener = hand -> {
+			MinecraftClient client = MinecraftClient.getInstance();
+			if (client.player != null) {
+				client.setScreen(new RouteCardScreen(hand, client.player.getStackInHand(hand)));
+			}
+		};
 
 		// 蒸気機関車の石炭・火室状況をHUDスクリプトへ公開する(rail_fire_seconds・rail_coal_count・rail_low_coal)
 		HudVariableProvider.EVENT.register(RailHudVariables.INSTANCE);
@@ -98,6 +107,8 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 				"key.railwayvehicleaddon.uncouple", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_END, category));
 		hornKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
 				"key.railwayvehicleaddon.horn", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_X, category));
+		atoKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+				"key.railwayvehicleaddon.ato", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_INSERT, category));
 		placementKeys = new KeyBinding[]{
 				KeyBindingHelper.registerKeyBinding(new KeyBinding("key.railwayvehicleaddon.survey_wire_up", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_UP, category)),
 				KeyBindingHelper.registerKeyBinding(new KeyBinding("key.railwayvehicleaddon.survey_wire_down", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_DOWN, category)),
@@ -114,6 +125,11 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 	}
 
 	private static void onClientTick(MinecraftClient client) {
+		while (atoKey.wasPressed()) {
+			if (client.player != null && client.player.getVehicle() instanceof com.example.railwayvehicleaddon.entity.RailVehicleEntity) {
+				ClientPlayNetworking.send(new com.example.railwayvehicleaddon.network.AtoTogglePayload());
+			}
+		}
 		boolean holding = SurveySession.isHoldingTool(client.player);
 		while (confirmKey.wasPressed()) {
 			if (holding) {

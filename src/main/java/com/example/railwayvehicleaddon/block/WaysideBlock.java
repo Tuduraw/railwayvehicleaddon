@@ -72,11 +72,16 @@ public abstract class WaysideBlock extends BlockWithEntity {
 			entity.relink(serverWorld);
 			if (placer instanceof PlayerEntity player) {
 				player.sendMessage(describe(serverWorld, entity), false);
-				if (entity.link().ambiguous(serverWorld, state.get(FACING))) {
+				if (usesDirection() && entity.link().ambiguous(serverWorld, state.get(FACING))) {
 					player.sendMessage(Text.translatable("message.railwayvehicleaddon.wayside.ambiguous"), false);
 				}
 			}
 		}
+	}
+
+	/** ブロックの向き(効く列車の進行方向)を使うか。使わないブロックには、向きがはっきりしない警告を出さない。 */
+	protected boolean usesDirection() {
+		return true;
 	}
 
 	/** 設置時・右クリック時に表示する説明。 */
@@ -88,7 +93,8 @@ public abstract class WaysideBlock extends BlockWithEntity {
 	@Override
 	protected ActionResult onUseWithItem(ItemStack stack, BlockState state, World world, BlockPos pos, PlayerEntity player,
 										 Hand hand, BlockHitResult hit) {
-		if (stack.isOf(ModItems.SURVEY_TOOL)) {
+		if (stack.isOf(ModItems.SURVEY_TOOL) || stack.getItem() instanceof com.example.railwayvehicleaddon.item.RouteCardItem) {
+			// 測量ツール(連結モード)・経路アイテム(駅・検知器の登録)の操作を優先する
 			return ActionResult.PASS;
 		}
 		if (stack.isOf(Items.NAME_TAG) && stack.getCustomName() != null) {

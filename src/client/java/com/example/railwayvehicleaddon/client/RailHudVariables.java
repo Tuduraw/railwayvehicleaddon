@@ -36,6 +36,13 @@ public final class RailHudVariables implements HudVariableProvider {
 		java.util.List<com.example.tudursvehiclemod.asset.SeatDefinition> seats = rail.getDefinition().seats();
 		boolean driverSeat = seat >= 0 && seat < seats.size() && seats.get(seat).driver();
 		vars.put("rail_is_driver", driverSeat ? 1.0 : 0.0);
+		// ATO: 状態(0=切、1=力行、2=惰行、3=ブレーキ、4=停車中、5=発車待ち、6=運行終了、7=経路なし、8=停止中)・
+		// 今の制限速度(km/h、制限なし-1)・次の停車駅までの道のり(ブロック、先読みの範囲に無ければ-1)
+		int ato = rail.getAtoDisplay();
+		vars.put("rail_ato", ato != 0 ? 1.0 : 0.0);
+		vars.put("rail_ato_state", (double) ato);
+		vars.put("rail_speed_limit", (double) rail.getAtoLimit());
+		vars.put("rail_next_stop_distance", (double) rail.getAtoNextDistance());
 		RailVehicleParams params = RailVehicleParamsLoader.get(rail.getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
 		if (!RailVehicleParams.STEAM.equals(params.powerSource())) {
 			return;

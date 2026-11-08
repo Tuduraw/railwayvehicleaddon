@@ -1,0 +1,7 @@
+{
+  "parent": "minecraft:block/cube_column",
+  "textures": {
+    "end": "railwayvehicleaddon:block/operation_controller_top",
+    "side": "railwayvehicleaddon:block/operation_controller_side"
+  }
+}

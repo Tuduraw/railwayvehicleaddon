@@ -57,6 +57,7 @@ public class RailwayVehicleAddon implements ModInitializer {
 		RAIL_VEHICLE = ModEntityTypes.registerAddonVehicleType(
 				Identifier.of(MOD_ID, "rail_vehicle"), RailVehicleEntity::new, 2.0f, 2.0f);
 
+		com.example.railwayvehicleaddon.item.ModComponents.register();
 		ModScreenHandlers.register();
 		ModBlocks.register();
 		ModItems.register();
@@ -75,6 +76,10 @@ public class RailwayVehicleAddon implements ModInitializer {
 		PayloadTypeRegistry.playC2S().register(UncouplePayload.ID, UncouplePayload.CODEC);
 		PayloadTypeRegistry.playC2S().register(HornPayload.ID, HornPayload.CODEC);
 		PayloadTypeRegistry.playC2S().register(BoardPayload.ID, BoardPayload.CODEC);
+		PayloadTypeRegistry.playC2S().register(com.example.railwayvehicleaddon.network.RouteCardUpdatePayload.ID,
+				com.example.railwayvehicleaddon.network.RouteCardUpdatePayload.CODEC);
+		PayloadTypeRegistry.playC2S().register(com.example.railwayvehicleaddon.network.AtoTogglePayload.ID,
+				com.example.railwayvehicleaddon.network.AtoTogglePayload.CODEC);
 		PayloadTypeRegistry.playS2C().register(RailSoundPayload.ID, RailSoundPayload.CODEC);
 		PayloadTypeRegistry.playS2C().register(FeatureSyncPayload.ID, FeatureSyncPayload.CODEC);
 		PayloadTypeRegistry.playS2C().register(PlaceResultPayload.ID, PlaceResultPayload.CODEC);
@@ -116,6 +121,29 @@ public class RailwayVehicleAddon implements ModInitializer {
 						vehicle.boardNear(context.player(), new net.minecraft.util.math.Vec3d(payload.hx(), payload.hy(), payload.hz()));
 					}
 				}));
+
+		// 経路アイテムの設定画面で編集した運行表を、手に持っている経路アイテムへ保存する
+		ServerPlayNetworking.registerGlobalReceiver(com.example.railwayvehicleaddon.network.RouteCardUpdatePayload.ID, (payload, context) ->
+				context.server().execute(() -> {
+					net.minecraft.item.ItemStack stack = context.player().getStackInHand(
+							payload.mainHand() ? net.minecraft.util.Hand.MAIN_HAND : net.minecraft.util.Hand.OFF_HAND);
+					if (stack.getItem() instanceof com.example.railwayvehicleaddon.item.RouteCardItem) {
+						com.example.railwayvehicleaddon.item.RouteCardItem.set(stack, payload.table().sanitized());
+					}
+				}));
+		ServerPlayNetworking.registerGlobalReceiver(com.example.railwayvehicleaddon.network.AtoTogglePayload.ID, (payload, context) ->
+				context.server().execute(() -> {
+					if (context.player().getVehicle() instanceof RailVehicleEntity vehicle) {
+						vehicle.toggleAtoByKey(context.player());
+					}
+				}));
+
+		// 運行管理装置のチャンクを、置いている間ずっと読み込む(読み込みの記録は保存されないので、読み込まれるたびに要求し直す)
+		net.fabricmc.fabric.api.event.lifecycle.v1.ServerBlockEntityEvents.BLOCK_ENTITY_LOAD.register((blockEntity, world) -> {
+			if (blockEntity instanceof com.example.railwayvehicleaddon.block.OperationControllerBlockEntity controller) {
+				world.getServer().execute(() -> controller.updateOwnChunk(true));
+			}
+		});
 
 		// 転車台・遷車台の動作、変電所による給電の計算
 		ServerTickEvents.END_WORLD_TICK.register(TrackManager::tickFeatures);

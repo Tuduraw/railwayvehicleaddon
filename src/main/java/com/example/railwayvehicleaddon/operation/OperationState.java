@@ -1,8 +1,10 @@
 package com.example.railwayvehicleaddon.operation;
 
 import com.example.railwayvehicleaddon.entity.RailVehicleEntity;
+import com.example.railwayvehicleaddon.track.TrackNetwork;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3d;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -27,6 +29,8 @@ public final class OperationState {
 	private static final long CONSIST_STALE_TICKS = 1L;
 	/** 地上子の登録がこれより古い(tick)ものは、チャンクの読み込みが外れたものとして扱う */
 	private static final long WAYSIDE_STALE_TICKS = 60L;
+	/** 停止位置目標を連結し直すときに線路を探す距離 */
+	private static final double LINK_RANGE = com.example.railwayvehicleaddon.block.WaysideLink.LINK_RANGE;
 
 	public static OperationState get(ServerWorld world) {
 		synchronized (STATES) {
@@ -71,6 +75,8 @@ public final class OperationState {
 	}
 
 	private final Map<UUID, Consist> consists = new HashMap<>();
+	/** 車両のUUID → その車両を含む編成の識別(key) */
+	private final Map<UUID, UUID> memberToConsist = new HashMap<>();
 	private final Map<UUID, List<Span>> consistSpans = new HashMap<>();
 	private final Map<Long, List<Span>> spansBySegment = new HashMap<>();
 
@@ -78,6 +84,9 @@ public final class OperationState {
 	public void registerConsist(Consist consist, List<Span> spans) {
 		removeConsist(consist.key());
 		this.consists.put(consist.key(), consist);
+		for (UUID member : consist.members()) {
+			this.memberToConsist.put(member, consist.key());
+		}
 		this.consistSpans.put(consist.key(), spans);
 		for (Span span : spans) {
 			this.spansBySegment.computeIfAbsent(span.segmentId(), k -> new ArrayList<>(2)).add(span);
@@ -85,7 +94,12 @@ public final class OperationState {
 	}
 
 	private void removeConsist(UUID key) {
-		this.consists.remove(key);
+		Consist removed = this.consists.remove(key);
+		if (removed != null) {
+			for (UUID member : removed.members()) {
+				this.memberToConsist.remove(member, key);
+			}
+		}
 		List<Span> old = this.consistSpans.remove(key);
 		if (old == null) {
 			return;
@@ -99,6 +113,19 @@ public final class OperationState {
 				}
 			}
 		}
+	}
+
+	/** 車両memberを含む編成の、今tickまたは前tickの登録(無ければnull)。 */
+	public Consist consistOf(UUID member, long now) {
+		UUID key = this.memberToConsist.get(member);
+		Consist consist = key == null ? null : this.consists.get(key);
+		return consist != null && consist.tick() >= now - CONSIST_STALE_TICKS ? consist : null;
+	}
+
+	/** 編成keyの在線範囲(無ければ空)。 */
+	public List<Span> spansOf(UUID key) {
+		List<Span> spans = this.consistSpans.get(key);
+		return spans == null ? List.of() : spans;
 	}
 
 	/** 区間に載っている、今tickまたは前tickに登録された編成の範囲。 */
@@ -119,12 +146,12 @@ public final class OperationState {
 	// ------------------------------------------------------------------ 地上子
 
 	public enum WaysideKind {
-		SIGNAL, STOP_MARKER
+		SIGNAL, STOP_MARKER, SPEED_LIMIT
 	}
 
 	/**
 	 * 線路に連結した地上子。dirはその地上子が効く列車の進行方向(区間の向きで、+1でA→B)。
-	 * 停止位置目標のnameは駅名、platformは番線(0は指定なし)。seenは最後に登録された時刻
+	 * 停止位置目標のnameは駅名、platformは番線(0は指定なし)。速度制限標識のplatformは制限速度(km/h、0は制限解除)。seenは最後に登録された時刻
 	 * (信号機はチャンクの読み込みが外れたら古くなる。停止位置目標は保存してあるので古くならない)。
 	 */
 	public record Wayside(BlockPos pos, WaysideKind kind, long segmentId, double s, int dir, String name, int platform, long seen) {
@@ -154,6 +181,11 @@ public final class OperationState {
 				list.replaceAll(w -> w.pos().equals(added.pos()) ? added : w);
 			}
 		}
+	}
+
+	/** 位置posの地上子の登録(無ければnull)。 */
+	public Wayside waysideAt(BlockPos pos) {
+		return this.wayside.get(pos);
 	}
 
 	/** 地上子を索引から外す(停止位置目標は保存からも消す。ブロックが壊されたとき)。 */
@@ -191,14 +223,32 @@ public final class OperationState {
 		return result;
 	}
 
-	/** 駅名・番線(0は任意の番線)に合う停止位置目標。 */
-	public List<Wayside> stopMarkers(String station, int platform, long now) {
+	/**
+	 * 駅名・番線(0は任意の番線)に合う停止位置目標。連結先の区間が無くなっている(読み込まれていない間に
+	 * 線路が撤去・敷き直された)ものは、ブロックの位置から近くの線路へ連結し直す。連結できなければ除く
+	 * (保存からは消さない。線路が敷かれれば次の探索で連結する)。
+	 */
+	public List<Wayside> stopMarkers(TrackNetwork network, String station, int platform, long now) {
 		List<Wayside> result = new ArrayList<>();
+		List<Wayside> relinked = new ArrayList<>();
 		for (Wayside w : this.wayside.values()) {
-			if (w.kind() == WaysideKind.STOP_MARKER && w.seen() >= now - WAYSIDE_STALE_TICKS
-					&& w.name().equals(station) && (platform <= 0 || w.platform() == platform)) {
-				result.add(w);
+			if (w.kind() != WaysideKind.STOP_MARKER || w.seen() < now - WAYSIDE_STALE_TICKS
+					|| !w.name().equals(station) || (platform > 0 && w.platform() != platform)) {
+				continue;
 			}
+			if (network.segment(w.segmentId()) == null) {
+				Vec3d c = Vec3d.ofCenter(w.pos());
+				TrackNetwork.Nearest nearest = network.nearestPoint(c.x, c.y, c.z, LINK_RANGE);
+				if (nearest == null || network.featureOfSegment(nearest.segmentId()) != null) {
+					continue;
+				}
+				w = new Wayside(w.pos(), w.kind(), nearest.segmentId(), nearest.s(), w.dir(), w.name(), w.platform(), w.seen());
+				relinked.add(w);
+			}
+			result.add(w);
+		}
+		for (Wayside w : relinked) {
+			putWayside(w);
 		}
 		return result;
 	}
@@ -262,6 +312,46 @@ public final class OperationState {
 		}
 	}
 
+	// ------------------------------------------------------------------ 速度制限
+
+	/**
+	 * 編成の今の制限速度(ブロック/tick。制限なしはDouble.MAX_VALUE)。travelは状態を決めたときの進行方向
+	 * (編成の在線範囲の向きで)。制限が上がる標識は、編成の最後尾が過ぎるまでpendingに置く。
+	 * initializedは、後方の標識から初期値を決めたか。
+	 */
+	public static final class SpeedLimitState {
+		public double current = Double.MAX_VALUE;
+		public double pending = Double.NaN;
+		public BlockPos pendingSign;
+		public int travel;
+		public boolean initialized;
+		/** 在線範囲の中にある標識(前tick)。新しく入った標識だけを処理するため */
+		public java.util.Set<BlockPos> inside = new java.util.HashSet<>();
+	}
+
+	private final Map<UUID, SpeedLimitState> speedLimits = new HashMap<>();
+
+	public SpeedLimitState speedLimit(UUID consistKey) {
+		return this.speedLimits.computeIfAbsent(consistKey, k -> new SpeedLimitState());
+	}
+
+	// ------------------------------------------------------------------ チャンクの読み込み
+
+	/**
+	 * 運行管理装置が割り当てた編成について、読み込んでおくチャンク(在線範囲の周りと、先読みの経路)。
+	 * TrainOperationが一定間隔で計算し、運行管理装置が読み込みを要求する。
+	 */
+	private final Map<UUID, java.util.Set<net.minecraft.util.math.ChunkPos>> loadChunks = new HashMap<>();
+
+	public void setLoadChunks(UUID consistKey, java.util.Set<net.minecraft.util.math.ChunkPos> chunks) {
+		this.loadChunks.put(consistKey, chunks);
+	}
+
+	public java.util.Set<net.minecraft.util.math.ChunkPos> loadChunks(UUID consistKey) {
+		java.util.Set<net.minecraft.util.math.ChunkPos> chunks = this.loadChunks.get(consistKey);
+		return chunks == null ? java.util.Set.of() : chunks;
+	}
+
 	// ------------------------------------------------------------------ 後片付け
 
 	/** 古い登録を消す(ワールドのtickの終わりに呼ぶ)。 */
@@ -282,6 +372,11 @@ public final class OperationState {
 					}
 				}
 				this.atsLatched.remove(e.getKey());
+				this.speedLimits.remove(e.getKey());
+				this.loadChunks.remove(e.getKey());
+				for (UUID member : e.getValue().members()) {
+					this.memberToConsist.remove(member, e.getKey());
+				}
 				it.remove();
 			}
 		}

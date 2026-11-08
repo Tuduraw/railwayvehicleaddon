@@ -1,0 +1,6 @@
+{
+  "model": {
+    "type": "minecraft:model",
+    "model": "railwayvehicleaddon:block/operation_controller"
+  }
+}
