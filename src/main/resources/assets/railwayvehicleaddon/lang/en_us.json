@@ -239,5 +239,11 @@
   "screen.railwayvehicleaddon.ato.wait_depart": "ATO: waiting for departure time",
   "screen.railwayvehicleaddon.ato.finished": "ATO: service finished",
   "screen.railwayvehicleaddon.ato.no_route": "ATO: no route to the next station",
-  "screen.railwayvehicleaddon.ato.held": "ATO: held (signal, train ahead, etc.)"
+  "screen.railwayvehicleaddon.ato.held": "ATO: held (signal, train ahead, etc.)",
+  "message.railwayvehicleaddon.ato.cab_locked": "The cab cannot be used while the train runs under ATO (take another seat or car)",
+  "message.railwayvehicleaddon.ato.driver_only": "ATO is toggled from the cab (use the Operation Controller while running under ATO)",
+  "screen.railwayvehicleaddon.stop_marker.title": "Stop Marker Name",
+  "screen.railwayvehicleaddon.stop_marker.hint": "Enter \"Station Platform\" (e.g. A 1)",
+  "screen.railwayvehicleaddon.stop_marker.preview": "Station: %s / %s",
+  "screen.railwayvehicleaddon.stop_marker.preview_empty": "No name (cannot be added to a route card)"
 }

@@ -24,113 +24,370 @@
       "name": "seat1",
       "offset_x": 0.98,
       "offset_y": 1.11,
-      "offset_z": -8.75,
-      "dismount_x": 2.2,
-      "dismount_z": -7.3
+      "offset_z": -9.1,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -9.1
     },
     {
       "name": "seat2",
-      "offset_x": -0.98,
+      "offset_x": 0.98,
       "offset_y": 1.11,
-      "offset_z": -8.75,
-      "dismount_x": -2.2,
-      "dismount_z": -7.3
+      "offset_z": -8.4,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -8.4
     },
     {
       "name": "seat3",
-      "offset_x": 0.98,
+      "offset_x": -0.98,
       "offset_y": 1.11,
-      "offset_z": -5.9,
-      "dismount_x": 2.2,
-      "dismount_z": -7.3
+      "offset_z": -9.1,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -9.1
     },
     {
       "name": "seat4",
-      "offset_x": 0.98,
+      "offset_x": -0.98,
       "offset_y": 1.11,
-      "offset_z": -3.85,
-      "dismount_x": 2.2,
-      "dismount_z": -2.45
+      "offset_z": -8.4,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -8.4
     },
     {
       "name": "seat5",
-      "offset_x": -0.98,
+      "offset_x": 0.98,
       "offset_y": 1.11,
-      "offset_z": -5.9,
-      "dismount_x": -2.2,
-      "dismount_z": -7.3
+      "offset_z": -6.27,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -6.27
     },
     {
       "name": "seat6",
-      "offset_x": -0.98,
+      "offset_x": 0.98,
       "offset_y": 1.11,
-      "offset_z": -3.85,
-      "dismount_x": -2.2,
-      "dismount_z": -2.45
+      "offset_z": -5.71,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -5.71
     },
     {
       "name": "seat7",
       "offset_x": 0.98,
       "offset_y": 1.11,
-      "offset_z": -1.05,
-      "dismount_x": 2.2,
-      "dismount_z": -2.45
+      "offset_z": -5.15,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -5.15
     },
     {
       "name": "seat8",
       "offset_x": 0.98,
       "offset_y": 1.11,
-      "offset_z": 1.05,
-      "dismount_x": 2.2,
-      "dismount_z": 2.45
+      "offset_z": -4.6,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -4.6
     },
     {
       "name": "seat9",
-      "offset_x": -0.98,
+      "offset_x": 0.98,
       "offset_y": 1.11,
-      "offset_z": -1.05,
-      "dismount_x": -2.2,
-      "dismount_z": -2.45
+      "offset_z": -4.04,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -4.04
     },
     {
       "name": "seat10",
-      "offset_x": -0.98,
+      "offset_x": 0.98,
       "offset_y": 1.11,
-      "offset_z": 1.05,
-      "dismount_x": -2.2,
-      "dismount_z": 2.45
+      "offset_z": -3.48,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -3.48
     },
     {
       "name": "seat11",
-      "offset_x": 0.98,
+      "offset_x": -0.98,
       "offset_y": 1.11,
-      "offset_z": 3.85,
-      "dismount_x": 2.2,
-      "dismount_z": 2.45
+      "offset_z": -6.27,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -6.27
     },
     {
       "name": "seat12",
-      "offset_x": 0.98,
+      "offset_x": -0.98,
       "offset_y": 1.11,
-      "offset_z": 5.9,
-      "dismount_x": 2.2,
-      "dismount_z": 7.3
+      "offset_z": -5.71,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -5.71
     },
     {
       "name": "seat13",
       "offset_x": -0.98,
       "offset_y": 1.11,
-      "offset_z": 3.85,
-      "dismount_x": -2.2,
-      "dismount_z": 2.45
+      "offset_z": -5.15,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -5.15
     },
     {
       "name": "seat14",
       "offset_x": -0.98,
       "offset_y": 1.11,
-      "offset_z": 5.9,
-      "dismount_x": -2.2,
-      "dismount_z": 7.3
+      "offset_z": -4.6,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -4.6
+    },
+    {
+      "name": "seat15",
+      "offset_x": -0.98,
+      "offset_y": 1.11,
+      "offset_z": -4.04,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -4.04
+    },
+    {
+      "name": "seat16",
+      "offset_x": -0.98,
+      "offset_y": 1.11,
+      "offset_z": -3.48,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -3.48
+    },
+    {
+      "name": "seat17",
+      "offset_x": 0.98,
+      "offset_y": 1.11,
+      "offset_z": -1.42,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -1.42
+    },
+    {
+      "name": "seat18",
+      "offset_x": 0.98,
+      "offset_y": 1.11,
+      "offset_z": -0.85,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -0.85
+    },
+    {
+      "name": "seat19",
+      "offset_x": 0.98,
+      "offset_y": 1.11,
+      "offset_z": -0.28,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -0.28
+    },
+    {
+      "name": "seat20",
+      "offset_x": 0.98,
+      "offset_y": 1.11,
+      "offset_z": 0.28,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 0.28
+    },
+    {
+      "name": "seat21",
+      "offset_x": 0.98,
+      "offset_y": 1.11,
+      "offset_z": 0.85,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 0.85
+    },
+    {
+      "name": "seat22",
+      "offset_x": 0.98,
+      "offset_y": 1.11,
+      "offset_z": 1.42,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 1.42
+    },
+    {
+      "name": "seat23",
+      "offset_x": -0.98,
+      "offset_y": 1.11,
+      "offset_z": -1.42,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -1.42
+    },
+    {
+      "name": "seat24",
+      "offset_x": -0.98,
+      "offset_y": 1.11,
+      "offset_z": -0.85,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -0.85
+    },
+    {
+      "name": "seat25",
+      "offset_x": -0.98,
+      "offset_y": 1.11,
+      "offset_z": -0.28,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -0.28
+    },
+    {
+      "name": "seat26",
+      "offset_x": -0.98,
+      "offset_y": 1.11,
+      "offset_z": 0.28,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 0.28
+    },
+    {
+      "name": "seat27",
+      "offset_x": -0.98,
+      "offset_y": 1.11,
+      "offset_z": 0.85,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 0.85
+    },
+    {
+      "name": "seat28",
+      "offset_x": -0.98,
+      "offset_y": 1.11,
+      "offset_z": 1.42,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 1.42
+    },
+    {
+      "name": "seat29",
+      "offset_x": 0.98,
+      "offset_y": 1.11,
+      "offset_z": 3.48,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 3.48
+    },
+    {
+      "name": "seat30",
+      "offset_x": 0.98,
+      "offset_y": 1.11,
+      "offset_z": 4.04,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 4.04
+    },
+    {
+      "name": "seat31",
+      "offset_x": 0.98,
+      "offset_y": 1.11,
+      "offset_z": 4.6,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 4.6
+    },
+    {
+      "name": "seat32",
+      "offset_x": 0.98,
+      "offset_y": 1.11,
+      "offset_z": 5.15,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 5.15
+    },
+    {
+      "name": "seat33",
+      "offset_x": 0.98,
+      "offset_y": 1.11,
+      "offset_z": 5.71,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 5.71
+    },
+    {
+      "name": "seat34",
+      "offset_x": 0.98,
+      "offset_y": 1.11,
+      "offset_z": 6.27,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 6.27
+    },
+    {
+      "name": "seat35",
+      "offset_x": -0.98,
+      "offset_y": 1.11,
+      "offset_z": 3.48,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 3.48
+    },
+    {
+      "name": "seat36",
+      "offset_x": -0.98,
+      "offset_y": 1.11,
+      "offset_z": 4.04,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 4.04
+    },
+    {
+      "name": "seat37",
+      "offset_x": -0.98,
+      "offset_y": 1.11,
+      "offset_z": 4.6,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 4.6
+    },
+    {
+      "name": "seat38",
+      "offset_x": -0.98,
+      "offset_y": 1.11,
+      "offset_z": 5.15,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 5.15
+    },
+    {
+      "name": "seat39",
+      "offset_x": -0.98,
+      "offset_y": 1.11,
+      "offset_z": 5.71,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 5.71
+    },
+    {
+      "name": "seat40",
+      "offset_x": -0.98,
+      "offset_y": 1.11,
+      "offset_z": 6.27,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 6.27
+    }
+  ],
+  "runways": [
+    {
+      "width": 2.46,
+      "center_x": 0.0,
+      "height_y": 1.15,
+      "start_z": -10.2,
+      "end_z": 7.8
     }
   ],
   "spawn_item": {

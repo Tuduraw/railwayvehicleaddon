@@ -80,6 +80,10 @@ public class RailwayVehicleAddon implements ModInitializer {
 				com.example.railwayvehicleaddon.network.RouteCardUpdatePayload.CODEC);
 		PayloadTypeRegistry.playC2S().register(com.example.railwayvehicleaddon.network.AtoTogglePayload.ID,
 				com.example.railwayvehicleaddon.network.AtoTogglePayload.CODEC);
+		PayloadTypeRegistry.playC2S().register(com.example.railwayvehicleaddon.network.StopMarkerEditPayload.ID,
+				com.example.railwayvehicleaddon.network.StopMarkerEditPayload.CODEC);
+		PayloadTypeRegistry.playS2C().register(com.example.railwayvehicleaddon.network.StopMarkerEditPayload.ID,
+				com.example.railwayvehicleaddon.network.StopMarkerEditPayload.CODEC);
 		PayloadTypeRegistry.playS2C().register(RailSoundPayload.ID, RailSoundPayload.CODEC);
 		PayloadTypeRegistry.playS2C().register(FeatureSyncPayload.ID, FeatureSyncPayload.CODEC);
 		PayloadTypeRegistry.playS2C().register(PlaceResultPayload.ID, PlaceResultPayload.CODEC);
@@ -137,6 +141,11 @@ public class RailwayVehicleAddon implements ModInitializer {
 						vehicle.toggleAtoByKey(context.player());
 					}
 				}));
+
+		// 停止位置目標の名前の編集画面で決めた名前を付ける
+		ServerPlayNetworking.registerGlobalReceiver(com.example.railwayvehicleaddon.network.StopMarkerEditPayload.ID, (payload, context) ->
+				context.server().execute(() -> com.example.railwayvehicleaddon.block.StopMarkerBlock.rename(
+						context.player(), payload.pos(), payload.name())));
 
 		// 運行管理装置のチャンクを、置いている間ずっと読み込む(読み込みの記録は保存されないので、読み込まれるたびに要求し直す)
 		net.fabricmc.fabric.api.event.lifecycle.v1.ServerBlockEntityEvents.BLOCK_ENTITY_LOAD.register((blockEntity, world) -> {

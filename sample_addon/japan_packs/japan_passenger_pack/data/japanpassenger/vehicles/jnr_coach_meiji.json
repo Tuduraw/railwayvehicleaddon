@@ -15,51 +15,120 @@
   "seats": [
     {
       "name": "seat1",
-      "offset_x": 0.52,
+      "offset_x": 0.45,
       "offset_y": 1.11,
       "offset_z": -1.48,
-      "dismount_x": 1.9,
-      "dismount_z": -0.75
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -1.48
     },
     {
       "name": "seat2",
-      "offset_x": -0.52,
+      "offset_x": 0.59,
       "offset_y": 1.11,
       "offset_z": -1.48,
-      "dismount_x": -1.9,
-      "dismount_z": -0.75
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -1.48
     },
     {
       "name": "seat3",
-      "offset_x": 0.52,
+      "offset_x": -0.45,
       "offset_y": 1.11,
-      "offset_z": 0.02,
-      "dismount_x": 1.9,
-      "dismount_z": 0.75
+      "offset_z": -1.48,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -1.48
     },
     {
       "name": "seat4",
-      "offset_x": -0.52,
+      "offset_x": -0.59,
       "offset_y": 1.11,
-      "offset_z": 0.02,
-      "dismount_x": -1.9,
-      "dismount_z": 0.75
+      "offset_z": -1.48,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": -1.48
     },
     {
       "name": "seat5",
-      "offset_x": 0.52,
+      "offset_x": 0.45,
       "offset_y": 1.11,
-      "offset_z": 1.52,
-      "dismount_x": 1.9,
-      "dismount_z": 2.25
+      "offset_z": 0.02,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 0.02
     },
     {
       "name": "seat6",
-      "offset_x": -0.52,
+      "offset_x": 0.59,
+      "offset_y": 1.11,
+      "offset_z": 0.02,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 0.02
+    },
+    {
+      "name": "seat7",
+      "offset_x": -0.45,
+      "offset_y": 1.11,
+      "offset_z": 0.02,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 0.02
+    },
+    {
+      "name": "seat8",
+      "offset_x": -0.59,
+      "offset_y": 1.11,
+      "offset_z": 0.02,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 0.02
+    },
+    {
+      "name": "seat9",
+      "offset_x": 0.45,
       "offset_y": 1.11,
       "offset_z": 1.52,
-      "dismount_x": -1.9,
-      "dismount_z": 2.25
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 1.52
+    },
+    {
+      "name": "seat10",
+      "offset_x": 0.59,
+      "offset_y": 1.11,
+      "offset_z": 1.52,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 1.52
+    },
+    {
+      "name": "seat11",
+      "offset_x": -0.45,
+      "offset_y": 1.11,
+      "offset_z": 1.52,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 1.52
+    },
+    {
+      "name": "seat12",
+      "offset_x": -0.59,
+      "offset_y": 1.11,
+      "offset_z": 1.52,
+      "dismount_x": 0.0,
+      "dismount_y": 1.17,
+      "dismount_z": 1.52
+    }
+  ],
+  "runways": [
+    {
+      "width": 1.25,
+      "center_x": 0.0,
+      "height_y": 1.15,
+      "start_z": -3.5,
+      "end_z": 3.5
     }
   ],
   "spawn_item": {

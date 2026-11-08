@@ -59,6 +59,8 @@ public class RailwayVehicleAddonClient implements ClientModInitializer {
 
 		HandledScreens.register(ModScreenHandlers.SUBSTATION, SubstationScreen::new);
 		HandledScreens.register(ModScreenHandlers.OPERATION_CONTROLLER, OperationControllerScreen::new);
+		ClientPlayNetworking.registerGlobalReceiver(com.example.railwayvehicleaddon.network.StopMarkerEditPayload.ID, (payload, context) ->
+				context.client().execute(() -> context.client().setScreen(new StopMarkerNameScreen(payload.pos(), payload.name()))));
 		com.example.railwayvehicleaddon.item.RouteCardItem.clientOpener = hand -> {
 			MinecraftClient client = MinecraftClient.getInstance();
 			if (client.player != null) {

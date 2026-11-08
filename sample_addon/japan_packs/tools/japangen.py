@@ -839,6 +839,7 @@ def make_paint(spec, L, W, H, floor):
 # ---------------------------------------------------------------- 車内(簡易)
 GLASS_ALPHA = 80         # 窓ガラスの不透明度(0〜255)。前提MODは網目状に間引いて描くので、車内が透けて見える
 SEAT_PAN = 0.45          # 座面の高さ(床から)
+SEAT_WIDTH_LONG = 0.5    # ロングシートの1人分の幅
 RIDER_HIP = 0.49         # 前提MODは乗員の足元を座席位置に置き、腰は足元から約0.49m上(0.7倍で描くため)
 
 def rider_y(floor_y):
@@ -1187,9 +1188,11 @@ def build_interior(m, spec, prof, floor):
             for sg in (1, -1):
                 m.add("body", mk.box(sg * (hw - 0.27), floor + SEAT_PAN / 2, (a2 + b2) / 2, 0.5, SEAT_PAN, b2 - a2, tag="seat"))
                 m.add("body", mk.box(sg * (hw - 0.04), floor + SEAT_PAN + 0.3, (a2 + b2) / 2, 0.08, 0.6, b2 - a2, tag="seat"))
-                n = int((b2 - a2) / 1.3)
+                # 乗客の座席位置: 腰掛け1人分(0.5m)ごと
+                n = max(1, int((b2 - a2) / SEAT_WIDTH_LONG))
+                step = (b2 - a2) / n
                 for k in range(n):
-                    seats.append((sg * (hw - 0.3), (a2 + 0.65 + k * (b2 - a2 - 1.3) / max(1, n - 1)) if n > 1 else (a2 + b2) / 2))
+                    seats.append((sg * (hw - 0.3), a2 + step * (k + 0.5)))
         # つり革の棒
         for sg in (1, -1):
             xb, yb = sg * (hw - 0.55), floor + 2.0
@@ -1214,11 +1217,11 @@ def build_interior(m, spec, prof, floor):
         for z in rows:
             for sg in (1, -1):
                 seat_block(m, sg * 0.36, sg * hw, z, floor, facing=1)
-        # 乗客の座席位置: 多すぎる場合は1列おき
-        use = rows if len(rows) * 2 <= 28 else rows[::2]
-        for z in use:
+        # 乗客の座席位置: 腰掛け(通路の端0.36から窓側hwまでの2人掛け)の1人分ごと、全部の列
+        for z in rows:
             for sg in (1, -1):
-                seats.append((sg * (0.36 + hw) / 2, z + 0.02))
+                for f in (0.27, 0.73):
+                    seats.append((sg * (0.36 + (hw - 0.36) * f), z + 0.02))
         # 荷物棚
         for sg in (1, -1):
             za, zb = pz0 + 0.5, pz1 - 0.5
@@ -1235,7 +1238,10 @@ def build_interior(m, spec, prof, floor):
                 seats.append((0.3, z))
             z += 1.7
         spec["_seat_y"] = rider_y(floor - 0.05)
-    spec["_seat_pos"] = seats[:28]
+        spec["_aisle_x"] = -(hw + 0.4) / 2          # 通路は右(-X)側
+    spec["_seat_pos"] = seats
+    # 車内を歩けるように、客室の床に前提MODの「runways」(乗り物の上に立てる面)を張る(幅は床の高さでの内張りの幅)
+    spec["_runway"] = {"hw": hw, "z0": pz0, "z1": pz1, "floor": floor}
 
 def build_car(spec):
     """電車・気動車・客車・新幹線(箱形の車体+台車)"""
@@ -1863,14 +1869,22 @@ def vehicle_json(ns, spec, floor, zmin, zmax):
             dz = spec.get("driver_z", zmax - 1.6)
             seats.append(seat("driver", spec.get("driver_x", 0.7), spec.get("seat_y", floor + 0.05), dz, True))
     doors = [zc for zc, _ in spec.get("windows", {}).get("doors", [])]
+    runway = spec.get("_runway") if spec.get("_seat_pos") else None
     if spec.get("_seat_pos"):
-        # 客室の座席(車内の座席の位置に合わせて生成)。降りるときは最寄りの扉の外に立つ
+        # 客室の座席(車内の腰掛けの1人分ごと)。車内を歩ける車両(runwaysあり)は、席の横の通路に立って降りる。
+        # 歩けない車両は、最寄りの扉の外に立つ
         sy = spec.get("_seat_y", rider_y(floor))
+        aisle = spec.get("_aisle_x", 0.0)
         for i, (x, z) in enumerate(spec["_seat_pos"]):
             st = seat(f"seat{i + 1}", x, sy, z)
-            st["dismount_x"] = round((1 if x >= 0 else -1) * (spec.get("W", 2.9) / 2 + 0.8), 2)
-            if doors:
-                st["dismount_z"] = round(min(doors, key=lambda d: abs(d - z)), 2)
+            if runway:
+                st["dismount_x"] = round(aisle, 2)
+                st["dismount_y"] = round(runway["floor"] + 0.02, 2)
+                st["dismount_z"] = round(z, 2)
+            else:
+                st["dismount_x"] = round((1 if x >= 0 else -1) * (spec.get("W", 2.9) / 2 + 0.8), 2)
+                if doors:
+                    st["dismount_z"] = round(min(doors, key=lambda d: abs(d - z)), 2)
             seats.append(st)
     else:
         for i, (x, z) in enumerate(spec.get("seats", [])):
@@ -1878,6 +1892,17 @@ def vehicle_json(ns, spec, floor, zmin, zmax):
     if not seats:
         seats.append(seat("seat1", 0.6, floor + 0.05, 0.0))
     j["seats"] = seats
+    if runway:
+        # 床の面(前提MODの runways)。幌のある端は連結面まで延ばし、隣の車両へ歩いて移れるようにする
+        L = spec.get("L", 10)
+        z0, z1 = runway["z0"], runway["z1"]
+        ends = spec.get("_gangway_ends", ())
+        if 1 in ends:
+            z1 = L / 2 + COUPLER_REACH
+        if -1 in ends:
+            z0 = -(L / 2 + COUPLER_REACH)
+        j["runways"] = [{"width": round(2 * runway["hw"] - 0.1, 2), "center_x": 0.0, "height_y": round(runway["floor"], 3),
+                         "start_z": round(z0, 2), "end_z": round(z1, 2)}]
     j["spawn_item"] = {"display_name": spec["name"], "tier": spec.get("tier", 2)}
     rail = {"bogies": list(spec["track_points"]) + spec.get("_aux_track", []), "brake": spec.get("brake", 0.015), "resistance": spec.get("resistance", 0.0003),
             "grade_gravity": 0.04, "mass": spec.get("mass", 1.0),

@@ -61,7 +61,8 @@ public final class RailBoarding {
 		if (targetEntity != null && targetEntity != best && targetEntity.getEntityPos().distanceTo(eye) < bestT) {
 			return;
 		}
-		Vec3d hit = eye.add(dir.multiply(bestT));
+		// 車内に立っている(目が車体の箱の中にある)ときは、見ている先(1.5ブロック先)に近い座席に座る
+		Vec3d hit = eye.add(dir.multiply(bestT > 1.0e-6 ? bestT : 1.5));
 		ClientPlayNetworking.send(new BoardPayload(best.getId(), hit.x, hit.y, hit.z));
 	}
 

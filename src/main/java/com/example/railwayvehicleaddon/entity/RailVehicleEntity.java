@@ -797,6 +797,11 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		if (!(this.getEntityWorld() instanceof ServerWorld world)) {
 			return;
 		}
+		if (drivingPlayer() != player) {
+			// 乗客は操作できない(運転席にいるプレイヤーだけ。ATOで走っている間は運行管理装置の画面で入切する)
+			player.sendMessage(net.minecraft.text.Text.translatable("message.railwayvehicleaddon.ato.driver_only"), true);
+			return;
+		}
 		RailVehicleEntity controller = null;
 		for (ConsistMember m : buildConsist(world)) {
 			if (m.entity().getTimetable() != null) {
@@ -2053,7 +2058,9 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			return false;
 		}
 		boolean cab = hasDriverSeat();
-		if (cab && this.tudursvehiclemod$getSeatOccupant(0) == null
+		// ATOで走っている編成の運転席には座れない(乗客として、ほかの座席に座る)
+		boolean cabOpen = cab && !isAtoCabLocked();
+		if (cabOpen && this.tudursvehiclemod$getSeatOccupant(0) == null
 				&& this.tudursvehiclemod$getSeatWorldPos(0).squaredDistanceTo(hit) < 3.0 * 3.0) {
 			return this.tudursvehiclemod$mountToSeat(player, 0);
 		}
@@ -2069,10 +2076,67 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 				best = i;
 			}
 		}
-		if (best < 0 && cab && this.tudursvehiclemod$getSeatOccupant(0) == null) {
+		if (best < 0 && cabOpen && this.tudursvehiclemod$getSeatOccupant(0) == null) {
 			best = 0;
 		}
+		if (best < 0 && cab && !cabOpen) {
+			player.sendMessage(net.minecraft.text.Text.translatable("message.railwayvehicleaddon.ato.cab_locked"), true);
+		}
 		return best >= 0 && this.tudursvehiclemod$mountToSeat(player, best);
+	}
+
+	/**
+	 * サーバー側: この車両の運転席を、ATOで走っている間は使わせないか(運転台のある車両で、編成の運行表を持つ車両の
+	 * ATOが入っているとき)。すでに運転席にいるプレイヤーはそのまま(ノッチ・ブレーキを操作すると手動運転に戻る)。
+	 */
+	public boolean isAtoCabLocked() {
+		if (!hasDriverSeat() || !(this.getEntityWorld() instanceof ServerWorld world)) {
+			return false;
+		}
+		RailVehicleEntity controller = null;
+		com.example.railwayvehicleaddon.operation.OperationState.Consist consist =
+				com.example.railwayvehicleaddon.operation.OperationState.get(world).consistOf(this.getUuid(), world.getTime());
+		if (consist != null) {
+			controller = consist.controller();
+		} else if (this.timetable != null) {
+			controller = this;
+		}
+		return controller != null && controller.getTimetable() != null && controller.atoState().enabled;
+	}
+
+	/** ATOで走っている間は、プレイヤーを運転席(座席0)に座らせない(ほかの空いた座席に座らせる)。 */
+	@Override
+	public boolean tudursvehiclemod$mountToSeat(Entity passenger, int seatIndex) {
+		if (seatIndex == 0 && passenger instanceof PlayerEntity && isAtoCabLocked()) {
+			for (int i = 1; i < this.getDefinition().seats().size(); i++) {
+				if (this.tudursvehiclemod$getSeatOccupant(i) == null) {
+					return super.tudursvehiclemod$mountToSeat(passenger, i);
+				}
+			}
+			if (passenger instanceof PlayerEntity player) {
+				player.sendMessage(net.minecraft.text.Text.translatable("message.railwayvehicleaddon.ato.cab_locked"), true);
+			}
+			return false;
+		}
+		return super.tudursvehiclemod$mountToSeat(passenger, seatIndex);
+	}
+
+	/** 座席を移るキー: ATOで走っている間は、プレイヤーは運転席へ移れない(次の空いた座席へ飛ばす)。 */
+	@Override
+	public void tudursvehiclemod$trySwitchSeat(Entity passenger, boolean forward) {
+		int before = this.tudursvehiclemod$getAssignedSeatIndex(passenger);
+		super.tudursvehiclemod$trySwitchSeat(passenger, forward);
+		if (passenger instanceof PlayerEntity && this.tudursvehiclemod$getAssignedSeatIndex(passenger) == 0
+				&& before != 0 && isAtoCabLocked()) {
+			super.tudursvehiclemod$trySwitchSeat(passenger, forward);
+			if (this.tudursvehiclemod$getAssignedSeatIndex(passenger) == 0) {
+				// ほかに空いた座席が無い: 元の座席へ戻す
+				super.tudursvehiclemod$trySwitchSeat(passenger, !forward);
+			}
+			if (passenger instanceof PlayerEntity player) {
+				player.sendMessage(net.minecraft.text.Text.translatable("message.railwayvehicleaddon.ato.cab_locked"), true);
+			}
+		}
 	}
 
 	/** 警笛キー(運転者のみ)。連打しても1秒に1回まで。 */

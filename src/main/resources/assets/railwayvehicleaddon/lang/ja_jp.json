@@ -239,5 +239,11 @@
   "screen.railwayvehicleaddon.ato.wait_depart": "ATO: 発車時刻待ち",
   "screen.railwayvehicleaddon.ato.finished": "ATO: 運行終了",
   "screen.railwayvehicleaddon.ato.no_route": "ATO: 次の駅への道が見つからない",
-  "screen.railwayvehicleaddon.ato.held": "ATO: 停止中(信号・前方の列車など)"
+  "screen.railwayvehicleaddon.ato.held": "ATO: 停止中(信号・前方の列車など)",
+  "message.railwayvehicleaddon.ato.cab_locked": "自動運転中は運転席に座れません(ほかの座席・車両に乗ってください)",
+  "message.railwayvehicleaddon.ato.driver_only": "ATOの入切は運転席から行います(自動運転中は運行管理装置の画面で)",
+  "screen.railwayvehicleaddon.stop_marker.title": "停止位置目標の名前",
+  "screen.railwayvehicleaddon.stop_marker.hint": "「駅名 番線」の形で入力(例: A駅 1)",
+  "screen.railwayvehicleaddon.stop_marker.preview": "駅名: %s / %s",
+  "screen.railwayvehicleaddon.stop_marker.preview_empty": "名前なし(経路アイテムに登録できません)"
 }

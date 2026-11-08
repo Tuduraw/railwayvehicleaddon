@@ -54,8 +54,29 @@ public class StopMarkerBlock extends WaysideBlock {
 		return Text.empty().append(name).append(" / ").append(entity.link().describe(world));
 	}
 
+	/** 素手で右クリック: 名前の編集画面を開く。スニーク+右クリック: 名前と連結先を表示する。 */
 	@Override
 	protected void useEmptyHand(ServerWorld world, WaysideBlockEntity entity, PlayerEntity player, boolean sneaking) {
+		if (!sneaking && player instanceof net.minecraft.server.network.ServerPlayerEntity serverPlayer) {
+			net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(serverPlayer,
+					new com.example.railwayvehicleaddon.network.StopMarkerEditPayload(entity.getPos(), entity.name()));
+			return;
+		}
 		player.sendMessage(describe(world, entity), true);
+	}
+
+	/** 編集画面で決めた名前を付ける(サーバー側。プレイヤーが近く(8ブロック以内)にいて、そこが停止位置目標なら)。 */
+	public static void rename(net.minecraft.server.network.ServerPlayerEntity player, BlockPos pos, String name) {
+		if (!(player.getEntityWorld() instanceof ServerWorld world) || player.squaredDistanceTo(pos.toCenterPos()) > 8.0 * 8.0
+				|| !(world.getBlockState(pos).getBlock() instanceof StopMarkerBlock)
+				|| !(world.getBlockEntity(pos) instanceof WaysideBlockEntity entity)) {
+			return;
+		}
+		String clean = name == null ? "" : name.replace('　', ' ').trim();
+		if (clean.length() > Timetable.MAX_NAME) {
+			clean = clean.substring(0, Timetable.MAX_NAME);
+		}
+		entity.setName(clean);
+		player.sendMessage(((StopMarkerBlock) world.getBlockState(pos).getBlock()).describe(world, entity), true);
 	}
 }
