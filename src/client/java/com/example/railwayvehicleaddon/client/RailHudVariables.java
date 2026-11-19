@@ -1,8 +1,6 @@
 package com.example.railwayvehicleaddon.client;
 
 import com.example.railwayvehicleaddon.entity.RailVehicleEntity;
-import com.example.railwayvehicleaddon.vehicle.RailVehicleParams;
-import com.example.railwayvehicleaddon.vehicle.RailVehicleParamsLoader;
 import com.example.tudursvehiclemod.client.hud.HudVariableProvider;
 import com.example.tudursvehiclemod.entity.AbstractVehicleEntity;
 import java.util.Map;
@@ -42,8 +40,7 @@ public final class RailHudVariables implements HudVariableProvider {
 		vars.put("rail_ato_state", (double) ato);
 		vars.put("rail_speed_limit", (double) rail.getAtoLimit());
 		vars.put("rail_next_stop_distance", (double) rail.getAtoNextDistance());
-		RailVehicleParams params = RailVehicleParamsLoader.get(rail.getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
-		if (!RailVehicleParams.STEAM.equals(params.powerSource())) {
+		if (!rail.isSteam()) {
 			return;
 		}
 		float fireSeconds = rail.getFireSeconds();

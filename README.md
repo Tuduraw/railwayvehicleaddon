@@ -6,7 +6,7 @@
 鉄道車両と、曲線・勾配を自動生成する独自の線路システムを追加するアドオンMODです。
 
 - Minecraft 1.21.11 / Fabric Loader 0.18.2 以上 / Fabric API 0.139.4+1.21.11
-- 前提MOD: tudursvehiclemod 1.1.1 以上(Mojang マッピング版。[tudursvehiclemod-mojmap](https://github.com/Tuduraw/tudursvehiclemod-mojmap))
+- 前提MOD: tudursvehiclemod 1.1.2 以上(Mojang マッピング版。[tudursvehiclemod-mojmap](https://github.com/Tuduraw/tudursvehiclemod-mojmap))
 - Forge 1.20.1 版は別プロジェクト(`railwayvehicleaddon-forge`)で、このプロジェクトから生成します(そちらの `PORTING.md`)
 
 ---
@@ -187,8 +187,10 @@
 
 **車内を歩く**: 機体JSONに前提MODの `runways`(乗り物の上に立てる面。空母の甲板と同じ仕組み)があると、その面の上に立って
 車内を歩けます。拡張パックの旅客車は客室の床に張ってあり、幌のある端は連結面まで延ばしてあるので、走行中でも隣の車両へ
-歩いて移れます。面は前提MODの足場の小さな箱(1×1ブロック)を並べて作るため、1両あたり100個前後の足場ができます。
-長い編成を何本も置くとサーバー・描画の負荷が上がるので、気になる場合は機体JSONの `runways` を消してください
+歩いて移れます。床は前提MODが当たり判定として直接返すので(前提MOD 1.1.2 から。以前のように足場のエンティティは作りません)、
+車両を多く置いても足場の数は増えません。走っている列車の中のプレイヤーは、前提MODがクライアント側で車両と一緒に動かします。
+座っていないMob・防具立ては前提MODのサーバー側の運搬(空母の甲板向け)に従うため、速度の出る曲線では床からずれて落ちることがあります
+(乗せて運ぶときは座席に座らせてください)
 
 **ATOキー**(既定: Insert): 運転席で押すと、乗っている編成のATOを入れる・切ります(運行表が割り当てられている編成のみ)。
 

@@ -8,7 +8,6 @@ import com.example.railwayvehicleaddon.network.FeatureSyncPayload;
 import com.example.railwayvehicleaddon.network.PlaceResultPayload;
 import com.example.railwayvehicleaddon.entity.RailVehicleEntity;
 import com.example.railwayvehicleaddon.vehicle.RailVehicleParams;
-import com.example.railwayvehicleaddon.vehicle.RailVehicleParamsLoader;
 import com.example.railwayvehicleaddon.track.feature.MovingDeckFeature;
 import com.example.railwayvehicleaddon.track.feature.TrackFeature;
 import com.example.railwayvehicleaddon.survey.LayoutPlan;
@@ -613,7 +612,7 @@ public final class TrackManager {
 			if (!(entity instanceof RailVehicleEntity vehicle) || !vehicle.isOnTrack() || vehicle.getThrottle() == 0f) {
 				continue;
 			}
-			RailVehicleParams params = RailVehicleParamsLoader.get(vehicle.getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
+			RailVehicleParams params = vehicle.railParams();
 			if (!RailVehicleParams.ELECTRIC.equals(params.powerSource())) {
 				continue;
 			}

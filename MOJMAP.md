@@ -8,8 +8,8 @@
 - `build.gradle`: `mappings loom.officialMojangMappings()`。jar の名前に環境を付けました
   (`railwayvehicleaddon-<mod_version>-fabric-1.21.11.jar`。fabric.mod.json の版は `mod_version` のまま)。
 - `gradle.properties`: `yarn_mappings` を削除し、`mod_loader=fabric` を追加。前提MODは
-  `1.1.1-fabric-1.21.11`(tudursvehiclemod-mojmap の Maven の版)。
-- `fabric.mod.json`: 前提MODを `>=1.1.1`(Mojang マッピング版の最初の版)にしました。
+  `1.1.2-fabric-1.21.11`(tudursvehiclemod-mojmap の Maven の版。移行時は 1.1.1)。
+- `fabric.mod.json`: 前提MODを `>=1.1.1`(Mojang マッピング版の最初の版)にしました(その後 `>=1.1.2`。車内を歩く床が 1.1.2 の当たり判定を前提にするため)。
 - `src/**/*.java`: Loom の `migrateClientMappings --mappings net.minecraft:mappings:1.21.11` で、
   クラス・メソッド・フィールド・引数の名前を Mojang 名に変換(main と client を一緒に変換)。
   変換できなかったのは `PoseStack.peek()` → `last()` の3か所だけで、手で直しました

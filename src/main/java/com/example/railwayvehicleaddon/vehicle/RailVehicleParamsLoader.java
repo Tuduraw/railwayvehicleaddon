@@ -20,7 +20,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
 
 /**
  * 車両JSONの "rail" オブジェクトを読み込む。前提MODのVehicleDefinitionReloadListenerと
@@ -34,8 +33,10 @@ public final class RailVehicleParamsLoader implements SimpleSynchronousResourceR
 
 	private static volatile Map<Identifier, RailVehicleParams> params = Map.of();
 
-	public static Optional<RailVehicleParams> get(Identifier vehicleId) {
-		return Optional.ofNullable(params.get(vehicleId));
+	/** 車両のrail設定。車両JSONに "rail" が無ければ既定値。 */
+	public static RailVehicleParams getOrDefault(Identifier vehicleId) {
+		RailVehicleParams found = vehicleId == null ? null : params.get(vehicleId);
+		return found == null ? RailVehicleParams.DEFAULT : found;
 	}
 
 	@Override

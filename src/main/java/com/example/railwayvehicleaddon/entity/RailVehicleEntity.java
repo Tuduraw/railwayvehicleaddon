@@ -1,7 +1,11 @@
 package com.example.railwayvehicleaddon.entity;
 
 import com.example.railwayvehicleaddon.RailwayVehicleAddon;
+import com.example.railwayvehicleaddon.block.OperationControllerBlockEntity;
+import com.example.railwayvehicleaddon.item.ModItems;
+import com.example.railwayvehicleaddon.network.RailSoundPayload;
 import com.example.railwayvehicleaddon.operation.AtoState;
+import com.example.railwayvehicleaddon.operation.OperationState;
 import com.example.railwayvehicleaddon.operation.Timetable;
 import com.example.railwayvehicleaddon.operation.TrainOperation;
 import com.example.railwayvehicleaddon.track.TrackManager;
@@ -11,12 +15,10 @@ import com.example.railwayvehicleaddon.track.TrackPos;
 import com.example.railwayvehicleaddon.track.TrackSegment;
 import com.example.railwayvehicleaddon.vehicle.RailVehicleParams;
 import com.example.railwayvehicleaddon.vehicle.RailVehicleParamsLoader;
+import com.example.tudursvehiclemod.asset.SeatDefinition;
 import com.example.tudursvehiclemod.asset.VehicleDefinition;
 import com.example.tudursvehiclemod.entity.AbstractVehicleEntity;
 import com.example.tudursvehiclemod.entity.FreeCameraVehicle;
-import org.joml.Matrix4f;
-import org.joml.Quaternionf;
-
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -26,12 +28,21 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BiConsumer;
+import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.particles.ParticleOptions;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
@@ -45,6 +56,9 @@ import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import org.joml.Matrix4f;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
 
 /**
  * 独自レール上を走る鉄道車両。
@@ -84,10 +98,10 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			SynchedEntityData.defineId(RailVehicleEntity.class, EntityDataSerializers.BYTE);
 	private static final EntityDataAccessor<Float> RAIL_SPEED =
 			SynchedEntityData.defineId(RailVehicleEntity.class, EntityDataSerializers.FLOAT);
-	/** 台車の設定。クライアントがマルチプレイでもサーバーのデータを知らずに済むよう文字列で同期する */
 	/** 排煙の発生源(rail.smoke)。rail設定はサーバー側のデータなので、BOGIE_SPECと同じく文字列で同期する */
 	private static final EntityDataAccessor<String> SMOKE_SPEC =
 			SynchedEntityData.defineId(RailVehicleEntity.class, EntityDataSerializers.STRING);
+	/** 台車の設定。クライアントがマルチプレイでもサーバーのデータを知らずに済むよう文字列で同期する */
 	private static final EntityDataAccessor<String> BOGIE_SPEC =
 			SynchedEntityData.defineId(RailVehicleEntity.class, EntityDataSerializers.STRING);
 	/** 関節部(炭水車)・回る車輪・ロッドの設定(rail.articulated / wheels / rods)。BOGIE_SPECと同じく文字列で同期する */
@@ -102,7 +116,9 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	/** 石炭・木炭1個で燃やせる時間(出力100%でのtick数) */
 	private static final int COAL_TICKS = 1600;
 
-	/** 蒸気機関車のHUD表示用(HudVariableProviderで"rail_fire_seconds"・"rail_coal_count"として公開) */
+	/** FIRE_SECONDS_SYNC の、蒸気機関車でない車両の値 */
+	private static final float NOT_STEAM = -1f;
+	/** 蒸気機関車のHUD表示用(HudVariableProviderで"rail_fire_seconds"・"rail_coal_count"として公開)。蒸気機関車でなければ NOT_STEAM */
 	private static final EntityDataAccessor<Float> FIRE_SECONDS_SYNC =
 			SynchedEntityData.defineId(RailVehicleEntity.class, EntityDataSerializers.FLOAT);
 	private static final EntityDataAccessor<Integer> COAL_COUNT_SYNC =
@@ -132,7 +148,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	/** ATOの状態(運行表を持つ車両だけが使う) */
 	private final AtoState atoState = new AtoState();
 	/** 割り当てた運行管理装置の位置・組の番号・経路アイテムの内容(割り当てられていなければnull) */
-	private net.minecraft.core.BlockPos managedBy;
+	private BlockPos managedBy;
 	private int managedRow = -1;
 	private int managedHash;
 	private int managedCheckCooldown = 20;
@@ -156,7 +172,6 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	 * 0にして連結面どうしを突き合わせる(以前は0.4空けていたため、模型のような隙間ができていた)
 	 */
 	private static final double COUPLER_GAP = 0.0;
-	/** 連結相手を探す間隔(tick) */
 	/** 停車中の車両が連結相手を探す間隔(tick)。走行中は毎tick探す */
 	private static final int COUPLE_SCAN_INTERVAL = 10;
 	/** この編成の位置更新を先頭車がまとめて済ませたワールド時刻。自分の番が来たときの二重処理を防ぐ */
@@ -217,6 +232,11 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		super(type, world);
 	}
 
+	/** この車両のrail設定(車両JSONに "rail" が無ければ既定値)。 */
+	public RailVehicleParams railParams() {
+		return RailVehicleParamsLoader.getOrDefault(this.getVehicleDefinitionId());
+	}
+
 	@Override
 	protected Identifier defaultDefinitionId() {
 		return Identifier.fromNamespaceAndPath(RailwayVehicleAddon.MOD_ID, "sample_railcar");
@@ -236,7 +256,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		builder.define(ANIM_SPEC, "");
 		builder.define(SOUND_SPEC, "");
 		builder.define(SMOKE_SPEC, "");
-		builder.define(FIRE_SECONDS_SYNC, 0f);
+		builder.define(FIRE_SECONDS_SYNC, NOT_STEAM);
 		builder.define(COAL_COUNT_SYNC, 0);
 	}
 
@@ -258,7 +278,15 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 
 	/** 火室の残り燃焼時間(秒)。蒸気機関車のHUD表示用。 */
 	public float getFireSeconds() {
-		return this.entityData.get(FIRE_SECONDS_SYNC);
+		return Math.max(0f, this.entityData.get(FIRE_SECONDS_SYNC));
+	}
+
+	/**
+	 * 蒸気機関車(rail.power_source が steam)か。クライアントでも使える(rail設定はサーバー側のデータで、サーバーに接続した
+	 * クライアントは持っていないため、同期している火室の値で見分ける)。
+	 */
+	public boolean isSteam() {
+		return this.entityData.get(FIRE_SECONDS_SYNC) != NOT_STEAM;
 	}
 
 	/** インベントリに残っている石炭・木炭・石炭ブロックの個数(ブロックも1個として数える)。 */
@@ -300,10 +328,9 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			return;
 		}
 		TrackNetwork network = TrackManager.network(world);
-		RailVehicleParams params = RailVehicleParamsLoader.get(this.getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
-		updateBogieSpec(params);
+		RailVehicleParams params = railParams();
+		syncSpecs(params);
 		syncStatus(params);
-		syncSmokeSpec(params);
 
 		if (this.isPassenger() && !(this.getVehicle() instanceof RailVehicleEntity)) {
 			// クレーンのフックなど、他のエンティティに載って(吊られて)いる: 線路から外し、連結も外す。
@@ -513,9 +540,9 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	}
 
 	private void warnReverser() {
-		if (drivingPlayer() instanceof net.minecraft.server.level.ServerPlayer player && this.reverserWarningCooldown <= 0) {
+		if (drivingPlayer() instanceof ServerPlayer player && this.reverserWarningCooldown <= 0) {
 			this.reverserWarningCooldown = 40;
-			player.displayClientMessage(net.minecraft.network.chat.Component.translatable("message.railwayvehicleaddon.reverser_locked"), true);
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.reverser_locked"), true);
 		}
 	}
 
@@ -531,19 +558,15 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 
 	/** 運転者にだけ、一定間隔でアクションバーに知らせる。 */
 	private void warnDriver(String key) {
-		if (drivingPlayer() instanceof net.minecraft.server.level.ServerPlayer player && this.powerWarningCooldown-- <= 0) {
+		if (drivingPlayer() instanceof ServerPlayer player && this.powerWarningCooldown-- <= 0) {
 			this.powerWarningCooldown = 60;
-			player.displayClientMessage(net.minecraft.network.chat.Component.translatable(key), true);
+			player.displayClientMessage(Component.translatable(key), true);
 		}
 	}
 
 	private void warnNoPower(RailVehicleParams params) {
-		if (drivingPlayer() instanceof net.minecraft.server.level.ServerPlayer player
-				&& this.powerWarningCooldown-- <= 0) {
-			this.powerWarningCooldown = 60;
-			player.displayClientMessage(net.minecraft.network.chat.Component.translatable(RailVehicleParams.STEAM.equals(params.powerSource())
-					? "message.railwayvehicleaddon.power.no_coal" : "message.railwayvehicleaddon.power.no_catenary"), true);
-		}
+		warnDriver(RailVehicleParams.STEAM.equals(params.powerSource())
+				? "message.railwayvehicleaddon.power.no_coal" : "message.railwayvehicleaddon.power.no_catenary");
 	}
 
 	/**
@@ -582,15 +605,6 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		return next;
 	}
 
-	/**
-	 * 動力を得る。得られればtrue。
-	 * <ul>
-	 *   <li>fuel: 前提MODの燃料システムに任せる(燃料切れはスロットル側で0になる)</li>
-	 *   <li>steam: 車両のインベントリの石炭・木炭(石炭ブロック)を火室へくべて燃やす。
-	 *       水は前提MODの燃料を水として使い、給水塔で補給する</li>
-	 *   <li>electric: 車両(中心・前後の台車のいずれか)が電化区間にいれば架線から給電される</li>
-	 * </ul>
-	 */
 	/**
 	 * 動力を得る。得られた割合(0.0〜1.0)を返す。0は力行不可。
 	 * <ul>
@@ -637,8 +651,6 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		return 1f;
 	}
 
-	// ------------------------------------------------------------------ 連結
-
 	// ------------------------------------------------------------------ 運転席と視点
 
 	/**
@@ -647,13 +659,24 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	 * なってしまう。このアドオンでは、運転席を持つ車両だけを動力車として扱う。
 	 */
 	public boolean hasDriverSeat() {
-		for (com.example.tudursvehiclemod.asset.SeatDefinition seat : this.getDefinition().seats()) {
-			if (seat.driver()) {
-				return true;
+		VehicleDefinition definition = this.getDefinition();
+		if (definition != this.driverSeatDefinition) {
+			// 客車は座席が多く(1両に数十席)、毎tick何度も呼ばれるので、機体定義ごとに1回だけ調べる
+			boolean found = false;
+			for (SeatDefinition seat : definition.seats()) {
+				if (seat.driver()) {
+					found = true;
+					break;
+				}
 			}
+			this.driverSeat = found;
+			this.driverSeatDefinition = definition;
 		}
-		return false;
+		return this.driverSeat;
 	}
+
+	private VehicleDefinition driverSeatDefinition;
+	private boolean driverSeat;
 
 	/** 実際に運転している(運転席のある車両の座席0にいる)プレイヤー。いなければnull。 */
 	public Player drivingPlayer() {
@@ -686,7 +709,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	 */
 	@Override
 	public InteractionResult interact(Player player, InteractionHand hand) {
-		if (player.getItemInHand(hand).is(com.example.railwayvehicleaddon.item.ModItems.COUPLING_LEVER)) {
+		if (player.getItemInHand(hand).is(ModItems.COUPLING_LEVER)) {
 			if (this.level() instanceof ServerLevel serverWorld) {
 				useCouplingLever(player, serverWorld, TrackManager.network(serverWorld));
 			}
@@ -701,7 +724,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	 * 運行管理装置(pos、組の番号row)から運行表を割り当てる。最初の駅からたどり直し、ATOを入れる。
 	 * hashは割り当てた経路アイテムの内容(変わったら割り当て直すため)。
 	 */
-	public void assignTimetable(Timetable table, net.minecraft.core.BlockPos by, int row, int hash) {
+	public void assignTimetable(Timetable table, BlockPos by, int row, int hash) {
 		this.timetable = table;
 		this.stopIndex = 0;
 		this.stopStep = 1;
@@ -731,7 +754,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		return this.managedBy != null;
 	}
 
-	public net.minecraft.core.BlockPos managedBy() {
+	public BlockPos managedBy() {
 		return this.managedBy;
 	}
 
@@ -799,7 +822,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		}
 		if (drivingPlayer() != player) {
 			// 乗客は操作できない(運転席にいるプレイヤーだけ。ATOで走っている間は運行管理装置の画面で入切する)
-			player.displayClientMessage(net.minecraft.network.chat.Component.translatable("message.railwayvehicleaddon.ato.driver_only"), true);
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.ato.driver_only"), true);
 			return;
 		}
 		RailVehicleEntity controller = null;
@@ -812,7 +835,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			}
 		}
 		if (controller == null) {
-			player.displayClientMessage(net.minecraft.network.chat.Component.translatable("message.railwayvehicleaddon.ato.no_timetable"), true);
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.ato.no_timetable"), true);
 			return;
 		}
 		AtoState ato = controller.atoState;
@@ -823,7 +846,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			}
 			ato.dir = 0;
 		}
-		player.displayClientMessage(net.minecraft.network.chat.Component.translatable(ato.enabled
+		player.displayClientMessage(Component.translatable(ato.enabled
 				? "message.railwayvehicleaddon.ato.on" : "message.railwayvehicleaddon.ato.off"), true);
 	}
 
@@ -851,7 +874,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		if (!world.hasChunkAt(this.managedBy)) {
 			return;
 		}
-		if (!(world.getBlockEntity(this.managedBy) instanceof com.example.railwayvehicleaddon.block.OperationControllerBlockEntity controller)
+		if (!(world.getBlockEntity(this.managedBy) instanceof OperationControllerBlockEntity controller)
 				|| !controller.assigns(this.managedRow, this.getUUID())) {
 			clearTimetable();
 		}
@@ -907,13 +930,13 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		}
 		boolean aEnd = player.position().distanceToSqr(a) <= player.position().distanceToSqr(b);
 		if (uncoupleEnd(aEnd)) {
-			player.displayClientMessage(net.minecraft.network.chat.Component.translatable("message.railwayvehicleaddon.uncoupled"), true);
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.uncoupled"), true);
 			return;
 		}
 		if (coupleAt(world, network, aEnd, MANUAL_COUPLE_DISTANCE, true)) {
-			player.displayClientMessage(net.minecraft.network.chat.Component.translatable("message.railwayvehicleaddon.coupled"), true);
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.coupled"), true);
 		} else {
-			player.displayClientMessage(net.minecraft.network.chat.Component.translatable("message.railwayvehicleaddon.no_coupling_partner"), true);
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.no_coupling_partner"), true);
 		}
 	}
 
@@ -921,14 +944,14 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	 * 連結解放キー(乗車中)。片側だけつながっていればその側を、両側つながっていればプレイヤーが
 	 * 向いている側を外す。
 	 */
-	public void uncoupleByKey(net.minecraft.server.level.ServerPlayer player) {
+	public void uncoupleByKey(ServerPlayer player) {
 		if (!(this.level() instanceof ServerLevel serverWorld)) {
 			return;
 		}
 		boolean hasA = this.couplingA.isPresent();
 		boolean hasB = this.couplingB.isPresent();
 		if (!hasA && !hasB) {
-			player.displayClientMessage(net.minecraft.network.chat.Component.translatable("message.railwayvehicleaddon.not_coupled"), true);
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.not_coupled"), true);
 			return;
 		}
 		boolean aEnd;
@@ -946,7 +969,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			aEnd = look.dot(a.subtract(eye).normalize()) >= look.dot(b.subtract(eye).normalize());
 		}
 		if (uncoupleEnd(aEnd)) {
-			player.displayClientMessage(net.minecraft.network.chat.Component.translatable("message.railwayvehicleaddon.uncoupled"), true);
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.uncoupled"), true);
 		}
 	}
 
@@ -962,7 +985,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	 * 合わせてこの項目を指定することを推奨する)。
 	 */
 	private double couplerOffset(boolean aEnd) {
-		RailVehicleParams params = RailVehicleParamsLoader.get(this.getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
+		RailVehicleParams params = railParams();
 		float local = aEnd ? params.couplerFront() : params.couplerRear();
 		double zc = centerZ();
 		if (Float.isNaN(local)) {
@@ -1132,11 +1155,11 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			other.uncoupledB = Optional.empty();
 		}
 		playRailSound("couple");
-		if (this.getControllingPassenger() instanceof net.minecraft.server.level.ServerPlayer player) {
-			player.displayClientMessage(net.minecraft.network.chat.Component.translatable("message.railwayvehicleaddon.coupled"), true);
+		if (this.getControllingPassenger() instanceof ServerPlayer player) {
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.coupled"), true);
 		}
-		if (other.getControllingPassenger() instanceof net.minecraft.server.level.ServerPlayer player) {
-			player.displayClientMessage(net.minecraft.network.chat.Component.translatable("message.railwayvehicleaddon.coupled"), true);
+		if (other.getControllingPassenger() instanceof ServerPlayer player) {
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.coupled"), true);
 		}
 	}
 
@@ -1173,6 +1196,9 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	 * signは「自分の前後と同じ向きなら+1、車首が逆向きに連結されていれば-1」。
 	 */
 	private List<ConsistMember> buildConsist(Level world) {
+		if (this.couplingA.isEmpty() && this.couplingB.isEmpty()) {
+			return List.of(new ConsistMember(this, 0.0, 1));
+		}
 		List<ConsistMember> members = new ArrayList<>();
 		Set<UUID> visited = new HashSet<>();
 		visited.add(this.getUUID());
@@ -1240,7 +1266,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		double weightedGradeMass = 0.0;
 		// 総括制御: 先頭車(=this。運転者がいれば必ず運転している車両)のハンドルを、編成のすべての動力車に伝える。
 		// 他の運転台にいる人のノッチ操作は使わない(ブレーキだけは、どの運転台からでも編成全体に効く)
-		RailVehicleParams leaderParams = RailVehicleParamsLoader.get(this.getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
+		RailVehicleParams leaderParams = railParams();
 		float handle = this.updateOwnThrottleAndNotch(this.getDefinition(), leaderParams);
 		boolean braking = this.isOwnBraking();
 
@@ -1254,7 +1280,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		boolean override = this.drivingPlayer() != null && (braking || this.getSyncedThrottleInput() != 0f);
 		for (ConsistMember m : members) {
 			RailVehicleEntity car = m.entity();
-			RailVehicleParams carParams = RailVehicleParamsLoader.get(car.getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
+			RailVehicleParams carParams = car.railParams();
 			meanBrake += carParams.brake() * carParams.mass();
 			meanResistance += carParams.resistance() * carParams.mass();
 			massSum += carParams.mass();
@@ -1292,7 +1318,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		int poweredUnits = 0;
 		for (ConsistMember m : members) {
 			RailVehicleEntity car = m.entity();
-			RailVehicleParams carParams = RailVehicleParamsLoader.get(car.getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
+			RailVehicleParams carParams = car.railParams();
 			VehicleDefinition carDef = car.getDefinition();
 			totalMass += carParams.mass();
 			boolean powerUnit = car.isPowerUnit(carParams);
@@ -1386,7 +1412,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 
 		for (ConsistMember m : members) {
 			RailVehicleEntity car = m.entity();
-			RailVehicleParams carParams = RailVehicleParamsLoader.get(car.getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
+			RailVehicleParams carParams = car.railParams();
 			// walkで得られる向きは先頭車の向き。逆向きに連結された車両は向きを反転して置く(反転しないと180度回ってしまう)
 			TrackPos walked = network.walk(newLeaderPos, m.offset()).pos();
 			TrackPos carPos = m.sign() > 0 ? walked : new TrackPos(walked.segmentId(), walked.s(), -walked.facing());
@@ -1398,9 +1424,8 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			car.entityData.set(TRACK_S, (float) carPos.s());
 			car.entityData.set(TRACK_FACING, (byte) carPos.facing());
 			car.entityData.set(RAIL_SPEED, (float) carSpeed);
-			car.updateBogieSpec(carParams);
+			car.syncSpecs(carParams);
 			car.syncStatus(carParams);
-			car.syncSmokeSpec(carParams);
 			car.applyPlacement(network, carPos);
 			car.consistHandledTick = tick;
 		}
@@ -1566,12 +1591,8 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		return (this.frontZ + this.rearZ) * 0.5;
 	}
 
-	/** 台車の接地点。車止めの先は線路の端の向きに沿って外挿する。 */
-	private static Vec3 contactPoint(TrackNetwork network, TrackNetwork.Walk walk, double requestedOffset) {
-		TrackPoint p = network.pointAt(walk.pos());
-		if (p == null) {
-			return null;
-		}
+	/** 台車の接地点(pはwalkの位置の線路上の点)。車止めの先は線路の端の向きに沿って外挿する。 */
+	private static Vec3 contactPoint(TrackPoint p, TrackNetwork.Walk walk, double requestedOffset) {
 		Vec3 base = new Vec3(p.x(), p.y(), p.z());
 		if (walk.blocked() && walk.overshoot() > 0.0) {
 			double sign = Math.signum(requestedOffset) * walk.facing();
@@ -1584,15 +1605,17 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		double zc = centerZ();
 		// サーバーでは、台車が開通していない分岐側から分岐器を通り抜けたら分岐器を進入側へ切り替える(割り出し)。
 		// これをしないと、先頭の台車の通過後に後ろの台車・後続車が分岐器の開通方向へ逸れる
-		java.util.function.BiConsumer<Long, Long> trailing = this.level() instanceof ServerLevel serverWorld
+		BiConsumer<Long, Long> trailing = this.level() instanceof ServerLevel serverWorld
 				? (node, segment) -> TrackManager.trailSwitch(serverWorld, node, segment, this.getUUID()) : null;
 		TrackNetwork.Walk frontWalk = network.walk(center, this.frontZ - zc, trailing);
 		TrackNetwork.Walk rearWalk = network.walk(center, this.rearZ - zc, trailing);
-		Vec3 front = contactPoint(network, frontWalk, this.frontZ - zc);
-		Vec3 rear = contactPoint(network, rearWalk, this.rearZ - zc);
-		if (front == null || rear == null) {
+		TrackPoint frontPoint = network.pointAt(frontWalk.pos());
+		TrackPoint rearPoint = network.pointAt(rearWalk.pos());
+		if (frontPoint == null || rearPoint == null) {
 			return;
 		}
+		Vec3 front = contactPoint(frontPoint, frontWalk, this.frontZ - zc);
+		Vec3 rear = contactPoint(rearPoint, rearWalk, this.rearZ - zc);
 		double span = this.frontZ - this.rearZ;
 		Vec3 axis = front.subtract(rear);
 		Vec3 origin = rear.add(axis.scale(span > 1.0e-6 ? -this.rearZ / span : 0.5));
@@ -1600,12 +1623,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		float targetYaw = (float) Math.toDegrees(Math.atan2(-axis.x, axis.z));
 		float targetPitch = (float) -Math.toDegrees(Math.atan2(axis.y, Math.max(1.0e-6, horizontal)));
 
-		TrackPoint frontPoint = network.pointAt(frontWalk.pos());
-		TrackPoint rearPoint = network.pointAt(rearWalk.pos());
-		double cant = 0.0;
-		if (frontPoint != null && rearPoint != null) {
-			cant = (frontPoint.cantRad() * frontWalk.facing() + rearPoint.cantRad() * rearWalk.facing()) * 0.5;
-		}
+		double cant = (frontPoint.cantRad() * frontWalk.facing() + rearPoint.cantRad() * rearWalk.facing()) * 0.5;
 
 		Vec3 previous = new Vec3(this.getX(), this.getY(), this.getZ());
 		this.setPos(origin.x, origin.y + RAIL_TOP, origin.z);
@@ -1650,10 +1668,10 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			double offset = bogie.contactZ - zc;
 			TrackNetwork.Walk walk = network.walk(center, offset);
 			TrackPoint p = network.pointAt(walk.pos());
-			Vec3 contact = contactPoint(network, walk, offset);
-			if (p == null || contact == null) {
+			if (p == null) {
 				continue;
 			}
+			Vec3 contact = contactPoint(p, walk, offset);
 			double dirX = p.dirX() * walk.facing();
 			double dirZ = p.dirZ() * walk.facing();
 			float yaw = (float) Math.toDegrees(Math.atan2(-dirX, dirZ));
@@ -1661,9 +1679,9 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			float roll = (float) Math.toDegrees(p.cantRad() * walk.facing());
 			Quaternionf trackRot = orientation(yaw, pitch, roll);
 			// 回転中心の行き先(ワールド)→モデル座標
-			org.joml.Vector3f local = new org.joml.Vector3f(bogie.pivotX * scale, bogie.pivotY * scale, 0f);
+			Vector3f local = new Vector3f(bogie.pivotX * scale, bogie.pivotY * scale, 0f);
 			trackRot.transform(local);
-			org.joml.Vector3f target = new org.joml.Vector3f(
+			Vector3f target = new Vector3f(
 					(float) (contact.x + local.x - entity.x),
 					(float) (contact.y + RAIL_TOP + local.y - entity.y),
 					(float) (contact.z + local.z - entity.z));
@@ -1682,23 +1700,22 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 				double rOff = art.rearZ * scale - zc;
 				TrackNetwork.Walk fw = network.walk(center, fOff);
 				TrackNetwork.Walk rw = network.walk(center, rOff);
-				Vec3 fc = contactPoint(network, fw, fOff);
-				Vec3 rc = contactPoint(network, rw, rOff);
-				if (fc == null || rc == null) {
+				TrackPoint pf = network.pointAt(fw.pos());
+				TrackPoint pr = network.pointAt(rw.pos());
+				if (pf == null || pr == null) {
 					continue;
 				}
+				Vec3 fc = contactPoint(pf, fw, fOff);
+				Vec3 rc = contactPoint(pr, rw, rOff);
 				Vec3 front = fc.add(0.0, RAIL_TOP + art.hingeY * scale, 0.0);
 				Vec3 rear = rc.add(0.0, RAIL_TOP + art.hingeY * scale, 0.0);
 				Vec3 axis = front.subtract(rear);
 				double horizontal = Math.hypot(axis.x, axis.z);
 				float yaw = (float) Math.toDegrees(Math.atan2(-axis.x, axis.z));
 				float pitch = (float) -Math.toDegrees(Math.atan2(axis.y, Math.max(1.0e-6, horizontal)));
-				TrackPoint pf = network.pointAt(fw.pos());
-				TrackPoint pr = network.pointAt(rw.pos());
-				float roll = pf == null || pr == null ? 0f
-						: (float) Math.toDegrees((pf.cantRad() * fw.facing() + pr.cantRad() * rw.facing()) * 0.5);
+				float roll = (float) Math.toDegrees((pf.cantRad() * fw.facing() + pr.cantRad() * rw.facing()) * 0.5);
 				Quaternionf rel = new Quaternionf(bodyInv).mul(orientation(yaw, pitch, roll));
-				org.joml.Vector3f target = new org.joml.Vector3f(
+				Vector3f target = new Vector3f(
 						(float) (front.x - entity.x), (float) (front.y - entity.y), (float) (front.z - entity.z));
 				bodyInv.transform(target);
 				target.div(scale);
@@ -1708,7 +1725,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 						.translate(0f, -art.hingeY, -art.frontZ));
 				continue;
 			}
-			org.joml.Vector3f hingeLocal = new org.joml.Vector3f(0f, art.hingeY * scale, art.hingeZ * scale);
+			Vector3f hingeLocal = new Vector3f(0f, art.hingeY * scale, art.hingeZ * scale);
 			bodyRot.transform(hingeLocal);
 			Vec3 hinge = entity.add(hingeLocal.x, hingeLocal.y, hingeLocal.z);
 			double length = (art.hingeZ - art.rearZ) * scale;
@@ -1718,26 +1735,28 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			// 弦の長さが関節〜後端の長さに一致するよう、線路上の後端の位置を少しずつ合わせる
 			double distance = art.rearZ * scale - zc;
 			TrackNetwork.Walk walk = null;
+			TrackPoint p = null;
 			Vec3 rear = null;
 			for (int iter = 0; iter < 4; iter++) {
-				walk = network.walk(center, distance);
-				Vec3 c = contactPoint(network, walk, distance);
-				if (c == null) {
+				TrackNetwork.Walk w = network.walk(center, distance);
+				TrackPoint wp = network.pointAt(w.pos());
+				if (wp == null) {
 					break;
 				}
-				rear = c.add(0.0, RAIL_TOP + art.hingeY * scale, 0.0);
+				walk = w;
+				p = wp;
+				rear = contactPoint(wp, w, distance).add(0.0, RAIL_TOP + art.hingeY * scale, 0.0);
 				double chord = hinge.distanceTo(rear);
 				distance += chord - length;
 			}
-			if (rear == null || walk == null) {
+			if (rear == null) {
 				continue;
 			}
 			Vec3 axis = hinge.subtract(rear);
 			double horizontal = Math.hypot(axis.x, axis.z);
 			float yaw = (float) Math.toDegrees(Math.atan2(-axis.x, axis.z));
 			float pitch = (float) -Math.toDegrees(Math.atan2(axis.y, Math.max(1.0e-6, horizontal)));
-			TrackPoint p = network.pointAt(walk.pos());
-			float roll = p == null ? 0f : (float) Math.toDegrees(p.cantRad() * walk.facing());
+			float roll = (float) Math.toDegrees(p.cantRad() * walk.facing());
 			Quaternionf rel = new Quaternionf(bodyInv).mul(orientation(yaw, pitch, roll));
 			poses.put(art.part, new Matrix4f()
 					.translate(0f, art.hingeY, art.hingeZ)
@@ -1792,13 +1811,13 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 						   float phaseRad, float length, float crossheadY, float direction) {
 	}
 
-	/** サーバー側: パラメータから台車設定文字列を作って同期する。 */
 	/** 蒸気機関車のHUD向けに、火室の残り時間とインベントリの石炭個数を同期する(毎tick、サーバーのみ)。 */
 	private void syncStatus(RailVehicleParams params) {
 		if (!RailVehicleParams.STEAM.equals(params.powerSource())) {
+			this.entityData.set(FIRE_SECONDS_SYNC, NOT_STEAM);
 			return;
 		}
-		this.entityData.set(FIRE_SECONDS_SYNC, (float) (this.fireTicks / 20.0));
+		this.entityData.set(FIRE_SECONDS_SYNC, (float) (Math.max(0.0, this.fireTicks) / 20.0));
 		int count = 0;
 		for (int i = 0; i < this.getContainerSize(); i++) {
 			ItemStack stack = this.getItem(i);
@@ -1815,7 +1834,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	private float[][] smokeEmitters = new float[0][];
 	private String[] smokeTypes = new String[0];
 
-	/** サーバー: rail.smoke を文字列にして同期する(変わったときだけ書き込む)。 */
+	/** サーバー: rail.smoke を文字列にして同期する。 */
 	private void syncSmokeSpec(RailVehicleParams params) {
 		StringBuilder sb = new StringBuilder();
 		for (RailVehicleParams.SmokeEmitter e : params.smoke()) {
@@ -1868,9 +1887,9 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			return;
 		}
 		float intensity = Mth.clamp(Math.abs(this.getThrottle()), 0f, 1f);
-		org.joml.Quaternionf orientation = this.tudursvehiclemod$getBodyOrientation();
+		Quaternionf orientation = this.tudursvehiclemod$getBodyOrientation();
 		float scale = this.getScale();
-		net.minecraft.util.RandomSource random = this.getRandom();
+		RandomSource random = this.getRandom();
 		for (int i = 0; i < this.smokeEmitters.length; i++) {
 			float[] e = this.smokeEmitters[i];
 			float perTick = e[4] + (e[3] - e[4]) * intensity;
@@ -1878,12 +1897,12 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			if (count <= 0) {
 				continue;
 			}
-			org.joml.Vector3f local = new org.joml.Vector3f(e[0] * scale, e[1] * scale, e[2] * scale);
+			Vector3f local = new Vector3f(e[0] * scale, e[1] * scale, e[2] * scale);
 			orientation.transform(local);
-			net.minecraft.core.particles.ParticleOptions effect = switch (this.smokeTypes[i]) {
-				case "campfire" -> net.minecraft.core.particles.ParticleTypes.CAMPFIRE_COSY_SMOKE;
-				case "steam" -> net.minecraft.core.particles.ParticleTypes.CLOUD;
-				default -> net.minecraft.core.particles.ParticleTypes.LARGE_SMOKE;
+			ParticleOptions effect = switch (this.smokeTypes[i]) {
+				case "campfire" -> ParticleTypes.CAMPFIRE_COSY_SMOKE;
+				case "steam" -> ParticleTypes.CLOUD;
+				default -> ParticleTypes.LARGE_SMOKE;
 			};
 			for (int k = 0; k < count; k++) {
 				double x = this.getX() + local.x + (random.nextDouble() - 0.5) * 0.25;
@@ -1894,6 +1913,29 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			}
 		}
 	}
+
+	/**
+	 * サーバー側: クライアントが使う設定(台車、関節部・車輪・ロッド、音、排煙)を文字列にして同期する。
+	 * rail設定・機体定義・scaleから決まるので、それらが変わったとき(最初のtick、データの再読み込み、機体の種類の変更)だけ作り直す。
+	 */
+	private void syncSpecs(RailVehicleParams params) {
+		VehicleDefinition definition = this.getDefinition();
+		float scale = this.getScale();
+		if (params == this.syncedParams && definition == this.syncedDefinition && scale == this.syncedScale) {
+			return;
+		}
+		this.syncedParams = params;
+		this.syncedDefinition = definition;
+		this.syncedScale = scale;
+		updateBogieSpec(params);
+		syncAnimSpec(params);
+		syncSoundSpec(params);
+		syncSmokeSpec(params);
+	}
+
+	private RailVehicleParams syncedParams;
+	private VehicleDefinition syncedDefinition;
+	private float syncedScale = Float.NaN;
 
 	private void updateBogieSpec(RailVehicleParams params) {
 		StringBuilder sb = new StringBuilder();
@@ -1911,8 +1953,6 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			this.entityData.set(BOGIE_SPEC, spec);
 		}
 		parseBogieSpec(spec);
-		syncAnimSpec(params);
-		syncSoundSpec(params);
 	}
 
 	// ------------------------------------------------------------------ 音
@@ -2022,17 +2062,17 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		if (!(this.level() instanceof ServerLevel)) {
 			return;
 		}
-		com.example.railwayvehicleaddon.network.RailSoundPayload payload =
-				new com.example.railwayvehicleaddon.network.RailSoundPayload(this.getId(), kind);
-		java.util.Set<net.minecraft.server.level.ServerPlayer> targets = new java.util.HashSet<>(
-				net.fabricmc.fabric.api.networking.v1.PlayerLookup.tracking(this));
+		RailSoundPayload payload =
+				new RailSoundPayload(this.getId(), kind);
+		Set<ServerPlayer> targets = new HashSet<>(
+				PlayerLookup.tracking(this));
 		for (Entity passenger : this.getPassengers()) {
-			if (passenger instanceof net.minecraft.server.level.ServerPlayer player) {
+			if (passenger instanceof ServerPlayer player) {
 				targets.add(player);
 			}
 		}
-		for (net.minecraft.server.level.ServerPlayer player : targets) {
-			net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(player, payload);
+		for (ServerPlayer player : targets) {
+			ServerPlayNetworking.send(player, payload);
 		}
 	}
 
@@ -2049,11 +2089,11 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 	 * サーバー側: 車体の hit(ワールド座標)を右クリックして乗る。運転席が空いていて、そのそばを押したなら運転席、
 	 * それ以外は押した位置に最も近い空いた客席に座る。乗れたらtrue。
 	 */
-	public boolean boardNear(net.minecraft.server.level.ServerPlayer player, Vec3 hit) {
+	public boolean boardNear(ServerPlayer player, Vec3 hit) {
 		if (player.isPassenger() || player.distanceToSqr(hit) > 8.0 * 8.0) {
 			return false;
 		}
-		java.util.List<com.example.tudursvehiclemod.asset.SeatDefinition> defs = this.getDefinition().seats();
+		List<SeatDefinition> defs = this.getDefinition().seats();
 		if (defs.isEmpty()) {
 			return false;
 		}
@@ -2080,7 +2120,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			best = 0;
 		}
 		if (best < 0 && cab && !cabOpen) {
-			player.displayClientMessage(net.minecraft.network.chat.Component.translatable("message.railwayvehicleaddon.ato.cab_locked"), true);
+			player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.ato.cab_locked"), true);
 		}
 		return best >= 0 && this.tudursvehiclemod$mountToSeat(player, best);
 	}
@@ -2094,8 +2134,8 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 			return false;
 		}
 		RailVehicleEntity controller = null;
-		com.example.railwayvehicleaddon.operation.OperationState.Consist consist =
-				com.example.railwayvehicleaddon.operation.OperationState.get(world).consistOf(this.getUUID(), world.getGameTime());
+		OperationState.Consist consist =
+				OperationState.get(world).consistOf(this.getUUID(), world.getGameTime());
 		if (consist != null) {
 			controller = consist.controller();
 		} else if (this.timetable != null) {
@@ -2114,7 +2154,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 				}
 			}
 			if (passenger instanceof Player player) {
-				player.displayClientMessage(net.minecraft.network.chat.Component.translatable("message.railwayvehicleaddon.ato.cab_locked"), true);
+				player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.ato.cab_locked"), true);
 			}
 			return false;
 		}
@@ -2134,13 +2174,13 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 				super.tudursvehiclemod$trySwitchSeat(passenger, !forward);
 			}
 			if (passenger instanceof Player player) {
-				player.displayClientMessage(net.minecraft.network.chat.Component.translatable("message.railwayvehicleaddon.ato.cab_locked"), true);
+				player.displayClientMessage(Component.translatable("message.railwayvehicleaddon.ato.cab_locked"), true);
 			}
 		}
 	}
 
 	/** 警笛キー(運転者のみ)。連打しても1秒に1回まで。 */
-	public void hornByKey(net.minecraft.server.level.ServerPlayer player) {
+	public void hornByKey(ServerPlayer player) {
 		if (drivingPlayer() != player || this.hornCooldown > 0) {
 			return;
 		}
@@ -2427,7 +2467,7 @@ public class RailVehicleEntity extends AbstractVehicleEntity implements FreeCame
 		if (this.timetable != null) {
 			this.atoState.read(view);
 			long managed = view.getLongOr("ManagedBy", Long.MIN_VALUE);
-			this.managedBy = managed == Long.MIN_VALUE ? null : net.minecraft.core.BlockPos.of(managed);
+			this.managedBy = managed == Long.MIN_VALUE ? null : BlockPos.of(managed);
 			this.managedRow = view.getIntOr("ManagedRow", -1);
 			this.managedHash = view.getIntOr("ManagedHash", 0);
 		}

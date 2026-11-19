@@ -50,20 +50,31 @@ public record TrackSegment(long id, long nodeA, long nodeB, PlanCurve plan, Heig
 	}
 
 	public TrackPoint sample(double s) {
+		return sample(s, Double.NaN);
+	}
+
+	/**
+	 * 距離sの点。cantがNaNでなければ、その値をカントにする(TrackNetworkが平滑化したカントを渡す)。
+	 * 車両1両につき毎tick何度も呼ばれるので、中間の値を作り直さず、平方根は Math.hypot より速い Math.sqrt で求める
+	 * (オーバーフローするような大きさの値は扱わない)。
+	 */
+	TrackPoint sample(double s, double cant) {
 		double length = this.plan.length();
 		double clamped = Math.max(0.0, Math.min(length, s));
 		double t = this.plan.tAt(clamped);
 		double dx = this.plan.dx(t);
 		double dz = this.plan.dz(t);
-		double speed = Math.hypot(dx, dz);
+		double speed = Math.sqrt(dx * dx + dz * dz);
+		if (Double.isNaN(cant)) {
+			cant = cantFor(speed < 1.0e-9 ? 0.0 : this.plan.signedCurvature(t, dx, dz, speed), this.designSpeed);
+		}
 		if (speed < 1.0e-9) {
 			dx = this.plan.x(1.0) - this.plan.x(0.0);
 			dz = this.plan.z(1.0) - this.plan.z(0.0);
-			speed = Math.max(1.0e-9, Math.hypot(dx, dz));
+			speed = Math.max(1.0e-9, Math.sqrt(dx * dx + dz * dz));
 		}
-		double curvature = this.plan.signedCurvature(t);
 		return new TrackPoint(this.plan.x(t), this.profile.y(clamped, length), this.plan.z(t),
-				dx / speed, dz / speed, this.profile.gradeAt(clamped, length), cantFor(curvature, this.designSpeed));
+				dx / speed, dz / speed, this.profile.gradeAt(clamped, length), cant);
 	}
 
 	/** 均衡カント tanθ = v² / (g R) を上限付きで求める。 */

@@ -807,17 +807,22 @@ public final class TrackNetwork {
 
 	/** 平滑化済みのカントを使った線路上の点。区間の描画・車両の傾きはこちらを使う。 */
 	public TrackPoint sample(TrackSegment segment, double s) {
-		TrackPoint raw = segment.sample(s);
-		if (!this.segments.containsKey(segment.id()) || this.cantTransitionLength <= CANT_STEP) {
-			return raw;
+		if (this.cantTransitionLength <= CANT_STEP) {
+			return segment.sample(s);
 		}
-		float[] table = this.cantTables.computeIfAbsent(segment.id(), id -> buildCantTable(segment));
+		float[] table = this.cantTables.get(segment.id());
+		if (table == null) {
+			if (!this.segments.containsKey(segment.id())) {
+				return segment.sample(s);
+			}
+			table = buildCantTable(segment);
+			this.cantTables.put(segment.id(), table);
+		}
 		double f = Math.max(0.0, Math.min(segment.length(), s)) / CANT_STEP;
 		int i = Math.min(table.length - 1, (int) Math.floor(f));
 		int j = Math.min(table.length - 1, i + 1);
 		double t = f - i;
-		double cant = table[i] + (table[j] - table[i]) * t;
-		return new TrackPoint(raw.x(), raw.y(), raw.z(), raw.dirX(), raw.dirZ(), raw.grade(), cant);
+		return segment.sample(s, table[i] + (table[j] - table[i]) * t);
 	}
 
 	private float[] buildCantTable(TrackSegment segment) {

@@ -2,7 +2,6 @@ package com.example.railwayvehicleaddon.block;
 
 import com.example.railwayvehicleaddon.entity.RailVehicleEntity;
 import com.example.railwayvehicleaddon.vehicle.RailVehicleParams;
-import com.example.railwayvehicleaddon.vehicle.RailVehicleParamsLoader;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -31,7 +30,7 @@ public class WaterTowerBlockEntity extends BlockEntity {
 		entity.timer = 0;
 		AABB area = new AABB(pos).inflate(RANGE, 4.0, RANGE);
 		for (RailVehicleEntity vehicle : world.getEntitiesOfClass(RailVehicleEntity.class, area, e -> true)) {
-			RailVehicleParams params = RailVehicleParamsLoader.get(vehicle.getVehicleDefinitionId()).orElse(RailVehicleParams.DEFAULT);
+			RailVehicleParams params = vehicle.railParams();
 			if (!RailVehicleParams.STEAM.equals(params.powerSource()) || Math.abs(vehicle.getRailSpeed()) > STOPPED_SPEED) {
 				continue;
 			}

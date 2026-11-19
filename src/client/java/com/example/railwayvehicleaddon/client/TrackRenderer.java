@@ -12,6 +12,7 @@ import com.example.railwayvehicleaddon.track.feature.MovingDeckFeature;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
+import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
@@ -24,6 +25,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import org.joml.Matrix4f;
+import org.joml.Vector3f;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -31,8 +33,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 敷設済みの線路の描画。区間ごとにメッシュ(ワールド座標の四角形列)を作ってキャッシュし、
- * 毎フレームはカメラ相対に直して頂点を流すだけにする。
+ * 敷設済みの線路の描画。区間ごとにメッシュ(四角形の列)を作ってキャッシュし、毎フレームはカメラ相対に直して頂点を流すだけにする。
+ *
+ * <p>毎フレームの頂点の数を抑えるため、メッシュは線路に沿って {@link #BATCH_LENGTH} ごとのまとまり(Batch)に分けてあり、
+ * まとまりごとに、描画距離の外・カメラの後ろにあるものを飛ばし、遠いものは細部(レール・枕木の側面など)を省く。
+ * レールと道床は、形が変わらない所(直線、ゆるい曲線)では {@link #RAIL_STEP} より長い四角形にまとめる
+ * (模様は長さに合わせて繰り返すので、見た目は細かく刻んだときと同じ)。明るさは0.5秒ごとに少しずつ取り直す。
  *
  * <p>断面(線路基面からの高さ): バラスト上面0.05、枕木0〜0.10、レール0.10〜RAIL_TOP(0.25)。
  * カントは線路中心(基面高さ)を軸に断面ごと回転させる。バラストは上面の両端から45°の法面で
@@ -64,6 +70,20 @@ public final class TrackRenderer {
 	private static final long INCOMPLETE_REBUILD_INTERVAL = 20L;
 	private static final double REBUILD_RANGE = 96.0;
 	private static final int MAX_REBUILDS_PER_FRAME = 2;
+	/** メッシュを分けるまとまりの長さ(線路に沿って。ブロック) */
+	private static final double BATCH_LENGTH = 8.0;
+	/** レール・道床の四角形をまとめる最大の刻み数(RAIL_STEPの何倍までか)と、まとめてよい形のずれ(ブロック) */
+	private static final int MAX_MERGE = 4;
+	private static final double MERGE_TOLERANCE = 0.008;
+	/** これより遠いまとまりは、細部(レール・第三軌条・枕木の側面、碍子)を描かない(ブロック。この距離では1〜2ピクセル) */
+	private static final double DETAIL_RANGE = 64.0;
+	/** 明るさを取り直す間隔(tick)と、1フレームに取り直すまとまりの数の上限 */
+	private static final long LIGHT_INTERVAL = 10L;
+	private static final int MAX_LIGHT_REFRESHES_PER_FRAME = 32;
+	/** Batch.lightTick の、まだ明るさを取っていないときの値 */
+	private static final long NO_LIGHT = Long.MIN_VALUE;
+	/** 道床の底面を描く、道床の厚さの下限。地面にじかに載っている道床の底面は見えないので描かない */
+	private static final double BALLAST_BOTTOM_MIN_DEPTH = 0.6;
 
 	/** UV範囲: レール / 枕木 / 砕石 / 土(テクスチャを横に4等分) */
 	static final float[] RAIL_UV = {0.0f, 0.0f, 0.25f, 1.0f};
@@ -85,21 +105,94 @@ public final class TrackRenderer {
 		CACHE.clear();
 	}
 
+	/** 1区間のメッシュ。builtAt: 作成時のワールド時刻、incomplete: 未ロードの地面があった */
+	private record Mesh(Batch[] batches, long builtAt, boolean incomplete) {
+	}
+
 	/**
-	 * 四角形の集合。verts: 四角形ごとに4頂点×xyz、normals: 四角形ごとにxyz、uv: 四角形ごとの範囲、
-	 * lightPos: 四角形ごとの明るさ取得位置。builtAt: 作成時のワールド時刻、incomplete: 未ロードの地面があった
+	 * 線路に沿ったひとまとまりの四角形。位置は中心(x, y, z)からの相対(float)で持つ。
+	 * 四角形は「いつも描くもの」(0〜coreQuads)、「近いときだけ描く細部」(coreQuads〜quads)の順に並ぶ。
+	 * verts: 四角形ごとに4頂点×xyz、uv: 四角形ごとに u0,v0,u1,v1(頂点の順に (u0,v0)(u1,v0)(u1,v1)(u0,v1))、
+	 * normals: 四角形ごとにxyz。明るさは、取得位置が同じ四角形が多いので位置ごとに持つ
+	 * (lightPos: 取得位置の一覧、light: その明るさ(lightTickに取ったもの)、lightSlot: 四角形ごとの一覧の番号)。
 	 */
-	private record Mesh(double[] verts, float[] normals, float[][] uv, long[] lightPos, int quads, long builtAt, boolean incomplete) {
+	private static final class Batch {
+		final double x, y, z;
+		final double radius;
+		final float[] verts;
+		final float[] uv;
+		final float[] normals;
+		final long[] lightPos;
+		final int[] light;
+		final int[] lightSlot;
+		final int coreQuads;
+		final int quads;
+		long lightTick = NO_LIGHT;
+
+		Batch(List<Quad> core, List<Quad> detail) {
+			List<Quad> all = new ArrayList<>(core.size() + detail.size());
+			all.addAll(core);
+			all.addAll(detail);
+			this.coreQuads = core.size();
+			this.quads = all.size();
+			double minX = Double.MAX_VALUE, minY = Double.MAX_VALUE, minZ = Double.MAX_VALUE;
+			double maxX = -Double.MAX_VALUE, maxY = -Double.MAX_VALUE, maxZ = -Double.MAX_VALUE;
+			for (Quad q : all) {
+				for (int i = 0; i < 12; i += 3) {
+					minX = Math.min(minX, q.verts[i]);
+					maxX = Math.max(maxX, q.verts[i]);
+					minY = Math.min(minY, q.verts[i + 1]);
+					maxY = Math.max(maxY, q.verts[i + 1]);
+					minZ = Math.min(minZ, q.verts[i + 2]);
+					maxZ = Math.max(maxZ, q.verts[i + 2]);
+				}
+			}
+			this.x = (minX + maxX) * 0.5;
+			this.y = (minY + maxY) * 0.5;
+			this.z = (minZ + maxZ) * 0.5;
+			this.radius = 0.5 * Math.sqrt((maxX - minX) * (maxX - minX) + (maxY - minY) * (maxY - minY) + (maxZ - minZ) * (maxZ - minZ));
+			this.verts = new float[this.quads * 12];
+			this.uv = new float[this.quads * 4];
+			this.normals = new float[this.quads * 3];
+			this.lightSlot = new int[this.quads];
+			Map<Long, Integer> slots = new HashMap<>();
+			for (int q = 0; q < this.quads; q++) {
+				Quad quad = all.get(q);
+				for (int i = 0; i < 12; i += 3) {
+					this.verts[q * 12 + i] = (float) (quad.verts[i] - this.x);
+					this.verts[q * 12 + i + 1] = (float) (quad.verts[i + 1] - this.y);
+					this.verts[q * 12 + i + 2] = (float) (quad.verts[i + 2] - this.z);
+				}
+				System.arraycopy(quad.uv, 0, this.uv, q * 4, 4);
+				System.arraycopy(quad.normal, 0, this.normals, q * 3, 3);
+				Integer slot = slots.get(quad.lightPos);
+				if (slot == null) {
+					slot = slots.size();
+					slots.put(quad.lightPos, slot);
+				}
+				this.lightSlot[q] = slot;
+			}
+			this.lightPos = new long[slots.size()];
+			slots.forEach((pos, slot) -> this.lightPos[slot] = pos);
+			this.light = new int[slots.size()];
+		}
+	}
+
+	private record Quad(double[] verts, float[] normal, float[] uv, long lightPos) {
 	}
 
 	private static final class MeshBuilder {
-		final List<double[]> quads = new ArrayList<>();
-		final List<float[]> normals = new ArrayList<>();
-		final List<float[]> uvs = new ArrayList<>();
-		final List<Long> lights = new ArrayList<>();
+		/** まとまりの番号 → {いつも描く四角形, 細部} */
+		private final Map<Integer, List<List<Quad>>> batches = new HashMap<>();
 		boolean incomplete;
 
-		void quad(Vec3 a, Vec3 b, Vec3 c, Vec3 d, float[] uv, Vec3 lightAt) {
+		/** 四角形を足す。uvは模様の範囲(u0,v0,u1,v1)、sは線路上の位置(まとまりを決める)、detailは近いときだけ描く細部か。 */
+		void quad(Vec3 a, Vec3 b, Vec3 c, Vec3 d, float[] uv, Vec3 lightAt, double s, boolean detail) {
+			quad(a, b, c, d, uv, 1.0f, lightAt, s, detail);
+		}
+
+		/** 模様をa→dの向きにrepeat回繰り返す四角形(長くまとめたレール・道床)。 */
+		void quad(Vec3 a, Vec3 b, Vec3 c, Vec3 d, float[] uv, float repeat, Vec3 lightAt, double s, boolean detail) {
 			Vec3 n = b.subtract(a).cross(d.subtract(a));
 			double len = n.length();
 			if (len < 1.0e-9) {
@@ -109,25 +202,22 @@ public final class TrackRenderer {
 					return;
 				}
 			}
-			this.quads.add(new double[]{a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z});
-			this.normals.add(new float[]{(float) (n.x / len), (float) (n.y / len), (float) (n.z / len)});
-			this.uvs.add(uv);
-			this.lights.add(BlockPos.containing(lightAt.x, lightAt.y + 0.3, lightAt.z).asLong());
+			List<List<Quad>> lists = this.batches.computeIfAbsent((int) Math.floor(Math.max(0.0, s) / BATCH_LENGTH),
+					k -> List.of(new ArrayList<>(), new ArrayList<>()));
+			lists.get(detail ? 1 : 0).add(new Quad(
+					new double[]{a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z},
+					new float[]{(float) (n.x / len), (float) (n.y / len), (float) (n.z / len)},
+					new float[]{uv[0], uv[1], uv[2], uv[1] + (uv[3] - uv[1]) * repeat},
+					BlockPos.containing(lightAt.x, lightAt.y + 0.3, lightAt.z).asLong()));
 		}
 
 		Mesh build(long time) {
-			int count = this.quads.size();
-			double[] verts = new double[count * 12];
-			float[] normals = new float[count * 3];
-			float[][] uv = new float[count][];
-			long[] light = new long[count];
-			for (int i = 0; i < count; i++) {
-				System.arraycopy(this.quads.get(i), 0, verts, i * 12, 12);
-				System.arraycopy(this.normals.get(i), 0, normals, i * 3, 3);
-				uv[i] = this.uvs.get(i);
-				light[i] = this.lights.get(i);
+			Batch[] built = new Batch[this.batches.size()];
+			int i = 0;
+			for (List<List<Quad>> lists : this.batches.values()) {
+				built[i++] = new Batch(lists.get(0), lists.get(1));
 			}
-			return new Mesh(verts, normals, uv, light, count, time, this.incomplete);
+			return new Mesh(built, time, this.incomplete);
 		}
 	}
 
@@ -174,10 +264,14 @@ public final class TrackRenderer {
 		return Double.NaN;
 	}
 
-	/** バラストの法面の下端(断面の片側)。 */
-	private static Vec3 ballastFoot(ClientLevel world, TrackPoint p, Vec3 topEdge, double side, double topHalf, MeshBuilder builder) {
+	/** バラストの法面の下端(断面の片側)。地面が無い・深いとき(底面が見えうるとき)は deep[index] を立てる。 */
+	private static Vec3 ballastFoot(ClientLevel world, TrackPoint p, Vec3 topEdge, double side, double topHalf, MeshBuilder builder,
+									boolean[] deep, int index) {
 		double ground = groundBelow(world, topEdge.x, topEdge.y, topEdge.z, builder);
 		double depth = Double.isNaN(ground) ? BALLAST_BRIDGE_DEPTH : Math.max(0.02, topEdge.y - ground);
+		if (Double.isNaN(ground) || depth > BALLAST_BOTTOM_MIN_DEPTH) {
+			deep[index] = true;
+		}
 		double spread = Double.isNaN(ground) ? 0.0 : depth;
 		double lat = side * (topHalf + spread);
 		// 下端は水平に外へ広げ、高さは地面(または道床の厚さ分下)
@@ -224,8 +318,8 @@ public final class TrackRenderer {
 		return limit;
 	}
 
-	/** 直方体(中心c、水平の2軸と高さの範囲)。 */
-	private static void column(MeshBuilder builder, Vec3 c, double ax, double az, double half, double y0, double y1, float[] uv) {
+	/** 直方体(中心c、水平の2軸と高さの範囲)。sは線路上の位置、detailは近いときだけ描くか。 */
+	private static void column(MeshBuilder builder, Vec3 c, double ax, double az, double half, double y0, double y1, float[] uv, double s, boolean detail) {
 		double bx = az;
 		double bz = -ax;
 		Vec3[] bottom = new Vec3[4];
@@ -237,21 +331,21 @@ public final class TrackRenderer {
 			bottom[i] = new Vec3(x, y0, z);
 			top[i] = new Vec3(x, y1, z);
 		}
-		builder.quad(top[0], top[1], top[2], top[3], uv, c);
+		builder.quad(top[0], top[1], top[2], top[3], uv, c, s, detail);
 		for (int i = 0; i < 4; i++) {
 			int n = (i + 1) % 4;
-			builder.quad(bottom[n], bottom[i], top[i], top[n], uv, c);
+			builder.quad(bottom[n], bottom[i], top[i], top[n], uv, c, s, detail);
 		}
 	}
 
-	/** aからbへの細い棒(水平・垂直の2枚の帯で、どの向きから見ても線として見える)。 */
-	private static void wire(MeshBuilder builder, Vec3 a, Vec3 b, double half) {
+	/** aからbへの細い棒(水平・垂直の2枚の帯で、どの向きから見ても線として見える)。sは線路上の位置。 */
+	private static void wire(MeshBuilder builder, Vec3 a, Vec3 b, double half, double s) {
 		Vec3 d = b.subtract(a);
 		double len = Math.hypot(d.x, d.z);
 		double sx = len > 1.0e-6 ? -d.z / len * half : half;
 		double sz = len > 1.0e-6 ? d.x / len * half : 0.0;
-		builder.quad(a.add(-sx, 0.0, -sz), a.add(sx, 0.0, sz), b.add(sx, 0.0, sz), b.add(-sx, 0.0, -sz), RAIL_UV, a);
-		builder.quad(a.add(0.0, -half, 0.0), a.add(0.0, half, 0.0), b.add(0.0, half, 0.0), b.add(0.0, -half, 0.0), RAIL_UV, a);
+		builder.quad(a.add(-sx, 0.0, -sz), a.add(sx, 0.0, sz), b.add(sx, 0.0, sz), b.add(-sx, 0.0, -sz), RAIL_UV, a, s, false);
+		builder.quad(a.add(0.0, -half, 0.0), a.add(0.0, half, 0.0), b.add(0.0, half, 0.0), b.add(0.0, -half, 0.0), RAIL_UV, a, s, false);
 	}
 
 	/** 第三軌条: 走行レールの外側・一段低い位置に導体レールを這わせ、一定間隔で碍子(支持架)を立てる。 */
@@ -331,12 +425,12 @@ public final class TrackRenderer {
 	 * 立てず、分岐側の一番外の線路どうしの外に柱を立てて梁でつなぎ、梁から各線路のトロリ線を吊る。
 	 */
 	private static void buildOverhead(MeshBuilder builder, TrackNetwork network, TrackSegment segment, TrackPoint[] samples, int steps, double wire, double gauge) {
+		double length = segment.length();
 		for (int i = 1; i <= steps; i++) {
 			TrackPoint a = samples[i - 1];
 			TrackPoint b = samples[i];
-			wire(builder, new Vec3(a.x(), a.y() + wire, a.z()), new Vec3(b.x(), b.y() + wire, b.z()), 0.02);
+			wire(builder, new Vec3(a.x(), a.y() + wire, a.z()), new Vec3(b.x(), b.y() + wire, b.z()), 0.02, length * (i - 1) / steps);
 		}
-		double length = segment.length();
 		double lateral = mastLateral(gauge);
 		// 分岐器の近くは架線柱を立てない(分岐側の区間はビームまで、基準側は分岐器のすぐ近く)
 		double skipA = turnoutSkip(network, segment, segment.nodeA(), gauge);
@@ -360,13 +454,13 @@ public final class TrackRenderer {
 				if (base == null) {
 					continue;
 				}
-				column(builder, base, p.dirX(), p.dirZ(), 0.07, p.y(), p.y() + wire + 0.28, RAIL_UV);
+				column(builder, base, p.dirX(), p.dirZ(), 0.07, p.y(), p.y() + wire + 0.28, RAIL_UV, s, false);
 				// 腕金: 架線柱の上部から線路中心の上へ
 				Vec3 armStart = new Vec3(base.x, p.y() + wire + 0.25, base.z);
 				Vec3 armEnd = new Vec3(center.x, p.y() + wire + 0.25, center.z);
-				wire(builder, armStart, armEnd, 0.035);
+				wire(builder, armStart, armEnd, 0.035, s);
 				// ハンガー: 腕金からトロリ線へ
-				wire(builder, armEnd, new Vec3(center.x, p.y() + wire, center.z), 0.015);
+				wire(builder, armEnd, new Vec3(center.x, p.y() + wire, center.z), 0.015, s);
 			}
 		}
 		for (long node : new long[]{segment.nodeA(), segment.nodeB()}) {
@@ -405,6 +499,8 @@ public final class TrackRenderer {
 			return;
 		}
 		double d = portalDistance(network, nodeId, gauge);
+		// このビームを入れるまとまり(この区間の、分岐器側の端)
+		double s = segment.nodeA() == nodeId ? 0.0 : segment.length();
 		// 分岐側の向き(各区間の外向きの平均)と、それに直交する横方向
 		double rx = 0.0;
 		double rz = 0.0;
@@ -449,17 +545,17 @@ public final class TrackRenderer {
 		double beamY = y + wire + 0.28;
 		Vec3 left = new Vec3(cx + lx * (maxLat + lateral), y, cz + lz * (maxLat + lateral));
 		Vec3 right = new Vec3(cx + lx * (minLat - lateral), y, cz + lz * (minLat - lateral));
-		column(builder, left, rx, rz, 0.08, y, beamY + 0.05, RAIL_UV);
-		column(builder, right, rx, rz, 0.08, y, beamY + 0.05, RAIL_UV);
+		column(builder, left, rx, rz, 0.08, y, beamY + 0.05, RAIL_UV, s, false);
+		column(builder, right, rx, rz, 0.08, y, beamY + 0.05, RAIL_UV, s, false);
 		// 梁(上下2本の弦材)
-		wire(builder, new Vec3(left.x, beamY, left.z), new Vec3(right.x, beamY, right.z), 0.05);
-		wire(builder, new Vec3(left.x, beamY - 0.2, left.z), new Vec3(right.x, beamY - 0.2, right.z), 0.03);
+		wire(builder, new Vec3(left.x, beamY, left.z), new Vec3(right.x, beamY, right.z), 0.05, s);
+		wire(builder, new Vec3(left.x, beamY - 0.2, left.z), new Vec3(right.x, beamY - 0.2, right.z), 0.03, s);
 		// 各線路のトロリ線を梁から吊る
 		for (int i = 0; i < points.length; i++) {
 			TrackPoint p = points[i];
 			double lat = (p.x() - origin.x()) * lx + (p.z() - origin.z()) * lz;
 			Vec3 top = new Vec3(cx + lx * lat, beamY - 0.2, cz + lz * lat);
-			wire(builder, top, new Vec3(p.x(), p.y() + wireHeightOf(branches.get(i)), p.z()), 0.015);
+			wire(builder, top, new Vec3(p.x(), p.y() + wireHeightOf(branches.get(i)), p.z()), 0.015, s);
 		}
 	}
 
@@ -475,24 +571,25 @@ public final class TrackRenderer {
 		double lat = gauge / 2.0 + THIRD_RAIL_OFFSET;
 		double in = lat - THIRD_RAIL_HALF_WIDTH;
 		double out = lat + THIRD_RAIL_HALF_WIDTH;
+		double length = segment.length();
 		for (int i = 1; i <= steps; i++) {
 			TrackPoint prev = samples[i - 1];
 			TrackPoint cur = samples[i];
 			Vec3 lightAt = new Vec3(cur.x(), cur.y(), cur.z());
+			double s = length * (i - 1) / steps;
 			builder.quad(crossSection(prev, in, THIRD_RAIL_TOP), crossSection(prev, out, THIRD_RAIL_TOP),
-					crossSection(cur, out, THIRD_RAIL_TOP), crossSection(cur, in, THIRD_RAIL_TOP), RAIL_UV, lightAt);
+					crossSection(cur, out, THIRD_RAIL_TOP), crossSection(cur, in, THIRD_RAIL_TOP), RAIL_UV, lightAt, s, false);
 			builder.quad(crossSection(prev, out, 0.0), crossSection(cur, out, 0.0),
-					crossSection(cur, out, THIRD_RAIL_TOP), crossSection(prev, out, THIRD_RAIL_TOP), RAIL_UV, lightAt);
+					crossSection(cur, out, THIRD_RAIL_TOP), crossSection(prev, out, THIRD_RAIL_TOP), RAIL_UV, lightAt, s, true);
 			builder.quad(crossSection(cur, in, 0.0), crossSection(prev, in, 0.0),
-					crossSection(prev, in, THIRD_RAIL_TOP), crossSection(cur, in, THIRD_RAIL_TOP), RAIL_UV, lightAt);
+					crossSection(prev, in, THIRD_RAIL_TOP), crossSection(cur, in, THIRD_RAIL_TOP), RAIL_UV, lightAt, s, true);
 		}
-		double length = segment.length();
 		int supports = Math.max(1, (int) Math.ceil(length / THIRD_RAIL_SUPPORT_SPACING));
 		for (int k = 0; k < supports; k++) {
 			double s = (k + 0.5) * length / supports;
 			TrackPoint p = network.sample(segment, s);
 			Vec3 base = new Vec3(p.x() + p.lateralX() * lat, p.y(), p.z() + p.lateralZ() * lat);
-			column(builder, base, p.dirX(), p.dirZ(), 0.05, p.y(), p.y() + THIRD_RAIL_TOP, RAIL_UV);
+			column(builder, base, p.dirX(), p.dirZ(), 0.05, p.y(), p.y() + THIRD_RAIL_TOP, RAIL_UV, s, true);
 		}
 	}
 
@@ -514,49 +611,75 @@ public final class TrackRenderer {
 		Vec3[] topR = new Vec3[steps + 1];
 		Vec3[] footL = new Vec3[steps + 1];
 		Vec3[] footR = new Vec3[steps + 1];
+		// レールの上面の外側の縁(左右)。まとめてよいか(形がまっすぐか)を見るのに使う
+		Vec3[] railL = new Vec3[steps + 1];
+		Vec3[] railR = new Vec3[steps + 1];
+		boolean[] deep = new boolean[steps + 1];
+		// 刻みi(samples[i-1]〜samples[i])にレールを描くか。分岐器で開通していない側の分岐部は描かない
+		boolean[] rails = new boolean[steps + 1];
 		for (int i = 0; i <= steps; i++) {
 			TrackPoint p = network.sample(segment, length * i / steps);
 			samples[i] = p;
+			railL[i] = crossSection(p, half + RAIL_HALF_WIDTH, RailVehicleEntity.RAIL_TOP);
+			railR[i] = crossSection(p, -half - RAIL_HALF_WIDTH, RailVehicleEntity.RAIL_TOP);
 			if (hasBallast) {
 				topL[i] = crossSection(p, ballastHalf, BALLAST_TOP);
 				topR[i] = crossSection(p, -ballastHalf, BALLAST_TOP);
-				footL[i] = ballastFoot(world, p, topL[i], 1.0, ballastHalf, builder);
-				footR[i] = ballastFoot(world, p, topR[i], -1.0, ballastHalf, builder);
+				footL[i] = ballastFoot(world, p, topL[i], 1.0, ballastHalf, builder, deep, i);
+				footR[i] = ballastFoot(world, p, topR[i], -1.0, ballastHalf, builder, deep, i);
+			}
+			if (i > 0) {
+				rails[i] = length * (i - 1) / steps >= gapA - 1.0e-6 && length * i / steps <= length - gapB + 1.0e-6;
 			}
 		}
 
-		for (int i = 1; i <= steps; i++) {
-			TrackPoint prev = samples[i - 1];
-			TrackPoint cur = samples[i];
+		// レールと道床。形がまっすぐ続く所は、刻みをMAX_MERGE個まで1枚の四角形にまとめる(模様はその数だけ繰り返す)
+		for (int from = 0; from < steps; ) {
+			int to = from + 1;
+			while (to < steps && to - from < MAX_MERGE && rails[to + 1] == rails[from + 1]
+					&& (int) Math.floor(length * to / steps / BATCH_LENGTH) == (int) Math.floor(length * from / steps / BATCH_LENGTH)
+					&& straight(from, to + 1, railL, railR, hasBallast ? topL : null, hasBallast ? topR : null,
+							hasBallast ? footL : null, hasBallast ? footR : null)) {
+				to++;
+			}
+			TrackPoint prev = samples[from];
+			TrackPoint cur = samples[to];
 			Vec3 lightAt = new Vec3(cur.x(), cur.y(), cur.z());
-			double s0 = length * (i - 1) / steps;
-			double s1 = length * i / steps;
-			// レール(左右それぞれ、上面と両側面)。分岐器で開通していない側の分岐部は描かない
-			if (s0 >= gapA - 1.0e-6 && s1 <= length - gapB + 1.0e-6) {
+			double s = length * from / steps;
+			float repeat = to - from;
+			// レール(左右それぞれ、上面と両側面)
+			if (rails[from + 1]) {
 				for (double side : new double[]{-half, half}) {
 					double in = side - RAIL_HALF_WIDTH;
 					double out = side + RAIL_HALF_WIDTH;
 					builder.quad(crossSection(prev, in, RailVehicleEntity.RAIL_TOP), crossSection(prev, out, RailVehicleEntity.RAIL_TOP),
-							crossSection(cur, out, RailVehicleEntity.RAIL_TOP), crossSection(cur, in, RailVehicleEntity.RAIL_TOP), RAIL_UV, lightAt);
-					builder.quad(crossSection(prev, out, SLEEPER_TOP), crossSection(cur, out, SLEEPER_TOP),
-							crossSection(cur, out, RailVehicleEntity.RAIL_TOP), crossSection(prev, out, RailVehicleEntity.RAIL_TOP), RAIL_UV, lightAt);
-					builder.quad(crossSection(cur, in, SLEEPER_TOP), crossSection(prev, in, SLEEPER_TOP),
-							crossSection(prev, in, RailVehicleEntity.RAIL_TOP), crossSection(cur, in, RailVehicleEntity.RAIL_TOP), RAIL_UV, lightAt);
+							crossSection(cur, out, RailVehicleEntity.RAIL_TOP), crossSection(cur, in, RailVehicleEntity.RAIL_TOP), RAIL_UV, repeat, lightAt, s, false);
+					builder.quad(crossSection(cur, out, SLEEPER_TOP), crossSection(cur, out, RailVehicleEntity.RAIL_TOP),
+							crossSection(prev, out, RailVehicleEntity.RAIL_TOP), crossSection(prev, out, SLEEPER_TOP), RAIL_UV, repeat, lightAt, s, true);
+					builder.quad(crossSection(prev, in, SLEEPER_TOP), crossSection(prev, in, RailVehicleEntity.RAIL_TOP),
+							crossSection(cur, in, RailVehicleEntity.RAIL_TOP), crossSection(cur, in, SLEEPER_TOP), RAIL_UV, repeat, lightAt, s, true);
 				}
 			}
-			// 道床(上面・左右の法面・底面)
+			// 道床(上面・左右の法面。底面は、道床が地面から浮いている・厚い所だけ)
 			if (hasBallast) {
-				builder.quad(topR[i - 1], topL[i - 1], topL[i], topR[i], ballastUv, lightAt);
-				builder.quad(footL[i - 1], footL[i], topL[i], topL[i - 1], ballastUv, lightAt);
-				builder.quad(footR[i], footR[i - 1], topR[i - 1], topR[i], ballastUv, lightAt);
-				builder.quad(footL[i], footL[i - 1], footR[i - 1], footR[i], ballastUv, lightAt);
+				builder.quad(topR[from], topL[from], topL[to], topR[to], ballastUv, repeat, lightAt, s, false);
+				builder.quad(footL[to], topL[to], topL[from], footL[from], ballastUv, repeat, lightAt, s, false);
+				builder.quad(footR[from], topR[from], topR[to], footR[to], ballastUv, repeat, lightAt, s, false);
+				boolean bottom = false;
+				for (int i = from; i <= to; i++) {
+					bottom |= deep[i];
+				}
+				if (bottom) {
+					builder.quad(footL[from], footR[from], footR[to], footL[to], ballastUv, repeat, lightAt, s, false);
+				}
 			}
+			from = to;
 		}
 		if (hasBallast) {
 			// 道床の端面(区間の両端。接続先がある所では隠れる)
-			builder.quad(footR[0], footL[0], topL[0], topR[0], ballastUv, new Vec3(samples[0].x(), samples[0].y(), samples[0].z()));
+			builder.quad(footR[0], footL[0], topL[0], topR[0], ballastUv, new Vec3(samples[0].x(), samples[0].y(), samples[0].z()), 0.0, false);
 			builder.quad(footL[steps], footR[steps], topR[steps], topL[steps], ballastUv,
-					new Vec3(samples[steps].x(), samples[steps].y(), samples[steps].z()));
+					new Vec3(samples[steps].x(), samples[steps].y(), samples[steps].z()), length, false);
 		}
 
 		switch (segment.electrificationType()) {
@@ -567,7 +690,7 @@ public final class TrackRenderer {
 			}
 		}
 
-		// 枕木(上面と4側面)
+		// 枕木(上面と4側面。側面は細部)
 		int sleepers = Math.max(1, (int) Math.floor(length / SLEEPER_SPACING));
 		double offset = (length - (sleepers - 1) * SLEEPER_SPACING) / 2.0;
 		for (int k = 0; k < sleepers; k++) {
@@ -586,13 +709,38 @@ public final class TrackRenderer {
 				bottom[c] = crossSection(p, lat, 0.0).add(fx * along, fy * along, fz * along);
 				top[c] = crossSection(p, lat, SLEEPER_TOP).add(fx * along, fy * along, fz * along);
 			}
-			builder.quad(top[0], top[1], top[2], top[3], SLEEPER_UV, lightAt);
+			builder.quad(top[0], top[1], top[2], top[3], SLEEPER_UV, lightAt, s, false);
 			for (int c = 0; c < 4; c++) {
 				int n = (c + 1) % 4;
-				builder.quad(bottom[n], bottom[c], top[c], top[n], SLEEPER_UV, lightAt);
+				builder.quad(bottom[n], bottom[c], top[c], top[n], SLEEPER_UV, lightAt, s, true);
 			}
 		}
 		return builder.build(world.getGameTime());
+	}
+
+	/**
+	 * 刻みfrom〜toの間で、各折れ線(nullは無視)が直線とみなせるか。途中の点が、両端を結ぶ線分の同じ割合の点から
+	 * MERGE_TOLERANCEより離れていなければtrue(曲線・勾配の変わり目・カントの変わり目・地面の段差があればfalseになる)。
+	 */
+	private static boolean straight(int from, int to, Vec3[]... lines) {
+		for (Vec3[] line : lines) {
+			if (line == null) {
+				continue;
+			}
+			Vec3 a = line[from];
+			Vec3 b = line[to];
+			for (int i = from + 1; i < to; i++) {
+				double f = (double) (i - from) / (to - from);
+				Vec3 p = line[i];
+				double dx = a.x + (b.x - a.x) * f - p.x;
+				double dy = a.y + (b.y - a.y) * f - p.y;
+				double dz = a.z + (b.z - a.z) * f - p.z;
+				if (dx * dx + dy * dy + dz * dz > MERGE_TOLERANCE * MERGE_TOLERANCE) {
+					return false;
+				}
+			}
+		}
+		return true;
 	}
 
 	public static void render(WorldRenderContext context) {
@@ -613,12 +761,20 @@ public final class TrackRenderer {
 		double radius = configured > 0.0 ? Math.min(configured, chunkRange) : chunkRange;
 		long now = world.getGameTime();
 		int rebuilds = 0;
+		int lightRefreshes = 0;
+		// カメラの向き(前方)。後ろにあるまとまりは描かない
+		Camera view = client.gameRenderer.getMainCamera();
+		double yaw = Math.toRadians(view.yRot());
+		double pitch = Math.toRadians(view.xRot());
+		double lookX = -Math.sin(yaw) * Math.cos(pitch);
+		double lookY = -Math.sin(pitch);
+		double lookZ = Math.cos(yaw) * Math.cos(pitch);
 
-		PoseStack matrices = context.matrices();
-		PoseStack.Pose entry = matrices.last();
+		PoseStack.Pose entry = context.matrices().last();
 		Matrix4f pose = entry.pose();
 		VertexConsumer consumer = context.consumers().getBuffer(RenderTypes.entityCutoutNoCull(TEXTURE));
 		BlockPos.MutableBlockPos lightPos = new BlockPos.MutableBlockPos();
+		Vector3f normal = new Vector3f();
 
 		for (long id : network.segmentsNear(camera.x, camera.z, radius)) {
 			TrackSegment segment = network.segment(id);
@@ -635,54 +791,83 @@ public final class TrackRenderer {
 				CACHE.put(id, mesh);
 			} else if (rebuilds < MAX_REBUILDS_PER_FRAME) {
 				long age = now - mesh.builtAt();
-				boolean near = mesh.quads() > 0 && squaredHorizontalDistance(mesh, camera) < REBUILD_RANGE * REBUILD_RANGE;
-				if (age < 0 || (mesh.incomplete() && age > INCOMPLETE_REBUILD_INTERVAL) || (near && age > REBUILD_INTERVAL)) {
+				if (age < 0 || (mesh.incomplete() && age > INCOMPLETE_REBUILD_INTERVAL) || (age > REBUILD_INTERVAL && isNear(mesh, camera))) {
 					mesh = buildMesh(world, network, segment, cachedGauge);
 					CACHE.put(id, mesh);
 					rebuilds++;
 				}
 			}
-			double[] v = mesh.verts();
-			float[] n = mesh.normals();
-			long lastLightKey = Long.MIN_VALUE;
-			int light = 0;
-			for (int q = 0; q < mesh.quads(); q++) {
-				int base = q * 12;
-				// 近いものだけ描く(区間単位のチャンク索引は粗いので四角形単位でも距離を見る)
-				double dx = v[base] - camera.x;
-				double dz = v[base + 2] - camera.z;
-				if (dx * dx + dz * dz > radius * radius) {
+			for (Batch batch : mesh.batches()) {
+				double dx = batch.x - camera.x;
+				double dy = batch.y - camera.y;
+				double dz = batch.z - camera.z;
+				double r = batch.radius;
+				// 描画距離(水平)の外、またはカメラの後ろ
+				double reach = radius + r;
+				if (dx * dx + dz * dz > reach * reach || dx * lookX + dy * lookY + dz * lookZ < -r) {
 					continue;
 				}
-				long key = mesh.lightPos()[q];
-				if (key != lastLightKey) {
-					lastLightKey = key;
-					lightPos.set(key);
-					light = LevelRenderer.getLightColor(world, lightPos);
+				double detail = DETAIL_RANGE + r;
+				int quads = dx * dx + dy * dy + dz * dz < detail * detail ? batch.quads : batch.coreQuads;
+				// 明るさの取り直しは1フレームに決まった数のまとまりまで(初めて描くまとまりは必ず取る)
+				boolean stale = now - batch.lightTick >= LIGHT_INTERVAL || now < batch.lightTick;
+				if (batch.lightTick == NO_LIGHT || (stale && lightRefreshes < MAX_LIGHT_REFRESHES_PER_FRAME)) {
+					if (batch.lightTick != NO_LIGHT) {
+						lightRefreshes++;
+					}
+					batch.lightTick = now;
+					for (int i = 0; i < batch.lightPos.length; i++) {
+						lightPos.set(batch.lightPos[i]);
+						batch.light[i] = LevelRenderer.getLightColor(world, lightPos);
+					}
 				}
-				float[] uv = mesh.uv()[q];
-				float nx = n[q * 3];
-				float ny = n[q * 3 + 1];
-				float nz = n[q * 3 + 2];
-				for (int corner = 0; corner < 4; corner++) {
-					int o = base + corner * 3;
-					float u = (corner == 1 || corner == 2) ? uv[2] : uv[0];
-					float t = (corner >= 2) ? uv[3] : uv[1];
-					consumer.addVertex(pose, (float) (v[o] - camera.x), (float) (v[o + 1] - camera.y), (float) (v[o + 2] - camera.z))
-							.setColor(255, 255, 255, 255)
-							.setUv(u, t)
-							.setOverlay(OverlayTexture.NO_OVERLAY)
-							.setLight(light)
-							.setNormal(entry, nx, ny, nz);
-				}
+				emit(consumer, entry, pose, normal, batch, quads, (float) dx, (float) dy, (float) dz);
 			}
 		}
 	}
 
-	private static double squaredHorizontalDistance(Mesh mesh, Vec3 camera) {
-		double[] v = mesh.verts();
-		double dx = v[0] - camera.x;
-		double dz = v[2] - camera.z;
-		return dx * dx + dz * dz;
+	/**
+	 * まとまりの先頭quads枚の四角形を流す。(ox, oy, oz)はカメラから見たまとまりの中心。
+	 * 頂点は全属性をまとめて書く形で書き、法線の変換は四角形ごとに1回にする(前提MODの機体の描画と同じ書き方)。
+	 */
+	private static void emit(VertexConsumer consumer, PoseStack.Pose entry, Matrix4f pose, Vector3f normal, Batch batch, int quads,
+							 float ox, float oy, float oz) {
+		float m00 = pose.m00(), m01 = pose.m01(), m02 = pose.m02();
+		float m10 = pose.m10(), m11 = pose.m11(), m12 = pose.m12();
+		float m20 = pose.m20(), m21 = pose.m21(), m22 = pose.m22();
+		float m30 = pose.m30(), m31 = pose.m31(), m32 = pose.m32();
+		float[] v = batch.verts;
+		float[] uv = batch.uv;
+		float[] n = batch.normals;
+		for (int q = 0; q < quads; q++) {
+			entry.normal().transform(n[q * 3], n[q * 3 + 1], n[q * 3 + 2], normal);
+			int light = batch.light[batch.lightSlot[q]];
+			float u0 = uv[q * 4];
+			float v0 = uv[q * 4 + 1];
+			float u1 = uv[q * 4 + 2];
+			float v1 = uv[q * 4 + 3];
+			for (int corner = 0; corner < 4; corner++) {
+				int o = q * 12 + corner * 3;
+				float x = v[o] + ox;
+				float y = v[o + 1] + oy;
+				float z = v[o + 2] + oz;
+				consumer.addVertex(m00 * x + m10 * y + m20 * z + m30, m01 * x + m11 * y + m21 * z + m31, m02 * x + m12 * y + m22 * z + m32,
+						0xFFFFFFFF, (corner == 1 || corner == 2) ? u1 : u0, corner >= 2 ? v1 : v0, OverlayTexture.NO_OVERLAY, light,
+						normal.x, normal.y, normal.z);
+			}
+		}
+	}
+
+	/** メッシュのどこかがカメラの近く(作り直しの範囲)にあるか。 */
+	private static boolean isNear(Mesh mesh, Vec3 camera) {
+		for (Batch batch : mesh.batches()) {
+			double dx = batch.x - camera.x;
+			double dz = batch.z - camera.z;
+			double reach = REBUILD_RANGE + batch.radius;
+			if (dx * dx + dz * dz < reach * reach) {
+				return true;
+			}
+		}
+		return false;
 	}
 }

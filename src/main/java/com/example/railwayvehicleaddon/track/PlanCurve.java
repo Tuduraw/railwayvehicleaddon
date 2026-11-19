@@ -127,13 +127,15 @@ public final class PlanCurve {
 	public double signedCurvature(double t) {
 		double ddx = derivative(x0, x1, x2, x3, t);
 		double ddz = derivative(z0, z1, z2, z3, t);
+		double speed = Math.sqrt(ddx * ddx + ddz * ddz);
+		return speed < 1.0e-9 ? 0.0 : signedCurvature(t, ddx, ddz, speed);
+	}
+
+	/** signedCurvature(t)と同じ。tでの1階微分(dx, dz)とその大きさspeedをすでに求めてある呼び出し元向け。 */
+	double signedCurvature(double t, double dx, double dz, double speed) {
 		double d2x = secondDerivative(x0, x1, x2, x3, t);
 		double d2z = secondDerivative(z0, z1, z2, z3, t);
-		double speed = Math.hypot(ddx, ddz);
-		if (speed < 1.0e-9) {
-			return 0.0;
-		}
-		return (ddx * d2z - ddz * d2x) / (speed * speed * speed);
+		return (dx * d2z - dz * d2x) / (speed * speed * speed);
 	}
 
 	private static double bezier(double p0, double p1, double p2, double p3, double t) {
